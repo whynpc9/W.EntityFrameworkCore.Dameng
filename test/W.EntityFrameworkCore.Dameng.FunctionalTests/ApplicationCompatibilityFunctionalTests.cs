@@ -8,11 +8,11 @@ using Xunit;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
-public sealed class UniWebCompatibilityFunctionalTests
+public sealed class ApplicationCompatibilityFunctionalTests
 {
     [DamengFact]
-    public Task CommonUniWebScalarTypesAndValueConverterRoundtrip()
-        => UniWebCompatibilityStore.WithTableAsync(
+    public Task CommonApplicationScalarTypesAndValueConverterRoundtrip()
+        => ApplicationCompatibilityStore.WithTableAsync(
             async store =>
             {
                 var externalId = Guid.NewGuid();
@@ -36,7 +36,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                         externalId: externalId,
                         amount: amount,
                         occurredAt: occurredAt,
-                        status: UniWebCompatibilityStatus.Suspended,
+                        status: ApplicationCompatibilityStatus.Suspended,
                         optionalNote: null,
                         isActive: true);
 
@@ -59,7 +59,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                     Assert.Equal("达梦数据库-多租户中文", record.DisplayName);
                     Assert.Equal(amount, record.Amount);
                     Assert.Equal(occurredAt, record.OccurredAt);
-                    Assert.Equal(UniWebCompatibilityStatus.Suspended, record.Status);
+                    Assert.Equal(ApplicationCompatibilityStatus.Suspended, record.Status);
                     Assert.Equal(101, record.TenantId);
                     Assert.False(record.IsDeleted);
                 }
@@ -67,7 +67,7 @@ public sealed class UniWebCompatibilityFunctionalTests
 
     [DamengFact]
     public Task GlobalTenantAndSoftDeleteFiltersUseTheCurrentContextState()
-        => UniWebCompatibilityStore.WithTableAsync(
+        => ApplicationCompatibilityStore.WithTableAsync(
             async store =>
             {
                 await using (var seedContext = CreateContext(store))
@@ -113,7 +113,7 @@ public sealed class UniWebCompatibilityFunctionalTests
 
     [DamengFact]
     public Task KeylessFromSqlQueryMaterializesUnicodeProjection()
-        => UniWebCompatibilityStore.WithTableAsync(
+        => ApplicationCompatibilityStore.WithTableAsync(
             async store =>
             {
                 await using (var seedContext = CreateContext(store))
@@ -143,13 +143,13 @@ public sealed class UniWebCompatibilityFunctionalTests
 
     [DamengFact]
     public Task AddDbContextPoolReusesContextWithoutLeakingTenantState()
-        => UniWebCompatibilityStore.WithTableAsync(
+        => ApplicationCompatibilityStore.WithTableAsync(
             async store =>
             {
-                PooledUniWebCompatibilityContext.ConfigureTable(store.TableName);
+                PooledApplicationCompatibilityContext.ConfigureTable(store.TableName);
 
                 var services = new ServiceCollection();
-                services.AddDbContextPool<PooledUniWebCompatibilityContext>(
+                services.AddDbContextPool<PooledApplicationCompatibilityContext>(
                     options => options
                         .UseDameng(store.ConnectionString)
                         .EnableDetailedErrors(),
@@ -161,7 +161,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                 await using (var scope = serviceProvider.CreateAsyncScope())
                 {
                     var context = scope.ServiceProvider
-                        .GetRequiredService<PooledUniWebCompatibilityContext>();
+                        .GetRequiredService<PooledApplicationCompatibilityContext>();
                     firstInstanceId = context.ContextId.InstanceId;
                     context.CurrentTenantId = 401;
                     context.Records.AddRange(
@@ -179,7 +179,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                 await using (var scope = serviceProvider.CreateAsyncScope())
                 {
                     var context = scope.ServiceProvider
-                        .GetRequiredService<PooledUniWebCompatibilityContext>();
+                        .GetRequiredService<PooledApplicationCompatibilityContext>();
 
                     Assert.Equal(firstInstanceId, context.ContextId.InstanceId);
                     Assert.Null(context.CurrentTenantId);
@@ -196,7 +196,7 @@ public sealed class UniWebCompatibilityFunctionalTests
 
     [DamengFact]
     public Task ExecuteUpdateAndExecuteDeleteReportAffectedRowsAndPersistChanges()
-        => UniWebCompatibilityStore.WithTableAsync(
+        => ApplicationCompatibilityStore.WithTableAsync(
             async store =>
             {
                 await using (var seedContext = CreateContext(store))
@@ -217,7 +217,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                                 .SetProperty(item => item.IsActive, false)
                                 .SetProperty(
                                     item => item.Status,
-                                    UniWebCompatibilityStatus.Suspended));
+                                    ApplicationCompatibilityStatus.Suspended));
 
                     Assert.Equal(2, updated);
 
@@ -242,7 +242,7 @@ public sealed class UniWebCompatibilityFunctionalTests
                         {
                             Assert.False(item.IsActive);
                             Assert.Equal(
-                                UniWebCompatibilityStatus.Suspended,
+                                ApplicationCompatibilityStatus.Suspended,
                                 item.Status);
                         });
                     Assert.False(
@@ -251,33 +251,33 @@ public sealed class UniWebCompatibilityFunctionalTests
                 }
             });
 
-    private static UniWebCompatibilityContext CreateContext(
-        UniWebCompatibilityStore store,
+    private static ApplicationCompatibilityContext CreateContext(
+        ApplicationCompatibilityStore store,
         int currentTenantId = 0,
         bool applyTenantAndSoftDeleteFilter = false)
     {
-        var options = new DbContextOptionsBuilder<UniWebCompatibilityContext>()
+        var options = new DbContextOptionsBuilder<ApplicationCompatibilityContext>()
             .UseDameng(store.ConnectionString)
             .ReplaceService<
                 IModelCacheKeyFactory,
-                UniWebCompatibilityModelCacheKeyFactory>()
+                ApplicationCompatibilityModelCacheKeyFactory>()
             .EnableDetailedErrors()
             .Options;
 
-        return new UniWebCompatibilityContext(
+        return new ApplicationCompatibilityContext(
             options,
             store.TableName,
             currentTenantId,
             applyTenantAndSoftDeleteFilter);
     }
 
-    private static UniWebCompatibilityRecord CreateRecord(
+    private static ApplicationCompatibilityRecord CreateRecord(
         int tenantId,
         string displayName,
         Guid? externalId = null,
         decimal amount = 1.00000000000000000000m,
         DateTime? occurredAt = null,
-        UniWebCompatibilityStatus status = UniWebCompatibilityStatus.Active,
+        ApplicationCompatibilityStatus status = ApplicationCompatibilityStatus.Active,
         string? optionalNote = "可空字段",
         bool isActive = true,
         bool isDeleted = false)
@@ -303,8 +303,8 @@ public sealed class UniWebCompatibilityFunctionalTests
         };
 }
 
-internal sealed class UniWebCompatibilityContext(
-    DbContextOptions<UniWebCompatibilityContext> options,
+internal sealed class ApplicationCompatibilityContext(
+    DbContextOptions<ApplicationCompatibilityContext> options,
     string tableName,
     int currentTenantId,
     bool applyTenantAndSoftDeleteFilter)
@@ -317,40 +317,40 @@ internal sealed class UniWebCompatibilityContext(
     public bool ApplyTenantAndSoftDeleteFilter { get; }
         = applyTenantAndSoftDeleteFilter;
 
-    public DbSet<UniWebCompatibilityRecord> Records
-        => Set<UniWebCompatibilityRecord>();
+    public DbSet<ApplicationCompatibilityRecord> Records
+        => Set<ApplicationCompatibilityRecord>();
 
-    public DbSet<UniWebCompatibilityProjection> Projections
-        => Set<UniWebCompatibilityProjection>();
+    public DbSet<ApplicationCompatibilityProjection> Projections
+        => Set<ApplicationCompatibilityProjection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var record = modelBuilder.Entity<UniWebCompatibilityRecord>();
-        UniWebCompatibilityModel.ConfigureRecord(record, TableName);
+        var record = modelBuilder.Entity<ApplicationCompatibilityRecord>();
+        ApplicationCompatibilityModel.ConfigureRecord(record, TableName);
         record.HasQueryFilter(
             item => !ApplyTenantAndSoftDeleteFilter
                 || (item.TenantId == CurrentTenantId && !item.IsDeleted));
 
-        UniWebCompatibilityModel.ConfigureProjection(
-            modelBuilder.Entity<UniWebCompatibilityProjection>());
+        ApplicationCompatibilityModel.ConfigureProjection(
+            modelBuilder.Entity<ApplicationCompatibilityProjection>());
     }
 }
 
-internal sealed class PooledUniWebCompatibilityContext
+internal sealed class PooledApplicationCompatibilityContext
     : DbContext
 {
     private static string? _tableName;
 
-    public PooledUniWebCompatibilityContext(
-        DbContextOptions<PooledUniWebCompatibilityContext> options)
+    public PooledApplicationCompatibilityContext(
+        DbContextOptions<PooledApplicationCompatibilityContext> options)
         : base(options)
     {
     }
 
     public int? CurrentTenantId { get; set; }
 
-    public DbSet<UniWebCompatibilityRecord> Records
-        => Set<UniWebCompatibilityRecord>();
+    public DbSet<ApplicationCompatibilityRecord> Records
+        => Set<ApplicationCompatibilityRecord>();
 
     public static void ConfigureTable(string tableName)
         => _tableName = tableName;
@@ -372,8 +372,8 @@ internal sealed class PooledUniWebCompatibilityContext
         var tableName = _tableName
             ?? throw new InvalidOperationException(
                 "Configure the uniquely named test table before creating the context pool.");
-        var record = modelBuilder.Entity<UniWebCompatibilityRecord>();
-        UniWebCompatibilityModel.ConfigureRecord(record, tableName);
+        var record = modelBuilder.Entity<ApplicationCompatibilityRecord>();
+        ApplicationCompatibilityModel.ConfigureRecord(record, tableName);
         record.HasQueryFilter(
             item => CurrentTenantId.HasValue
                 && item.TenantId == CurrentTenantId.Value
@@ -384,10 +384,10 @@ internal sealed class PooledUniWebCompatibilityContext
         => CurrentTenantId = null;
 }
 
-internal static class UniWebCompatibilityModel
+internal static class ApplicationCompatibilityModel
 {
     public static void ConfigureRecord(
-        EntityTypeBuilder<UniWebCompatibilityRecord> entity,
+        EntityTypeBuilder<ApplicationCompatibilityRecord> entity,
         string tableName)
     {
         entity.ToTable(tableName);
@@ -424,7 +424,7 @@ internal static class UniWebCompatibilityModel
     }
 
     public static void ConfigureProjection(
-        EntityTypeBuilder<UniWebCompatibilityProjection> entity)
+        EntityTypeBuilder<ApplicationCompatibilityProjection> entity)
     {
         entity.HasNoKey();
         entity.Property(item => item.DisplayName)
@@ -434,16 +434,16 @@ internal static class UniWebCompatibilityModel
     }
 }
 
-internal sealed class UniWebCompatibilityModelCacheKeyFactory
+internal sealed class ApplicationCompatibilityModelCacheKeyFactory
     : IModelCacheKeyFactory
 {
     public object Create(DbContext context, bool designTime)
-        => context is UniWebCompatibilityContext compatibilityContext
+        => context is ApplicationCompatibilityContext compatibilityContext
             ? (context.GetType(), compatibilityContext.TableName, designTime)
             : (context.GetType(), designTime);
 }
 
-internal sealed class UniWebCompatibilityRecord
+internal sealed class ApplicationCompatibilityRecord
 {
     public long Id { get; set; }
 
@@ -459,39 +459,39 @@ internal sealed class UniWebCompatibilityRecord
 
     public DateTime OccurredAt { get; set; }
 
-    public UniWebCompatibilityStatus Status { get; set; }
+    public ApplicationCompatibilityStatus Status { get; set; }
 
     public int TenantId { get; set; }
 
     public bool IsDeleted { get; set; }
 }
 
-internal sealed class UniWebCompatibilityProjection
+internal sealed class ApplicationCompatibilityProjection
 {
     public required string DisplayName { get; set; }
 
     public int TenantId { get; set; }
 }
 
-internal enum UniWebCompatibilityStatus
+internal enum ApplicationCompatibilityStatus
 {
     Active,
     Suspended
 }
 
-internal sealed class UniWebCompatibilityStore
+internal sealed class ApplicationCompatibilityStore
 {
     private readonly string _connectionString;
     private bool _tableCreated;
 
-    private UniWebCompatibilityStore()
+    private ApplicationCompatibilityStore()
     {
         _connectionString = DamengTestEnvironment.GetRequiredConnectionString();
         var suffix = Guid.NewGuid()
             .ToString("N", CultureInfo.InvariantCulture)[..16]
             .ToUpperInvariant();
-        TableName = $"EF10_UW_{suffix}";
-        PrimaryKeyName = $"PK_UW_{suffix}";
+        TableName = $"EF10_APP_{suffix}";
+        PrimaryKeyName = $"PK_APP_{suffix}";
     }
 
     public string ConnectionString => _connectionString;
@@ -501,9 +501,9 @@ internal sealed class UniWebCompatibilityStore
     public string PrimaryKeyName { get; }
 
     public static async Task WithTableAsync(
-        Func<UniWebCompatibilityStore, Task> test)
+        Func<ApplicationCompatibilityStore, Task> test)
     {
-        var store = new UniWebCompatibilityStore();
+        var store = new ApplicationCompatibilityStore();
 
         try
         {

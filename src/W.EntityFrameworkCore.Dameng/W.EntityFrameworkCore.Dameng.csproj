@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>W.EntityFrameworkCore.Dameng</AssemblyName>
     <RootNamespace>W.EntityFrameworkCore.Dameng</RootNamespace>
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.1.1</VersionPrefix>
     <PackageId>W.EntityFrameworkCore.Dameng</PackageId>
     <Title>Unofficial Dameng provider for Entity Framework Core 10</Title>
     <Description>An independently maintained Entity Framework Core 10 provider for Dameng Database.</Description>

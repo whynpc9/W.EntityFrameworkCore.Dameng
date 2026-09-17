@@ -3,8 +3,7 @@
 ## 范围
 
 - 文档默认使用中文；仅在保留代码标识、命令、链接、正式名称或行业惯用术语时使用英文。
-- 保持 `W.EntityFrameworkCore.Dameng` 独立于 UniWeb、ABP 和具体应用。
-  `UniWeb.Xin.Dameng` 应归属于 `uniweb-framework`。
+- 保持 `W.EntityFrameworkCore.Dameng` 独立于具体应用框架和具体应用。
 - 除非明确要求依赖项相关工作，否则保留锁定的 EF Core 10 /
   `DM.DmProvider` 版本范围和锁文件。
 - 不得复制或反编译达梦官方 EF 提供程序。仅使用公开的 EF 契约、达梦公开文档和黑盒测试。

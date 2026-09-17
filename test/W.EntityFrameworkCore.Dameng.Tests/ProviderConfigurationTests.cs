@@ -56,7 +56,7 @@ public sealed class ProviderConfigurationTests
     }
 
     [Fact]
-    public void OptionsBuilderExposesRelationalSettingsNeededByUniWebXin()
+    public void OptionsBuilderExposesStandardRelationalSettings()
     {
         var options = new DbContextOptionsBuilder<TestContext>()
             .UseDameng(
