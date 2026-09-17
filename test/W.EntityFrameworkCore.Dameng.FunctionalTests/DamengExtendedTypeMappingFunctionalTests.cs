@@ -302,6 +302,133 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
                 Assert.True(JsonElement.DeepEquals(expected, actual)));
     }
 
+    [DamengFact]
+    public Task DateTimeOffsetColumnComparisonExecutes()
+        => ExtendedTypeStore.WithTableAsync(
+            "DATETIME(7) WITH TIME ZONE",
+            async store =>
+            {
+                var options = CreateExtendedOptions<DateTimeOffset>(store);
+                var earlier = new DateTimeOffset(2026, 7, 23, 10, 0, 0, TimeSpan.FromHours(8));
+                var later = new DateTimeOffset(2026, 7, 23, 12, 0, 0, TimeSpan.FromHours(8));
+                var cutoff = new DateTimeOffset(2026, 7, 23, 11, 0, 0, TimeSpan.FromHours(8));
+
+                await using (var context = new ExtendedTypeContext<DateTimeOffset>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    context.Entities.AddRange(
+                        new ExtendedTypeEntity<DateTimeOffset> { Value = earlier },
+                        new ExtendedTypeEntity<DateTimeOffset> { Value = later });
+                    await context.SaveChangesAsync();
+                }
+
+                await using (var context = new ExtendedTypeContext<DateTimeOffset>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    var matched = await context.Entities
+                        .AsNoTracking()
+                        .Where(entity => entity.Value >= cutoff)
+                        .Select(entity => entity.Value)
+                        .ToListAsync();
+
+                    var matchedValue = Assert.Single(matched);
+                    Assert.Equal(later, matchedValue);
+                }
+            });
+
+    [DamengFact]
+    public Task JsonElementWholeValueEqualityIsRejectedByTheServer()
+        => ExtendedTypeStore.WithTableAsync(
+            "JSON",
+            async store =>
+            {
+                var options = CreateExtendedOptions<JsonElement>(store);
+                var matching = JsonSerializer.Deserialize<JsonElement>(
+                    """{"database":"达梦","efCore":10}""");
+                var other = JsonSerializer.Deserialize<JsonElement>(
+                    """{"database":"其他","efCore":9}""");
+
+                await using (var context = new ExtendedTypeContext<JsonElement>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    context.Entities.AddRange(
+                        new ExtendedTypeEntity<JsonElement> { Value = matching },
+                        new ExtendedTypeEntity<JsonElement> { Value = other });
+                    await context.SaveChangesAsync();
+                }
+
+                await using (var context = new ExtendedTypeContext<JsonElement>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    var query = matching;
+                    var exception = await Assert.ThrowsAsync<DmException>(
+                        () => context.Entities
+                            .AsNoTracking()
+                            .Where(entity => entity.Value.Equals(query))
+                            .Select(entity => entity.Value)
+                            .ToListAsync());
+
+                    Assert.Contains("数据类型不匹配", exception.Message, StringComparison.Ordinal);
+                }
+            });
+
+    [DamengFact]
+    public Task JsonElementPropertyAccessIsRejectedBeforeExecution()
+        => ExtendedTypeStore.WithTableAsync(
+            "JSON",
+            async store =>
+            {
+                var options = CreateExtendedOptions<JsonElement>(store);
+                var document = JsonSerializer.Deserialize<JsonElement>(
+                    """{"database":"达梦"}""");
+
+                await using (var context = new ExtendedTypeContext<JsonElement>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    context.Entities.Add(new ExtendedTypeEntity<JsonElement> { Value = document });
+                    await context.SaveChangesAsync();
+                }
+
+                await using (var context = new ExtendedTypeContext<JsonElement>(
+                    options,
+                    store.TableName,
+                    configureValue: null))
+                {
+                    var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                        () => context.Entities
+                            .AsNoTracking()
+                            .Where(entity => entity.Value.GetProperty("database").GetString() == "达梦")
+                            .ToListAsync());
+
+                    Assert.Contains(
+                        "could not be translated",
+                        exception.Message,
+                        StringComparison.OrdinalIgnoreCase);
+                    Assert.Contains(
+                        nameof(JsonElement.GetProperty),
+                        exception.Message,
+                        StringComparison.Ordinal);
+                }
+            });
+
+    private static DbContextOptions<ExtendedTypeContext<T>> CreateExtendedOptions<T>(
+        ExtendedTypeStore store)
+        => new DbContextOptionsBuilder<ExtendedTypeContext<T>>()
+            .UseDameng(store.ConnectionString)
+            .ReplaceService<IModelCacheKeyFactory, ExtendedTypeModelCacheKeyFactory>()
+            .EnableDetailedErrors()
+            .Options;
+
     private static Task WithValueAsync<T>(
         string storeType,
         T value,

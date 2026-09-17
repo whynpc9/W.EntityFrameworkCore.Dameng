@@ -1,5 +1,6 @@
 #pragma warning disable EF1001
 
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
@@ -337,6 +338,196 @@ public sealed class DamengQueryTranslationTests
         Assert.Contains("NCLOB", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DateTimeOffsetColumnComparisonGeneratesParameterizedSql()
+    {
+        using var context = CreateContext();
+        var cutoff = new DateTimeOffset(2026, 7, 23, 11, 0, 0, TimeSpan.FromHours(8));
+
+        var sql = context.Entities
+            .Where(entity => entity.OccurredAtOffset >= cutoff)
+            .Select(entity => entity.Id)
+            .ToQueryString();
+
+        Assert.Contains("\"OccurredAtOffset\"", sql, StringComparison.Ordinal);
+        Assert.Contains(">=", sql, StringComparison.Ordinal);
+        Assert.Contains("-- :", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("@", sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Year")]
+    [InlineData("Month")]
+    [InlineData("Offset")]
+    [InlineData("UtcDateTime")]
+    [InlineData("DateTime")]
+    [InlineData("Now")]
+    [InlineData("UtcNow")]
+    [InlineData("AddDays")]
+    [InlineData("AddHours")]
+    public void DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(string member)
+    {
+        using var context = CreateContext();
+
+        AssertQueryCannotBeTranslated(
+            () => member switch
+            {
+                "Year" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.Year == 2026)
+                    .ToQueryString(),
+                "Month" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.Month == 7)
+                    .ToQueryString(),
+                "Offset" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.Offset == TimeSpan.FromHours(8))
+                    .ToQueryString(),
+                "UtcDateTime" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.UtcDateTime.Year == 2026)
+                    .ToQueryString(),
+                "DateTime" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.DateTime.Year == 2026)
+                    .ToQueryString(),
+                "Now" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset <= DateTimeOffset.Now)
+                    .ToQueryString(),
+                "UtcNow" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset <= DateTimeOffset.UtcNow)
+                    .ToQueryString(),
+                "AddDays" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.AddDays(1) > entity.OccurredAtOffset)
+                    .ToQueryString(),
+                "AddHours" => context.Entities
+                    .Where(entity => entity.OccurredAtOffset.AddHours(2) > entity.OccurredAtOffset)
+                    .ToQueryString(),
+                _ => throw new ArgumentOutOfRangeException(nameof(member), member, message: null)
+            },
+            member);
+    }
+
+    [Fact]
+    public void StringCompareAndCompareToTranslateToSqlComparisonOperators()
+    {
+        using var context = CreateContext();
+
+#pragma warning disable CA1309 // The default culture Compare overload is the construct under test.
+        var compare = context.Entities
+            .Where(entity => string.Compare(entity.Name, "达梦") > 0)
+            .ToQueryString();
+#pragma warning restore CA1309
+        var compareTo = context.Entities
+            .Where(entity => entity.Name.CompareTo("达梦") > 0)
+            .ToQueryString();
+
+        Assert.Contains("\"Name\" > ", compare, StringComparison.Ordinal);
+        Assert.Contains("'达梦'", compare, StringComparison.Ordinal);
+        Assert.Contains("\"Name\" > ", compareTo, StringComparison.Ordinal);
+        Assert.Contains("'达梦'", compareTo, StringComparison.Ordinal);
+        Assert.DoesNotContain("COMPARE", compare, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("IsNullOrWhiteSpace")]
+    [InlineData("PadLeft")]
+    [InlineData("PadRight")]
+    [InlineData("TrimChars")]
+    [InlineData("Split")]
+    [InlineData("CompareOrdinal")]
+    [InlineData("ContainsOrdinalIgnoreCase")]
+    [InlineData("StartsWithOrdinal")]
+    [InlineData("EndsWithOrdinalIgnoreCase")]
+    [InlineData("IndexOfOrdinalIgnoreCase")]
+#pragma warning disable CA1309, CA1865, CA2249 // Intentionally probe the untranslated overloads.
+    public void CommonUntranslatedStringMethodsAreNotTranslated(string member)
+    {
+        using var context = CreateContext();
+
+        AssertQueryCannotBeTranslated(
+            () => member switch
+            {
+                "IsNullOrWhiteSpace" => context.Entities
+                    .Where(entity => string.IsNullOrWhiteSpace(entity.Name))
+                    .ToQueryString(),
+                "PadLeft" => context.Entities
+                    .Where(entity => entity.Name.PadLeft(10) == "       达梦")
+                    .ToQueryString(),
+                "PadRight" => context.Entities
+                    .Where(entity => entity.Name.PadRight(10, '*') == "达梦******")
+                    .ToQueryString(),
+                "TrimChars" => context.Entities
+                    .Where(entity => entity.Name.Trim(' ', '\t') == "达梦")
+                    .ToQueryString(),
+                "Split" => context.Entities
+                    .Where(entity => entity.Name.Split(',').Length > 1)
+                    .ToQueryString(),
+                "CompareOrdinal" => context.Entities
+                    .Where(entity => string.Compare(entity.Name, "达梦", StringComparison.Ordinal) > 0)
+                    .ToQueryString(),
+                "ContainsOrdinalIgnoreCase" => context.Entities
+                    .Where(entity => entity.Name.Contains("DREAM", StringComparison.OrdinalIgnoreCase))
+                    .ToQueryString(),
+                "StartsWithOrdinal" => context.Entities
+                    .Where(entity => entity.Name.StartsWith("达", StringComparison.Ordinal))
+                    .ToQueryString(),
+                "EndsWithOrdinalIgnoreCase" => context.Entities
+                    .Where(entity => entity.Name.EndsWith("MENG", StringComparison.OrdinalIgnoreCase))
+                    .ToQueryString(),
+                "IndexOfOrdinalIgnoreCase" => context.Entities
+                    .Where(entity => entity.Name.IndexOf("X", StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToQueryString(),
+                _ => throw new ArgumentOutOfRangeException(nameof(member), member, message: null)
+            },
+            member switch
+            {
+                "TrimChars" => "Trim",
+                "CompareOrdinal" => "Compare",
+                "ContainsOrdinalIgnoreCase" => "Contains",
+                "StartsWithOrdinal" => "StartsWith",
+                "EndsWithOrdinalIgnoreCase" => "EndsWith",
+                "IndexOfOrdinalIgnoreCase" => "IndexOf",
+                _ => member
+            });
+    }
+#pragma warning restore CA1309, CA1865, CA2249
+
+    [Fact]
+    public void JsonElementPropertyAccessIsNotTranslated()
+    {
+        using var context = CreateContext();
+
+        AssertQueryCannotBeTranslated(
+            () => context.Entities
+                .Where(entity => entity.Document.GetProperty("database").GetString() == "达梦")
+                .ToQueryString(),
+            nameof(JsonElement.GetProperty));
+    }
+
+    [Fact]
+    public void JsonElementWholeValueEqualityGeneratesParameterizedSql()
+    {
+        using var context = CreateContext();
+        var document = JsonSerializer.Deserialize<JsonElement>(
+            """{"database":"达梦","efCore":10}""");
+
+        var sql = context.Entities
+            .Where(entity => entity.Document.Equals(document))
+            .Select(entity => entity.Id)
+            .ToQueryString();
+
+        Assert.Contains("\"Document\"", sql, StringComparison.Ordinal);
+        Assert.Contains("-- :", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("JSON_VALUE", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("JSON_QUERY", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("JSON_EXISTS", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AssertQueryCannotBeTranslated(Func<string> toSql, string expectedFragment)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(toSql);
+
+        Assert.Contains("could not be translated", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(expectedFragment, exception.Message, StringComparison.Ordinal);
+    }
+
     private static TestContext CreateContext(bool useRelationalNulls = false)
     {
         var optionsBuilder = new DbContextOptionsBuilder<TestContext>();
@@ -370,6 +561,8 @@ public sealed class DamengQueryTranslationTests
                     entity.HasKey(item => item.Id);
                     entity.Property(item => item.Name).HasMaxLength(200);
                     entity.Property(item => item.CreatedAt);
+                    entity.Property(item => item.OccurredAtOffset);
+                    entity.Property(item => item.Document);
                     entity.Property(item => item.Token);
                     entity.Property(item => item.IsActive);
                     entity.Property(item => item.IsDeleted);
@@ -397,6 +590,10 @@ public sealed class DamengQueryTranslationTests
         public byte[]? OtherPayload { get; set; }
 
         public DateTime CreatedAt { get; set; }
+
+        public DateTimeOffset OccurredAtOffset { get; set; }
+
+        public JsonElement Document { get; set; }
 
         public Guid Token { get; set; }
 

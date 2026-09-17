@@ -4,10 +4,10 @@
 
 `W.EntityFrameworkCore.Dameng` 是一个独立维护的 EF Core 10 关系数据库提供程序，
 直接构建于 `DM.DmProvider` ADO.NET 驱动程序之上。基础包负责数据库行为，不得引用
-UniWeb、ABP 或任何应用程序集。
+任何具体应用框架或应用程序集。
 
 ```text
-应用 / UniWeb.Xin.Dameng
+              应用
                 |
                 v
 W.EntityFrameworkCore.Dameng
@@ -37,14 +37,14 @@ EF Core Relational 10     DM.DmProvider
 | SQL 基础组件 | 对每个组成部分使用双引号引用标识符、`:name` 参数和达梦语句终止符 |
 | 类型映射 | 常见数值/文本/二进制/时态类型、Unicode 和 LOB 边界、`DateTimeOffset`、基于 INTERVAL 的 `TimeSpan` 以及 `JsonElement` |
 | 模型约定 | 标识符最大长度，以及达梦标识列/序列注解、约定和设计时注解生成 |
-| 查询 | 分页、布尔搜索条件转换、部分字符串/日期/GUID 翻译器及关系数据库查询管线 |
+| 查询 | 分页、布尔搜索条件转换、部分字符串/`DateTime`/GUID 翻译器及关系数据库查询管线。`DateTimeOffset` 仅验证列比较；JSON 查询运算符和带 `StringComparison` 的字符串方法无法翻译 |
 | 更新 | 单命令修改批次、标识列/序列值回读、已验证的受影响行协议、并发、`ExecuteUpdate` 和 `ExecuteDelete` |
 | 迁移 | 已测试的达梦 DDL 子集、对 DDL 禁用事务、种子数据、幂等脚本、历史记录仓储及 `DBMS_LOCK` 迁移锁 |
 | 数据库生命周期 | 连接/表存在性和模式对象管理；不支持创建/删除物理数据库 |
 | 设计时 | 用于迁移的提供程序/注解代码生成；尚未实现反向工程 |
 
 EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 EF Core Relational
-约束为 `>= 10.0.10 && < 11.0.0`，并锁定解析后的依赖项。成功编译是必要条件，
+约束为 `>= 10.0.12 && < 11.0.0`，并锁定解析后的依赖项。成功编译是必要条件，
 但不能作为兼容性证据。
 
 仓库引用 EF 关系数据库规范包只为使用测试工具。目前的规范测试项目没有继承任何
@@ -70,7 +70,9 @@ EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 
 迁移不具备原子性。清理测试会显式删除精确对象，绝不依赖回滚。
 
 DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前驱动程序的基础能力标志不支持，
-保存点仍可在该服务器上工作。目前尚未将支持的隔离级别声明为提供程序级契约。
+保存点仍可在该服务器上工作。隔离级别方面，已验证 `ReadCommitted` 可用于跟踪式
+`SaveChanges`；`Serializable` 可用于查询和 `ExecuteUpdate`，但不能用于跟踪式
+`SaveChanges`。`RepeatableRead` 和 `Snapshot` 会在开始事务时被拒绝。
 
 迁移历史记录及 `DBMS_LOCK` 的获取/释放均有真实服务器测试。该锁是提供程序级的保守基线，
 要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。
@@ -92,17 +94,6 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 连接字符串超时关键字或其单位作任何断言，因为该行为尚未针对锁定的驱动程序进行验证；
 使用方必须遵循对应驱动程序版本的文档。
 
-## `UniWeb.Xin.Dameng` 边界
-
-未来的适配器应归属于 `uniweb-framework`。它负责选择本提供程序、将 UniWeb 连接属性
-映射到提供程序选项，并参与 UniWeb 反射发现。它不得重复实现 SQL 生成、类型映射、
-迁移、重试或驱动程序服务。
-
-提供程序运行时测试已覆盖对适配器重要的行为：池化上下文重置、租户/软删除筛选器、
-常见标量/转换器往返、无键原始 SQL、乐观并发和批量 DML。这些测试只能作为基础提供程序
-的证据；它们不能证明尚未加入 `uniweb-framework` 的适配器可完成反射发现或
-`dotnet ef` 激活。
-
 ## 洁净室与许可证边界
 
 这个采用 MIT 许可证的提供程序可以使用：
@@ -119,6 +110,6 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 相关资料：
 
 - [EF Core：编写数据库提供程序](https://learn.microsoft.com/ef/core/providers/writing-a-provider)
-- [EF Core 10 关系数据库包](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore.Relational/10.0.10)
+- [EF Core 10 关系数据库包](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore.Relational/10.0.12)
 - [`DM.DmProvider` 包](https://www.nuget.org/packages/DM.DmProvider)
 - [达梦 .NET 编程指南](https://eco.dameng.com/document/dm/zh-cn/pm/net-rogramming-guide.html)

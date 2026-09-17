@@ -96,13 +96,13 @@ public sealed class DamengMigrationsFunctionalTests
             Assert.False(await historyRepository.CreateIfNotExistsAsync());
             Assert.True(await historyRepository.ExistsAsync());
 
-            var row = new HistoryRow(migrationId, "10.0.10");
+            var row = new HistoryRow(migrationId, "10.0.12");
             await context.Database.ExecuteSqlRawAsync(historyRepository.GetInsertScript(row));
 
             var appliedMigrations = await historyRepository.GetAppliedMigrationsAsync();
             var appliedMigration = Assert.Single(appliedMigrations);
             Assert.Equal(migrationId, appliedMigration.MigrationId);
-            Assert.Equal("10.0.10", appliedMigration.ProductVersion);
+            Assert.Equal("10.0.12", appliedMigration.ProductVersion);
 
             await context.Database.ExecuteSqlRawAsync(
                 historyRepository.GetDeleteScript(migrationId));
@@ -175,7 +175,7 @@ public sealed class DamengMigrationsFunctionalTests
             block
                 .AppendLine(
                     historyRepository.GetInsertScript(
-                        new HistoryRow(migrationId, "10.0.10")))
+                        new HistoryRow(migrationId, "10.0.12")))
                 .Append(endIfScript.AsSpan(0, disqlTerminatorIndex));
 
             var commandText = block.ToString();

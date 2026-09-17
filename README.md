@@ -1,7 +1,7 @@
 # W.EntityFrameworkCore.Dameng
 
 这是一个独立维护的非官方达梦数据库 Entity Framework Core 10 关系数据库提供程序。
-它使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖 UniWeb 或 ABP。
+它使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖任何具体应用框架。
 
 当前预览版基线面向：
 
@@ -11,10 +11,10 @@
 - 现有数据库和用户模式。本提供程序有意不负责创建或删除物理数据库。
 
 真实数据库回归测试覆盖常规查询和 CRUD、标识列和序列生成的键、乐观并发、
-事务和保存点、`ExecuteUpdate` / `ExecuteDelete`、常见 UniWeb 数据结构、
+事务、保存点、已验证的隔离级别边界、`ExecuteUpdate` / `ExecuteDelete`、常见业务数据结构、
 迁移基础操作、迁移历史记录/锁、Unicode/CJK，以及
 [兼容性矩阵](docs/compatibility.md)中列出的扩展映射。
-参考服务器上的最终验证通过了全部 33 项提供程序功能测试和全部 4 项提供程序自有的
+参考服务器上的最终验证通过了全部 44 项提供程序功能测试和全部 4 项提供程序自有的
 关系数据库冒烟测试。
 
 这并不是一个完整的 EF Core 提供程序：
@@ -94,5 +94,4 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 
 - [兼容性与验证](docs/compatibility.md)
 - [提供程序架构](docs/architecture.md)
-- [`UniWeb.Xin.Dameng` 集成契约](docs/uniweb-xin-dameng.md)
 - [第三方声明](THIRD-PARTY-NOTICES.md)

@@ -30,6 +30,18 @@ internal sealed class DamengFactAttribute : FactAttribute
     }
 }
 
+[AttributeUsage(AttributeTargets.Method)]
+internal sealed class DamengTheoryAttribute : TheoryAttribute
+{
+    public DamengTheoryAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(DamengTestEnvironment.ConnectionString))
+        {
+            Skip = $"Set {DamengTestEnvironment.ConnectionStringVariable} to run this test.";
+        }
+    }
+}
+
 internal sealed class DamengTestStore
 {
     private readonly string _connectionString;

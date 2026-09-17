@@ -42,6 +42,9 @@ public sealed class DamengDesignTimeTests
             services,
             descriptor => descriptor.ServiceType == typeof(IProviderConfigurationCodeGenerator)
                 && descriptor.ImplementationType == typeof(DamengCodeGenerator));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IDatabaseModelFactory));
     }
 
     [Fact]

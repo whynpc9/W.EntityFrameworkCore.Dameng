@@ -98,6 +98,40 @@ public sealed class DamengSequenceAndTranslationFunctionalTests
                 Assert.Contains("NEWID()", executedSql, StringComparison.Ordinal);
             });
 
+    [DamengFact]
+    public Task StringCompareAndCompareToExecuteOnServer()
+        => SequenceTranslationStore.WithObjectsAsync(
+            async store =>
+            {
+                await using var context = CreateContext(store, []);
+                context.Entities.AddRange(
+                    new SequenceTranslationEntity
+                    {
+                        Name = "Alpha",
+                        OccurredAt = new DateTime(2026, 7, 23, 10, 11, 12)
+                    },
+                    new SequenceTranslationEntity
+                    {
+                        Name = "Omega",
+                        OccurredAt = new DateTime(2026, 7, 23, 10, 11, 12)
+                    });
+                await context.SaveChangesAsync();
+
+#pragma warning disable CA1309 // The default culture Compare overload is the construct under test.
+                var compared = await context.Entities
+                    .Where(entity => string.Compare(entity.Name, "Mu") > 0)
+                    .Select(entity => entity.Name)
+                    .ToListAsync();
+#pragma warning restore CA1309
+                var comparedTo = await context.Entities
+                    .Where(entity => entity.Name.CompareTo("Mu") > 0)
+                    .Select(entity => entity.Name)
+                    .ToListAsync();
+
+                Assert.Equal(["Omega"], compared);
+                Assert.Equal(["Omega"], comparedTo);
+            });
+
     private static SequenceTranslationContext CreateContext(
         SequenceTranslationStore store,
         ICollection<string> commandLog)

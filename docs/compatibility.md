@@ -2,7 +2,7 @@
 
 ## 证据术语
 
-本矩阵记录截至 2026-07-24 的仓库基线。
+本矩阵记录截至 2026-09-17 的仓库基线。
 
 - **真实环境已验证**：自动化提供程序测试已在参考达梦 8.1.5.60 服务器上通过。
 - **单元级已验证**：确定性的提供程序测试在无服务器环境下覆盖 SQL、元数据或服务行为。
@@ -24,8 +24,8 @@
 | 标识符与参数 | 真实环境已验证 | 使用双引号引用标识符和 `:name` 参数；不生成 `@name` |
 | 标量/无 FROM 查询 | 服务器探测 + 单元级已验证 | 服务器接受不含 `FROM` 的 `SELECT`；提供程序 SQL 生成和布尔值/搜索条件转换具有确定性测试 |
 | 筛选与分页 | 真实环境已验证 | 参数化谓词、排序、`Skip`/`Take`、`OFFSET … FETCH`、`Any`、租户和软删除筛选器 |
-| 字符串翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖 `Trim`、`Length`、`Contains`、`StartsWith` 和 `EndsWith`；`IndexOf`、`Replace`、大小写转换、子字符串及其他 trim 结构的生成 SQL 有单元测试覆盖 |
-| 日期/时间与 GUID 翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖年/月提取、整数 `AddDays` 和 `Guid.NewGuid()`/`NEWID()`；其他已实现成员和整数 `DATEADD` 单位具有生成 SQL 测试 |
+| 字符串翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖 `Trim`、`Length`、`Contains`、`StartsWith`、`EndsWith`，以及默认的 `string.Compare` / `CompareTo`（生成 SQL 比较运算符，语义跟随达梦排序规则，而不是 .NET 区域性）。`IndexOf`、`Replace`、大小写转换、子字符串及其他 trim 结构的生成 SQL 有单元测试覆盖。`IsNullOrWhiteSpace`、`PadLeft`/`PadRight`、带 `char[]` 的 `Trim`、`Split`，以及带 `StringComparison` 的 `Contains`/`StartsWith`/`EndsWith`/`IndexOf`/`Compare` 无法翻译 |
+| 日期/时间与 GUID 翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖 `DateTime` 年/月提取、整数 `AddDays`、`DateTimeOffset` 列比较和 `Guid.NewGuid()`/`NEWID()`；其他已实现的 `DateTime` 成员和整数 `DATEADD` 单位具有生成 SQL 测试。`DateTimeOffset` 的日期部件、`Offset`、`UtcDateTime`、`Now`/`UtcNow` 和 `Add*` 无法翻译 |
 | 小数 `DateTime.Add*` | 无法无损翻译时不支持 | 参数化或非整数 double 参数不会被静默截断；EF 会报告无法翻译的表达式 |
 | 跟踪式 CRUD | 真实环境已验证 | Unicode 插入/读取/更新/删除、null、转换器、标识列键回读和受影响行报告 |
 | 标识列 | 真实环境已验证 / 部分方面单元级已验证 | 生成的键及通过 `SCOPE_IDENTITY()` 回读已在服务器执行；约定和显式种子/增量有单元测试覆盖 |
@@ -34,14 +34,14 @@
 | `ExecuteUpdate` / `ExecuteDelete` | 真实环境已验证 | 受影响行数以及持久化的布尔值/转换值更新 |
 | 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
 | 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime` |
-| `DateTimeOffset` | 真实环境已验证 | `DATETIME(7) WITH TIME ZONE`；精度为 7 的往返和提供程序文本回读保留原始偏移量，包括 `+08:00` |
+| `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；精度为 7 的往返和提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较查询已在参考服务器执行。日期部件、偏移量和 `Add*` 方法无法翻译 |
 | `TimeSpan` | 真实环境已验证 | `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留映射的天/小数秒精度，并拒绝造成信息损失的 tick |
 | 二进制与 LOB 映射 | 真实环境已验证 / 查询语义部分支持 | `VARBINARY`、40 KiB `BLOB` 和 40 KiB Unicode `NCLOB` 往返。通过 `TEXT_EQUAL`/`BLOB_EQUAL` 进行参数相等比较，以及通过 NCLOB `INSTR` 搜索，均已在参考服务器执行；排序、分组、distinct 和 distinct 集合操作会提前失败。字符串搜索函数仍受 `CLOB_MAX_CALC_LEN` 约束。键/索引需要有界行内类型，可用行内长度由页面/行配置决定 |
-| JSON 存储 | 真实环境已验证 / 部分支持 | `JsonElement` 通过 `JSON` 往返；不声称支持广泛的 JSON 查询/运算符翻译 |
+| JSON 存储 | 真实环境已验证 / 查询不支持 | `JsonElement` 通过 `JSON` 往返。整值 `Equals` 会生成 `"column" = :parameter`，但参考服务器以“数据类型不匹配”拒绝该比较；`GetProperty` 及 JSON 运算符无法翻译 |
 | 无符号整数与分面边界 | 单元级已验证 | 保持范围的转换器和存储映射已有覆盖；尚未将广泛的真实服务器边界数据作为发布声明 |
 | 事务 | 真实环境已验证 | 已验证 EF 事务提交/回滚行为 |
 | 保存点 | 真实环境已验证 | 尽管驱动程序的基础能力标志不支持，参考驱动程序/服务器仍可创建保存点并回滚到保存点 |
-| 隔离级别 | 部分支持 | 服务器探测确定了范围较窄的可接受集合，但提供程序尚未公开已验证的隔离级别兼容性契约 |
+| 隔离级别 | 部分支持 / 子集真实环境已验证 | `ReadCommitted` 下的 EF 事务提交/回滚与跟踪式 `SaveChanges` 已在参考服务器执行。`RepeatableRead` 和 `Snapshot` 会在 `BeginTransaction` 时被驱动程序拒绝。`ReadUncommitted` 和 `Serializable` 可以开始事务并执行查询，但跟踪式 `SaveChanges` 会因驱动程序 `CommandText has no value` 失败；`Serializable` 下的 `ExecuteUpdate` 可以持久化更改 |
 | 重试执行策略 | 单元级已验证 | 保守的 `DmException.Number` 分类和有界设置；当前没有真实故障注入套件证明每个错误码都可恢复 |
 | DDL 事务性 | 不支持原子迁移 | 达梦 DDL 会隐式提交；生成的 DDL 命令会禁用 EF 事务 |
 | 创建/删除物理数据库 | 不支持 | `Create`/`Delete` 会抛出异常；应连接到现有数据库并管理当前模式中的对象 |
@@ -56,21 +56,20 @@
 | TPT/TPC 值生成 | 单元级已验证 / 部分支持 | TPT 仅向根表应用标识列/序列生成。由于多个具体表可能发生冲突，因此拒绝 TPC 标识列；可改用共享达梦序列 |
 | 模式创建与不常见 DDL | 部分支持 | 仅声明支持提供程序测试所覆盖的操作；不得推断已覆盖所有 EF 迁移操作 |
 | 设计时迁移代码生成 | 单元级已验证 / 部分支持 | 提供程序和注解代码生成器会生成 `UseDameng` 和达梦值生成 API；端到端 `dotnet ef` 覆盖仍然有限 |
-| 反向工程 | 未实现 | 没有 `IDatabaseModelFactory`；`dotnet ef dbcontext scaffold` 不在当前提供程序范围内 |
+| 反向工程 | 未实现 / 单元级已验证为缺失 | 设计时服务不注册 `IDatabaseModelFactory`；`dotnet ef dbcontext scaffold` 不在当前提供程序范围内 |
 | EF 关系数据库规范一致性 | 未声明 | 规范测试项目包含四项提供程序自有冒烟测试并使用 EF 测试工具，但不继承上游关系数据库 `*TestBase` 测试套件 |
 | 裁剪 / NativeAOT | 未验证 | 不对提供程序或当前驱动程序的裁剪、编译模型优化或 NativeAOT 兼容性作任何声明 |
 | 异步 I/O 与取消 | 受驱动程序限制 | 已测试的驱动程序资产会回退到同步 ADO.NET 实现；EF 异步 API 仍然可用，但无法保证非阻塞 I/O 或及时取消 |
 | 连接超时 | 未验证的驱动程序设置 | EF `CommandTimeout` 的单位为秒。本仓库不对驱动程序连接字符串的超时关键字或单位作任何断言 |
 
-最终的 2026-07-24 验证快照：
+最终的 2026-09-17 验证快照：
 
 - 锁定模式还原：成功；
 - Release 构建：0 个警告，0 个错误；
-- 确定性单元测试套件：165/165 通过；
-- 参考服务器功能测试套件：33/33 通过；
+- 确定性单元测试套件：188/188 通过；
+- 参考服务器功能测试套件：44/44 通过；
 - 提供程序自有关系数据库冒烟测试套件：4/4 通过；
-- 标准 `dotnet format --verify-no-changes`：通过；
-- Release 包创建：通过。
+- 标准 `dotnet format --verify-no-changes`：通过。
 
 ## 真实数据库测试契约
 
