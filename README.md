@@ -90,8 +90,38 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
   本项目不对驱动程序连接字符串的超时关键字或单位作任何断言；连接建立相关配置只能
   依据已安装驱动程序对应版本的文档。
 
+## 达梦 SQL Skill
+
+仓库在 [`skills/dameng-sql`](skills/dameng-sql/SKILL.md) 提供可安装的 Agent Skill，按达梦公开 SQL 文档整理方言差异：与 Oracle / MySQL / SQL Server 一致的部分只作索引，表空间、`IDENTITY` / 序列、DMSQL、页大小、聚集主键、`compatible_mode` 等达梦特有写法带有示例。
+
+用 [`npx skills`](https://skills.sh/docs/cli) 安装（CLI 会扫描仓库里的 `SKILL.md`）：
+
+```bash
+npx skills add whynpc9/dameng-entityframework-core
+npx skills add whynpc9/dameng-entityframework-core --skill dameng-sql
+npx skills add whynpc9/dameng-entityframework-core@dameng-sql
+```
+
+在已经 clone 的仓库里本地安装：
+
+```bash
+npx skills add . --skill dameng-sql
+npx skills add ./skills --skill dameng-sql
+```
+
+列出该源中的 skill、跳过交互提示或装到用户全局目录：
+
+```bash
+npx skills add whynpc9/dameng-entityframework-core --list
+npx skills add whynpc9/dameng-entityframework-core --skill dameng-sql -y
+npx skills add -g whynpc9/dameng-entityframework-core --skill dameng-sql -y
+```
+
+该 skill 描述的是达梦 SQL 方言，不代表本提供程序已实现其中每一项能力。提供程序范围仍以 [兼容性矩阵](docs/compatibility.md) 为准。
+
 另请参阅：
 
 - [兼容性与验证](docs/compatibility.md)
 - [提供程序架构](docs/architecture.md)
 - [第三方声明](THIRD-PARTY-NOTICES.md)
+- [达梦 SQL Skill](skills/dameng-sql/SKILL.md)
