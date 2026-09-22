@@ -75,10 +75,13 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 `SaveChanges`。`RepeatableRead` 和 `Snapshot` 会在开始事务时被拒绝。
 
 迁移历史记录及 `DBMS_LOCK` 的获取/释放均有真实服务器测试。该锁是提供程序级的保守基线，
-要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。
+要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。历史表存在性查询 `SYS.SYSOBJECTS`。
+在 2026-09-22 的实例上，执行 `Database.Migrate()` 的账户需要 `SOI`；只执行生成脚本时 `RESOURCE` 足够。
 
-仅声明支持[兼容性矩阵](compatibility.md)中列出的迁移操作。幂等脚本在迁移历史记录守卫中
-使用已转义的动态 SQL，并以 DIsql `/` 终止块；它们不会使达梦 DDL 具备事务性。
+仅声明支持[兼容性矩阵](compatibility.md)中列出的迁移操作。`GenerateCreateScript()`、
+非幂等 `IMigrator.GenerateScript()` 和幂等脚本都已在该实例上执行。幂等脚本在迁移历史记录守卫中
+使用已转义的动态 SQL，并以 DIsql `/` 终止块；执行前要去掉 `/`，并把每个 `BEGIN ... END;` 作为一条命令。
+它们不会使达梦 DDL 具备事务性。给人看的 `dotnet ef` 步骤见 [迁移操作说明](migrations.md)；代理执行细节见 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。
 反向工程仍不在当前基线范围内。
 
 ## ADO.NET 边界

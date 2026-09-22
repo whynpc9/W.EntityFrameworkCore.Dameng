@@ -10,6 +10,8 @@
 - 在缺少相应实现和验证时，不得声称支持反向工程或幂等脚本。
 - 编写或审查达梦 SQL / DMSQL / 表空间 / 自增列时，读取并遵循
   `skills/dameng-sql/SKILL.md`（需要细节时再打开其 `references/`）。
+- 生成或执行 EF Core 达梦迁移、`Database.Migrate()` 或迁移 SQL 脚本时，读取并遵循
+  `skills/dameng-ef-migrations/SKILL.md`。给人看的 `dotnet ef` 步骤在 `docs/migrations.md`。
 
 ## 命令
 

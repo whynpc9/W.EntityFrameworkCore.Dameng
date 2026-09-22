@@ -7,5 +7,6 @@ TestResults/
 .DS_Store
 .idea/
 .vscode/
+.cursor/
 .env
 *.secrets.json

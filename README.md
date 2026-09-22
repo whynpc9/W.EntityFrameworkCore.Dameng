@@ -12,10 +12,11 @@
 
 真实数据库回归测试覆盖常规查询和 CRUD、标识列和序列生成的键、乐观并发、
 事务、保存点、已验证的隔离级别边界、`ExecuteUpdate` / `ExecuteDelete`、常见业务数据结构、
-迁移基础操作、迁移历史记录/锁、Unicode/CJK，以及
+迁移脚本的生成与执行、迁移历史记录/锁、Unicode/CJK，以及
 [兼容性矩阵](docs/compatibility.md)中列出的扩展映射。
-参考服务器上的最终验证通过了全部 44 项提供程序功能测试和全部 4 项提供程序自有的
-关系数据库冒烟测试。
+2026-09-17 的参考记录是 44 项功能测试，服务器版本记为 8.1.5.60。2026-09-22 在自报为
+`DM Database Server 64 V8`（`DB Version: 0x7000d`，构建号 `03134284604-20260707-335949-20228`）
+的实例上通过了全部 48 项功能测试和全部 4 项冒烟测试。这次实例没有返回 8.1.5.60。
 
 这并不是一个完整的 EF Core 提供程序：
 
@@ -77,9 +78,12 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 
 - 达梦 DDL 会隐式提交。即使 EF 已开启事务，包含 DDL 的迁移也不具备原子性。
 - EF 幂等脚本使用达梦 `EXECUTE IMMEDIATE` 和迁移历史记录守卫。它们属于
-  DIsql 风格脚本，其中 DMSQL 块以 `/` 结尾；包含客户端 `/` 批次分隔符的自定义
+  DIsql 风格脚本，其中 DMSQL 块以 `/` 结尾。应用执行时要去掉这一行，并把每个
+  `BEGIN ... END;` 作为一条命令；包含客户端 `/` 批次分隔符的自定义
   `SqlOperation` 文本会被拒绝，转义后动态命令字面量的 UTF-8 表示超过
-  32767 字节时也会被拒绝。
+  32767 字节时也会被拒绝。给人看的 `dotnet ef` 步骤见
+  [迁移操作说明](docs/migrations.md)；代理执行细节见
+  [迁移执行 skill](skills/dameng-ef-migrations/SKILL.md)。
 - 无界 `string` 和 `byte[]` 属性分别映射为 `NCLOB` 和 `BLOB`。
   键、索引、排序/分组以及其他需要普通可比较行内值的操作必须配置有限最大长度。
   实际可用的行内值和索引长度还取决于数据库页面及行存储配置。
@@ -99,6 +103,7 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 ```bash
 npx skills add whynpc9/dameng-entityframework-core
 npx skills add whynpc9/dameng-entityframework-core --skill dameng-sql
+npx skills add whynpc9/dameng-entityframework-core --skill dameng-ef-migrations
 npx skills add whynpc9/dameng-entityframework-core@dameng-sql
 ```
 
@@ -121,6 +126,7 @@ npx skills add -g whynpc9/dameng-entityframework-core --skill dameng-sql -y
 
 另请参阅：
 
+- [用 dotnet ef 执行达梦迁移](docs/migrations.md)
 - [兼容性与验证](docs/compatibility.md)
 - [提供程序架构](docs/architecture.md)
 - [第三方声明](THIRD-PARTY-NOTICES.md)
