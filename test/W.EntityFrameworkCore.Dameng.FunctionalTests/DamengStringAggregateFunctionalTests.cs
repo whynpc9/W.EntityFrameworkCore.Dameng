@@ -123,6 +123,45 @@ public sealed class DamengStringAggregateFunctionalTests
         });
 
     [DamengFact]
+    public async Task ListAggNullableOrderingMatchesClrInBothDirections()
+        => await AggregateStore.WithTableAsync(async store =>
+        {
+            var commands = new CommandCaptureInterceptor();
+            await using var context = CreateContext(store, commands);
+
+            var ascendingQuery = context.Rows
+                .Where(row => row.GroupId == 97)
+                .GroupBy(row => row.GroupId)
+                .Select(group => string.Join("|", group
+                    .OrderBy(row => row.NullableSortKey)
+                    .ThenBy(row => row.SecondarySortKey)
+                    .Select(row => row.Text)));
+            var ascendingSql = ascendingQuery.ToQueryString();
+            Assert.Equal(2, Count(ascendingSql, " NULLS FIRST"));
+            commands.Commands.Clear();
+            var ascending = await ascendingQuery.SingleAsync();
+            AssertServerAggregate(commands);
+            Assert.Equal(string.Join("|", QueryTranslationCases.ExpectedAggregateOrderingAscending
+                .Select(item => item.Value)), ascending);
+
+            var descendingQuery = context.Rows
+                .Where(row => row.GroupId == 97)
+                .GroupBy(row => row.GroupId)
+                .Select(group => string.Join("|", group
+                    .OrderByDescending(row => row.NullableSortKey)
+                    .ThenBy(row => row.SecondarySortKey)
+                    .Select(row => row.Text)));
+            var descendingSql = descendingQuery.ToQueryString();
+            Assert.Contains("DESC NULLS LAST", descendingSql, StringComparison.Ordinal);
+            Assert.Equal(1, Count(descendingSql, " NULLS FIRST"));
+            commands.Commands.Clear();
+            var descending = await descendingQuery.SingleAsync();
+            AssertServerAggregate(commands);
+            Assert.Equal(string.Join("|", QueryTranslationCases.ExpectedAggregateOrderingDescending
+                .Select(item => item.Value)), descending);
+        });
+
+    [DamengFact]
     public async Task OverflowFailsExplicitlyWithoutTruncating()
         => await AggregateStore.WithTableAsync(async store =>
         {
@@ -211,6 +250,9 @@ public sealed class DamengStringAggregateFunctionalTests
     private static void AssertServerAggregate(CommandCaptureInterceptor commands)
         => Assert.Contains(commands.Commands, command => command.Contains("LISTAGG(", StringComparison.Ordinal));
 
+    private static int Count(string text, string value)
+        => text.Split(value, StringSplitOptions.None).Length - 1;
+
     private static AggregateContext CreateContext(AggregateStore store, CommandCaptureInterceptor commands)
         => new(
             new DbContextOptionsBuilder<AggregateContext>()
@@ -244,6 +286,8 @@ public sealed class DamengStringAggregateFunctionalTests
                 entity.Property(row => row.Ordinal).HasColumnName("ORDINAL");
                 entity.Property(row => row.Text).HasColumnName("TEXT_VALUE").HasMaxLength(200);
                 entity.Property(row => row.LobText).HasColumnName("LOB_VALUE").HasColumnType("nclob");
+                entity.Property(row => row.NullableSortKey).HasColumnName("NULLABLE_SORT_KEY");
+                entity.Property(row => row.SecondarySortKey).HasColumnName("SECONDARY_SORT_KEY");
             });
     }
 
@@ -262,6 +306,8 @@ public sealed class DamengStringAggregateFunctionalTests
         public int Ordinal { get; set; }
         public string? Text { get; set; }
         public string? LobText { get; set; }
+        public int? NullableSortKey { get; set; }
+        public int? SecondarySortKey { get; set; }
     }
 
     private sealed class CommandCaptureInterceptor : DbCommandInterceptor
@@ -324,6 +370,7 @@ public sealed class DamengStringAggregateFunctionalTests
                 create.CommandText =
                     $"CREATE TABLE \"{TableName}\" (\"ID\" INT NOT NULL, \"GROUP_ID\" INT NOT NULL, " +
                     "\"ORDINAL\" INT NOT NULL, \"TEXT_VALUE\" NVARCHAR2(200), \"LOB_VALUE\" NCLOB, " +
+                    "\"NULLABLE_SORT_KEY\" INT, \"SECONDARY_SORT_KEY\" INT, " +
                     $"CONSTRAINT \"PK_{TableName}\" NOT CLUSTER PRIMARY KEY (\"ID\"))";
                 await create.ExecuteNonQueryAsync();
                 _created = true;
@@ -344,6 +391,12 @@ public sealed class DamengStringAggregateFunctionalTests
                 await InsertAsync(connection, id++, 5, ordinal, spacedValues[ordinal]);
             }
 
+            foreach (var fixture in QueryTranslationCases.AggregateOrderingCases)
+            {
+                await InsertAsync(connection, id++, 97, fixture.Id, fixture.Value,
+                    fixture.NullableSortKey, fixture.SecondarySortKey);
+            }
+
             for (var ordinal = 0; ordinal < 200; ordinal++)
             {
                 await InsertAsync(connection, id++, 98, ordinal, "x");
@@ -355,16 +408,21 @@ public sealed class DamengStringAggregateFunctionalTests
             }
         }
 
-        private async Task InsertAsync(DbConnection connection, int id, int group, int ordinal, string? value)
+        private async Task InsertAsync(
+            DbConnection connection, int id, int group, int ordinal, string? value,
+            int? nullableSortKey = null, int? secondarySortKey = null)
         {
             await using var command = connection.CreateCommand();
             command.CommandText =
-                $"INSERT INTO \"{TableName}\" (\"ID\", \"GROUP_ID\", \"ORDINAL\", \"TEXT_VALUE\") " +
-                "VALUES (:id, :group_id, :ordinal, :value)";
+                $"INSERT INTO \"{TableName}\" (\"ID\", \"GROUP_ID\", \"ORDINAL\", \"TEXT_VALUE\", " +
+                "\"NULLABLE_SORT_KEY\", \"SECONDARY_SORT_KEY\") " +
+                "VALUES (:id, :group_id, :ordinal, :value, :nullable_sort_key, :secondary_sort_key)";
             Add(command, "id", DbType.Int32, id);
             Add(command, "group_id", DbType.Int32, group);
             Add(command, "ordinal", DbType.Int32, ordinal);
             Add(command, "value", DbType.String, value ?? (object)DBNull.Value);
+            Add(command, "nullable_sort_key", DbType.Int32, nullableSortKey ?? (object)DBNull.Value);
+            Add(command, "secondary_sort_key", DbType.Int32, secondarySortKey ?? (object)DBNull.Value);
             await command.ExecuteNonQueryAsync();
         }
 

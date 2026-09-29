@@ -77,9 +77,9 @@ internal sealed class DamengStringAggregateMethodTranslator(
             }
 
             var separator = sqlExpressionFactory.ApplyTypeMapping(arguments[0], resultMapping);
-            if (IsLob(separator.TypeMapping))
+            if (!IsBoundedText(separator.TypeMapping))
             {
-                throw new NotSupportedException("Dameng string.Join aggregation requires a bounded text separator.");
+                throw new NotSupportedException("Dameng string.Join aggregation requires a bounded varying text separator.");
             }
 
             // CLR string.Join treats a null separator as empty.

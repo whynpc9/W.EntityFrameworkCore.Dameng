@@ -280,6 +280,38 @@ internal static class QueryTranslationCases
         new(4, [], "|", "", "")
     ]);
 
+    internal sealed record AggregateOrderingCase(
+        int Id,
+        int? NullableSortKey,
+        int SecondarySortKey,
+        string Value);
+
+    // CLR OrderBy places null keys first; OrderByDescending places them last.
+    // SecondarySortKey makes each primary-key group deterministic for ordered aggregates.
+    internal static IReadOnlyList<AggregateOrderingCase> AggregateOrderingCases { get; } = Array.AsReadOnly<AggregateOrderingCase>(
+    [
+        new(1, null, 20, "A"),
+        new(2, null, 10, "B"),
+        new(3, 1, 20, "C"),
+        new(4, 1, 10, "D"),
+        new(5, 2, 20, "E"),
+        new(6, 2, 10, "F"),
+        new(7, -1, 20, "G"),
+        new(8, -1, 10, "H")
+    ]);
+
+    internal static IReadOnlyList<AggregateOrderingCase> ExpectedAggregateOrderingAscending { get; } = Array.AsReadOnly(
+        AggregateOrderingCases
+            .OrderBy(row => row.NullableSortKey)
+            .ThenBy(row => row.SecondarySortKey)
+            .ToArray());
+
+    internal static IReadOnlyList<AggregateOrderingCase> ExpectedAggregateOrderingDescending { get; } = Array.AsReadOnly(
+        AggregateOrderingCases
+            .OrderByDescending(row => row.NullableSortKey)
+            .ThenBy(row => row.SecondarySortKey)
+            .ToArray());
+
     internal sealed record ContainsCase(
         int Id,
         int?[] Values,

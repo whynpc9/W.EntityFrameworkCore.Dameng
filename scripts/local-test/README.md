@@ -1,6 +1,40 @@
 # 本地达梦测试环境
 
-此工具从仓库根目录已忽略的 `.local-test.secrets.json` 读取管理员连接，仅用于首次创建独立、持久的测试表空间和用户。运行 `scripts/local-test/run.sh provision`。工具会从实例的 `PAGE()` 和 `V$DATAFILE` 推导数据文件大小与目录，随机生成名称和口令，授予测试用户 `RESOURCE`、`SOI`，并校验登录后的当前模式。新建表空间按页大小确定初始容量，数据文件自动增长每次 64 MB，最大 1024 MB。成功后，测试连接与容量策略保存在同一 secrets 文件；文件权限保持 `0600`。再次运行 `provision` 只校验现有连接，不调整已有表空间。
+此工具从仓库根目录已忽略的 `.local-test.secrets.json` 加载管理员与测试连接，按下文的初始化步骤创建独立、持久的测试表空间和用户。
+
+## 首次初始化
+
+在仓库根目录运行以下命令创建空模板。已有文件时会拒绝覆盖；Unix 下以 `0600` 权限写入，命令中不含真实凭据：
+
+```bash
+python3 - <<'PY'
+import json
+import os
+
+fd = os.open('.local-test.secrets.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+    if os.name == 'posix':
+        os.fchmod(stream.fileno(), 0o600)
+    json.dump({
+        'AdminConnectionString': '',
+        'ConnectionString': None,
+        'ProvisioningStatus': 'pending'
+    }, stream, indent=2)
+    stream.write('\n')
+PY
+```
+
+在本地编辑器中将 `AdminConnectionString` 填为完整的管理员连接字符串；初始化前保留
+`ProvisioningStatus` 为 `pending`、`ConnectionString` 为 JSON `null`。不要把凭据粘贴到
+命令行、提交或日志中。确认文件仍为 `0600` 且由 Git 忽略后运行：
+
+```bash
+scripts/local-test/run.sh provision
+```
+
+工具会从实例的 `PAGE()` 和 `V$DATAFILE` 推导数据文件大小与目录，随机生成名称和口令，授予测试用户 `RESOURCE`、`SOI`，并校验登录后的当前模式。新建表空间按页大小确定初始容量，数据文件自动增长每次 64 MB，最大 1024 MB。成功后，测试连接与容量策略保存在同一 secrets 文件，状态变为 `ready`；文件权限保持 `0600`。后续直接使用下文的测试入口，不要重新生成模板或重置状态。再次运行 `provision` 只校验现有连接，不调整已有表空间。
+
+## 维护与检查
 
 已创建的旧测试空间如仍为 `AUTOEXTEND OFF`，运行 `scripts/local-test/run.sh inspect` 先只读查看其容量、已用空间以及专用模式下表、序列和回收站对象计数。确定要为该专用空间启用有界增长时，显式运行 `scripts/local-test/run.sh grow`。工具会用管理员连接确认 secrets 记录的唯一表空间及数据文件实际对应，再仅对该文件设置 `AUTOEXTEND ON NEXT 64 MAXSIZE 1024`；不会清理对象、改变其他空间或实例全局参数。
 
@@ -10,7 +44,7 @@
 
 若创建中断或清理失败，状态会停在 `planned`、`tablespace_created`、`user_created`、`grants_applied` 或 `cleanup_required`。工具不会对这些状态自动重试或删除对象。应由管理员根据 secrets 中记录的 `OwnedTestUserName`、`OwnedTestTablespaceName` 和 `TestDatafilePath` 核对并精确处理残留。
 
-测试入口：
+## 测试入口
 
 ```bash
 scripts/local-test/run.sh test unit

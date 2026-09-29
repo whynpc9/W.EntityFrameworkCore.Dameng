@@ -47,7 +47,9 @@ internal sealed class DamengQuerySqlGenerator : QuerySqlGenerator
                     Sql.Append(", ");
                 }
 
-                Visit(aggregate.Orderings[index]);
+                var ordering = aggregate.Orderings[index];
+                Visit(ordering);
+                Sql.Append(ordering.IsAscending ? " NULLS FIRST" : " NULLS LAST");
             }
 
             Sql.Append(")");

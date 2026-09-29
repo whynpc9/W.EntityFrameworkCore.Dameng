@@ -24,13 +24,39 @@ public sealed class DamengStringAggregateTranslationTests
 
         Assert.Contains("LISTAGG(", sql, StringComparison.Ordinal);
         Assert.Contains("WITHIN GROUP (ORDER BY", sql, StringComparison.Ordinal);
-        Assert.Contains("DESC", sql, StringComparison.Ordinal);
+        Assert.Contains("DESC NULLS LAST", sql, StringComparison.Ordinal);
         Assert.Contains("CASE", sql, StringComparison.Ordinal);
         Assert.Contains("SUBSTR(", sql, StringComparison.Ordinal);
         Assert.Contains("LENGTH(", sql, StringComparison.Ordinal);
         Assert.Contains("COALESCE(", sql, StringComparison.Ordinal);
         Assert.Contains(" || ", sql, StringComparison.Ordinal);
         Assert.DoesNotContain("@", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ListAggUsesClrNullPlacementForEachOrderingKey()
+    {
+        using var context = CreateContext();
+        var ascending = context.Rows
+            .GroupBy(row => row.GroupId)
+            .Select(group => string.Join("|", group
+                .OrderBy(row => row.NullableSortKey)
+                .ThenBy(row => row.SecondarySortKey)
+                .Select(row => row.Text)))
+            .ToQueryString();
+        var descending = context.Rows
+            .GroupBy(row => row.GroupId)
+            .Select(group => string.Join("|", group
+                .OrderByDescending(row => row.NullableSortKey)
+                .ThenBy(row => row.SecondarySortKey)
+                .Select(row => row.Text)))
+            .ToQueryString();
+
+        Assert.Equal(2, Count(ascending, " NULLS FIRST"));
+        Assert.DoesNotContain("NULLS LAST", ascending, StringComparison.Ordinal);
+        Assert.Contains("DESC NULLS LAST", descending, StringComparison.Ordinal);
+        Assert.Equal(1, Count(descending, " NULLS FIRST"));
+        Assert.Equal(1, Count(descending, " NULLS LAST"));
     }
 
     [Fact]
@@ -87,6 +113,50 @@ public sealed class DamengStringAggregateTranslationTests
         Assert.Contains("order by a LOB", lobOrdering.ToString(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FixedLengthColumnSeparatorFailsTranslation(bool national)
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() =>
+        {
+            if (national)
+            {
+                _ = context.Rows
+                    .GroupBy(row => new { row.GroupId, row.FixedNationalSeparator })
+                    .Select(group => string.Join(group.Key.FixedNationalSeparator,
+                        group.Select(row => row.Text)))
+                    .ToQueryString();
+            }
+            else
+            {
+                _ = context.Rows
+                    .GroupBy(row => new { row.GroupId, row.FixedSeparator })
+                    .Select(group => string.Join(group.Key.FixedSeparator,
+                        group.Select(row => row.Text)))
+                    .ToQueryString();
+            }
+        });
+
+        Assert.Contains("bounded varying text separator", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NullableBoundedColumnSeparatorTranslates()
+    {
+        using var context = CreateContext();
+        var sql = context.Rows
+            .GroupBy(row => new { row.GroupId, row.VariableSeparator })
+            .Select(group => string.Join(group.Key.VariableSeparator,
+                group.Select(row => row.Text)))
+            .ToQueryString();
+
+        Assert.Contains("LISTAGG(", sql, StringComparison.Ordinal);
+        Assert.Contains("VARIABLE_SEPARATOR", sql, StringComparison.Ordinal);
+        Assert.Contains("COALESCE(", sql, StringComparison.Ordinal);
+    }
+
     private static AggregateContext CreateContext()
         => new(new DbContextOptionsBuilder<AggregateContext>()
             .UseDameng("Server=localhost;User=TEST;Password=unused")
@@ -110,6 +180,11 @@ public sealed class DamengStringAggregateTranslationTests
                 entity.Property(row => row.Text).HasColumnName("TEXT_VALUE").HasMaxLength(100);
                 entity.Property(row => row.LobText).HasColumnName("LOB_VALUE").HasColumnType("nclob");
                 entity.Property(row => row.FixedText).HasColumnName("FIXED_TEXT").HasColumnType("CHAR(4)");
+                entity.Property(row => row.FixedSeparator).HasColumnName("FIXED_SEPARATOR").HasColumnType("CHAR(4)");
+                entity.Property(row => row.FixedNationalSeparator).HasColumnName("FIXED_NATIONAL_SEPARATOR").HasColumnType("NCHAR(4)");
+                entity.Property(row => row.VariableSeparator).HasColumnName("VARIABLE_SEPARATOR").HasColumnType("NVARCHAR2(8)");
+                entity.Property(row => row.NullableSortKey).HasColumnName("NULLABLE_SORT_KEY");
+                entity.Property(row => row.SecondarySortKey).HasColumnName("SECONDARY_SORT_KEY");
             });
     }
 
@@ -121,5 +196,10 @@ public sealed class DamengStringAggregateTranslationTests
         public string? Text { get; set; }
         public string? LobText { get; set; }
         public string? FixedText { get; set; }
+        public string? FixedSeparator { get; set; }
+        public string? FixedNationalSeparator { get; set; }
+        public string? VariableSeparator { get; set; }
+        public int? NullableSortKey { get; set; }
+        public int SecondarySortKey { get; set; }
     }
 }

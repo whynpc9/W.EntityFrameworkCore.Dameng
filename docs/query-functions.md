@@ -71,8 +71,10 @@ var names = context.Items
 ```
 
 支持 IEnumerable<string> 的 `string.Join`（string 分隔符）和 `string.Concat`，
-被聚合的表达式必须是有界可变文本映射，例如 `HasMaxLength` 的 NVARCHAR2。
-组内 Where 和显式排序保留；null/空元素不会丢失其分隔符位置，null 分隔符按空串处理。
+被聚合的表达式与已有类型映射的分隔符都必须是有界可变文本映射，例如 `HasMaxLength`
+的 NVARCHAR2；固定 CHAR/NCHAR 列不能作为分隔符。常量和尚未映射的参数使用结果文本映射。
+组内 Where 和显式排序保留，排序键升序显式使用 `NULLS FIRST`、降序使用 `NULLS LAST`；
+null/空元素不会丢失其分隔符位置，null 分隔符按空串处理。
 无显式排序时不承诺字符串顺序。Distinct、LOB、固定 CHAR/NCHAR 和 LOB 排序明确拒绝。
 
 SQL 使用 LISTAGG；过长结果报数据库错误，不会截短。Join 为保持空元素位置会计算
