@@ -17,12 +17,41 @@ internal sealed class DamengLobQueryRewriter(
         {
             SqlBinaryExpression binaryExpression
                 => VisitSqlBinary(binaryExpression),
+            SqlFunctionExpression functionExpression
+                => VisitSqlFunction(functionExpression),
             SelectExpression selectExpression
                 => VisitSelect(selectExpression),
             SetOperationBase setOperation
                 => VisitSetOperation(setOperation),
             _ => base.VisitExtension(node)
         };
+
+    private SqlFunctionExpression VisitSqlFunction(SqlFunctionExpression function)
+    {
+        var visited = (SqlFunctionExpression)base.VisitExtension(function);
+        if (!visited.IsBuiltIn
+            || !string.Equals(visited.Name, "COALESCE", StringComparison.OrdinalIgnoreCase)
+            || visited.Type != typeof(string)
+            || GetLobKind(visited.TypeMapping) != LobKind.Text
+            || visited.Arguments is not { Count: > 1 } arguments
+            || !arguments.Any(argument => GetLobKind(argument.TypeMapping) == LobKind.Text))
+        {
+            return visited;
+        }
+
+        var lobMapping = visited.TypeMapping!;
+        var rewrittenArguments = arguments.Select(argument =>
+            argument.Type == typeof(string)
+                && (GetLobKind(argument.TypeMapping) != LobKind.Text
+                    || argument is SqlConstantExpression)
+                ? sqlExpressionFactory.Convert(argument, typeof(string), lobMapping)
+                : argument).ToArray();
+
+        // The string literal in COALESCE(lob, '') makes Dameng evaluate a
+        // bounded text result. Casting the fallback inside COALESCE keeps the
+        // result as a LOB before it participates in concatenation.
+        return visited.Update(visited.Instance, rewrittenArguments);
+    }
 
     private SqlExpression VisitSqlBinary(SqlBinaryExpression binary)
     {

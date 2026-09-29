@@ -11,6 +11,12 @@ internal sealed class DamengParameterBasedSqlProcessor(
     RelationalParameterBasedSqlProcessorParameters parameters)
     : RelationalParameterBasedSqlProcessor(dependencies, parameters)
 {
+    protected override Expression ProcessSqlNullability(
+        Expression queryExpression,
+        ParametersCacheDecorator parametersDecorator)
+        => new DamengSqlNullabilityProcessor(Dependencies, Parameters)
+            .Process(queryExpression, parametersDecorator);
+
     public override Expression Process(
         Expression queryExpression,
         ParametersCacheDecorator parametersDecorator)

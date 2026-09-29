@@ -31,6 +31,14 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 
 绝不能提交或打印连接字符串。跳过数据库测试套件不能作为发布证据。
 
+本地回归统一使用 `scripts/local-test/run.sh test <unit|functional|specification|admin|probes|all>`。
+该入口从 Git 忽略的 `.local-test.secrets.json` 加载连接，普通测试使用持久测试用户；
+`admin` 仅运行自行创建并精确清理临时用户/表空间的迁移脚本测试。
+`all` 包含管理员脚本通道，但不包含语义探针。普通测试可用已有的
+`DAMENG_TEST_CONNECTION_STRING` 覆盖测试连接，不能因此把普通测试提升为管理员。
+不要打印 secrets 内容，也不要在每次运行时重新创建测试空间。
+环境初始化、恢复与证据位置见 `scripts/local-test/README.md`。
+
 ## 提供程序不变量
 
 - 按组成部分引用标识符，并生成 `:name` 参数，绝不能生成 `@name`。

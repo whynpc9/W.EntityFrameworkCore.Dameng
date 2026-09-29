@@ -356,8 +356,6 @@ public sealed class DamengQueryTranslationTests
     }
 
     [Theory]
-    [InlineData("Year")]
-    [InlineData("Month")]
     [InlineData("Offset")]
     [InlineData("UtcDateTime")]
     [InlineData("DateTime")]
@@ -372,12 +370,6 @@ public sealed class DamengQueryTranslationTests
         AssertQueryCannotBeTranslated(
             () => member switch
             {
-                "Year" => context.Entities
-                    .Where(entity => entity.OccurredAtOffset.Year == 2026)
-                    .ToQueryString(),
-                "Month" => context.Entities
-                    .Where(entity => entity.OccurredAtOffset.Month == 7)
-                    .ToQueryString(),
                 "Offset" => context.Entities
                     .Where(entity => entity.OccurredAtOffset.Offset == TimeSpan.FromHours(8))
                     .ToQueryString(),
@@ -429,7 +421,6 @@ public sealed class DamengQueryTranslationTests
     [InlineData("IsNullOrWhiteSpace")]
     [InlineData("PadLeft")]
     [InlineData("PadRight")]
-    [InlineData("TrimChars")]
     [InlineData("Split")]
     [InlineData("CompareOrdinal")]
     [InlineData("ContainsOrdinalIgnoreCase")]
@@ -453,9 +444,6 @@ public sealed class DamengQueryTranslationTests
                 "PadRight" => context.Entities
                     .Where(entity => entity.Name.PadRight(10, '*') == "达梦******")
                     .ToQueryString(),
-                "TrimChars" => context.Entities
-                    .Where(entity => entity.Name.Trim(' ', '\t') == "达梦")
-                    .ToQueryString(),
                 "Split" => context.Entities
                     .Where(entity => entity.Name.Split(',').Length > 1)
                     .ToQueryString(),
@@ -478,7 +466,6 @@ public sealed class DamengQueryTranslationTests
             },
             member switch
             {
-                "TrimChars" => "Trim",
                 "CompareOrdinal" => "Compare",
                 "ContainsOrdinalIgnoreCase" => "Contains",
                 "StartsWithOrdinal" => "StartsWith",

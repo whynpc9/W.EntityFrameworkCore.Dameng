@@ -14,12 +14,12 @@
 实时测试面向现有数据库和当前用户模式：
 
 ```bash
-export DAMENG_TEST_CONNECTION_STRING='<完整的 DM.DmProvider 连接字符串>'
-dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFrameworkCore.Dameng.Specification.Tests.csproj
+scripts/local-test/run.sh test specification
 ```
 
 任何测试都不会创建或删除数据库、用户或模式。每项实时测试都会创建名称唯一的表，
 并在 `finally` 中仅删除该表。连接字符串从进程环境读取，绝不能记录到日志中。
+统一入口从 Git 忽略的本地 secrets 加载测试账号，详见[本地测试环境](../../scripts/local-test/README.md)。
 
 ## 跳过分类
 

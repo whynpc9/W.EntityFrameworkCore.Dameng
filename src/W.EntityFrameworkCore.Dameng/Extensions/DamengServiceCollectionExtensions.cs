@@ -50,6 +50,7 @@ public static class DamengServiceCollectionExtensions
                 DamengParameterBasedSqlProcessorFactory>()
             .TryAdd<IMemberTranslatorProvider, DamengMemberTranslatorProvider>()
             .TryAdd<IMethodCallTranslatorProvider, DamengMethodCallTranslatorProvider>()
+            .TryAdd<IAggregateMethodCallTranslatorProvider, DamengAggregateMethodCallTranslatorProvider>()
             .TryAdd<IUpdateSqlGenerator, DamengUpdateSqlGenerator>()
             .TryAdd<IModificationCommandBatchFactory, DamengModificationCommandBatchFactory>()
             .TryAddCoreServices();

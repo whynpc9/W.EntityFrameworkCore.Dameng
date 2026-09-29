@@ -6,7 +6,7 @@
 当前预览版基线面向：
 
 - .NET 10 和 Entity Framework Core 10.0.x；
-- 达梦 DM8；自动化验证使用的参考服务器版本为 8.1.5.60，这并非声明的最低服务器版本；
+- 达梦 DM8；各轮实例版本记录见兼容性矩阵，不声明最低服务器版本；
 - `DM.DmProvider` 8.3.1.47463，使用该包随附的 `net9.0` 资产；
 - 现有数据库和用户模式。本提供程序有意不负责创建或删除物理数据库。
 
@@ -17,6 +17,10 @@
 2026-09-17 的参考记录是 44 项功能测试，服务器版本记为 8.1.5.60。2026-09-22 在自报为
 `DM Database Server 64 V8`（`DB Version: 0x7000d`，构建号 `03134284604-20260707-335949-20228`）
 的实例上通过了全部 48 项功能测试和全部 4 项冒烟测试。这次实例没有返回 8.1.5.60。
+
+2026-09-29 的查询扩展工作树经 PR 审查修订后，在独立测试空间完成 261 项单元、72 项普通功能、
+4 项规范冒烟和 4 项管理员迁移脚本测试，全部通过且无跳过。17 项候选能力探针的前轮结果单独记录。
+交付范围与延期项目见[实施台账](docs/query-translation-execution.md)，这不是新版本发布声明。
 
 这并不是一个完整的 EF Core 提供程序：
 
@@ -63,15 +67,18 @@ dotnet build W.EntityFrameworkCore.Dameng.slnx --no-restore
 dotnet test test/W.EntityFrameworkCore.Dameng.Tests/W.EntityFrameworkCore.Dameng.Tests.csproj --no-build
 ```
 
-真实数据库测试只读取一个机密环境变量：
+本地真实数据库回归统一使用已配置的持久测试空间。入口从 Git 忽略的
+`.local-test.secrets.json` 加载连接，并只通过子进程环境传给测试：
 
 ```bash
-export DAMENG_TEST_CONNECTION_STRING='<完整的 DM.DmProvider 连接字符串>'
-dotnet test test/W.EntityFrameworkCore.Dameng.FunctionalTests/W.EntityFrameworkCore.Dameng.FunctionalTests.csproj --no-build
-dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFrameworkCore.Dameng.Specification.Tests.csproj --no-build
+scripts/local-test/run.sh test all
 ```
 
-缺少该变量时，数据库测试会被明确跳过。跳过的测试不能作为真实数据库或发布证据。
+`all` 包含单元、普通功能、规范冒烟和管理员迁移脚本测试；候选 SQL 语义探针单独用
+`scripts/local-test/run.sh test probes` 执行，不计入功能通过率。详见
+[本地测试入口](scripts/local-test/README.md)。普通测试可通过已有的
+`DAMENG_TEST_CONNECTION_STRING` 覆盖测试连接；缺配置时入口会失败。
+直接运行测试项目且缺环境变量时仍会跳过，跳过不能作为真实数据库或发布证据。
 绝不能提交或打印连接字符串。
 
 ## 重要运行时边界
@@ -128,6 +135,10 @@ npx skills add -g whynpc9/dameng-entityframework-core --skill dameng-sql -y
 
 - [用 dotnet ef 执行达梦迁移](docs/migrations.md)
 - [兼容性与验证](docs/compatibility.md)
+- [查询翻译后续扩展计划](docs/query-translation-extension-plan.md)
+- [查询函数与边界](docs/query-functions.md)
+- [查询翻译实施台账](docs/query-translation-execution.md)
+- [本地达梦测试环境](scripts/local-test/README.md)
 - [提供程序架构](docs/architecture.md)
 - [第三方声明](THIRD-PARTY-NOTICES.md)
 - [达梦 SQL Skill](skills/dameng-sql/SKILL.md)
