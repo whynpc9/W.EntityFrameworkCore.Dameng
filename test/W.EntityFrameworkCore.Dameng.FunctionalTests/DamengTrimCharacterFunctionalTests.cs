@@ -201,51 +201,63 @@ public sealed class DamengTrimCharacterFunctionalTests
         {
             (false, "TrimCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.Trim('*')
+                Id = entity.Id,
+                Value = entity.ShortText!.Trim('*')
             }),
             (false, "TrimStartCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.TrimStart('*')
+                Id = entity.Id,
+                Value = entity.ShortText!.TrimStart('*')
             }),
             (false, "TrimEndCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.TrimEnd('*')
+                Id = entity.Id,
+                Value = entity.ShortText!.TrimEnd('*')
             }),
             (false, "TrimCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.Trim(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.ShortText!.Trim(new[] { '*', '.' })
             }),
             (false, "TrimStartCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.TrimStart(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.ShortText!.TrimStart(new[] { '*', '.' })
             }),
             (false, "TrimEndCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.ShortText!.TrimEnd(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.ShortText!.TrimEnd(new[] { '*', '.' })
             }),
             (true, "TrimCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.Trim('*')
+                Id = entity.Id,
+                Value = entity.LargeText!.Trim('*')
             }),
             (true, "TrimStartCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.TrimStart('*')
+                Id = entity.Id,
+                Value = entity.LargeText!.TrimStart('*')
             }),
             (true, "TrimEndCharacter") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.TrimEnd('*')
+                Id = entity.Id,
+                Value = entity.LargeText!.TrimEnd('*')
             }),
             (true, "TrimCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.Trim(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.LargeText!.Trim(new[] { '*', '.' })
             }),
             (true, "TrimStartCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.TrimStart(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.LargeText!.TrimStart(new[] { '*', '.' })
             }),
             (true, "TrimEndCharacters") => context.Entities.Select(entity => new TrimResult
             {
-                Id = entity.Id, Value = entity.LargeText!.TrimEnd(new[] { '*', '.' })
+                Id = entity.Id,
+                Value = entity.LargeText!.TrimEnd(new[] { '*', '.' })
             }),
             _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
         };

@@ -38,12 +38,18 @@ public sealed class DamengStringAggregateFunctionalTests
             await AssertJoinAsync(context, commands, null,
                 new Dictionary<int, string>
                 {
-                    [1] = "甲乙", [2] = "", [3] = "甲乙甲", [5] = " x  "
+                    [1] = "甲乙",
+                    [2] = "",
+                    [3] = "甲乙甲",
+                    [5] = " x  "
                 });
             await AssertJoinAsync(context, commands, string.Empty,
                 new Dictionary<int, string>
                 {
-                    [1] = "甲乙", [2] = "", [3] = "甲乙甲", [5] = " x  "
+                    [1] = "甲乙",
+                    [2] = "",
+                    [3] = "甲乙甲",
+                    [5] = " x  "
                 });
 
             var longButValidSeparator = new string('雪', 40);

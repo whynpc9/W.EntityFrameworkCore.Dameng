@@ -23,15 +23,15 @@ public sealed class DamengBasicStringTranslationTests
                 .Select(entity => entity.Id).ToQueryString();
         var projectedSql = lob
             ? context.Entities.Select(entity => new
-                {
-                    entity.Id,
-                    IsEmpty = string.IsNullOrEmpty(entity.LargeText)
-                }).ToQueryString()
+            {
+                entity.Id,
+                IsEmpty = string.IsNullOrEmpty(entity.LargeText)
+            }).ToQueryString()
             : context.Entities.Select(entity => new
-                {
-                    entity.Id,
-                    IsEmpty = string.IsNullOrEmpty(entity.ShortText)
-                }).ToQueryString();
+            {
+                entity.Id,
+                IsEmpty = string.IsNullOrEmpty(entity.ShortText)
+            }).ToQueryString();
 
         var column = lob ? "\"LARGE_TEXT\"" : "\"SHORT_TEXT\"";
         Assert.Contains(column, filteredSql, StringComparison.Ordinal);

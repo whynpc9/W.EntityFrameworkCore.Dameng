@@ -56,7 +56,7 @@ internal sealed class DamengListAggExpression : SqlExpression
         return Update(value, separator, orderings);
     }
 
-    #pragma warning disable EF9100 // EF Core's type-mapping quoting utility is required for provider expressions.
+#pragma warning disable EF9100 // EF Core's type-mapping quoting utility is required for provider expressions.
     public override Expression Quote()
         => Expression.New(
             QuotingConstructor,
@@ -64,7 +64,7 @@ internal sealed class DamengListAggExpression : SqlExpression
             Separator.Quote(),
             Expression.NewArrayInit(typeof(OrderingExpression), Orderings.Select(ordering => ordering.Quote())),
             RelationalExpressionQuotingUtilities.QuoteTypeMapping(TypeMapping));
-    #pragma warning restore EF9100
+#pragma warning restore EF9100
 
     protected override void Print(ExpressionPrinter expressionPrinter)
     {
