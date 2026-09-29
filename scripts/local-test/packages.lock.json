@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "DM.DmProvider": {
+        "type": "Direct",
+        "requested": "[8.3.1.47463, )",
+        "resolved": "8.3.1.47463",
+        "contentHash": "51FUZEWXMLp95+vFgoXiZ0Bt69DpZTmk4pDG+971x3igTs57n9EmyONW8vD/bEf43PlOn/BuQk4PGyTfZ/zBKw=="
+      }
+    }
+  }
+}

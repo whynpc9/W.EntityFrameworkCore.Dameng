@@ -10,6 +10,9 @@ namespace W.EntityFrameworkCore.Dameng.Query.Internal;
 internal sealed class DamengStringMethodTranslator(ISqlExpressionFactory sqlExpressionFactory)
     : IMethodCallTranslator
 {
+    private static readonly MethodInfo IsNullOrEmpty
+        = typeof(string).GetRuntimeMethod(nameof(string.IsNullOrEmpty), [typeof(string)])!;
+
     private static readonly MethodInfo Contains
         = typeof(string).GetRuntimeMethod(nameof(string.Contains), [typeof(string)])!;
 
@@ -49,15 +52,77 @@ internal sealed class DamengStringMethodTranslator(ISqlExpressionFactory sqlExpr
     private static readonly MethodInfo TrimEnd
         = typeof(string).GetRuntimeMethod(nameof(string.TrimEnd), Type.EmptyTypes)!;
 
+    private static readonly MethodInfo TrimCharacter
+        = typeof(string).GetRuntimeMethod(nameof(string.Trim), [typeof(char)])!;
+
+    private static readonly MethodInfo TrimStartCharacter
+        = typeof(string).GetRuntimeMethod(nameof(string.TrimStart), [typeof(char)])!;
+
+    private static readonly MethodInfo TrimEndCharacter
+        = typeof(string).GetRuntimeMethod(nameof(string.TrimEnd), [typeof(char)])!;
+
+    private static readonly MethodInfo TrimCharacters
+        = typeof(string).GetRuntimeMethod(nameof(string.Trim), [typeof(char[])])!;
+
+    private static readonly MethodInfo TrimStartCharacters
+        = typeof(string).GetRuntimeMethod(nameof(string.TrimStart), [typeof(char[])])!;
+
+    private static readonly MethodInfo TrimEndCharacters
+        = typeof(string).GetRuntimeMethod(nameof(string.TrimEnd), [typeof(char[])])!;
+
     public SqlExpression? Translate(
         SqlExpression? instance,
         MethodInfo method,
         IReadOnlyList<SqlExpression> arguments,
         IDiagnosticsLogger<DbLoggerCategory.Query> logger)
     {
+        if (method == IsNullOrEmpty)
+        {
+            var value = arguments[0];
+            var length = Function(
+                "LENGTH",
+                [value],
+                typeof(int),
+                typeMapping: null,
+                [true]);
+
+            // Dameng's text equality can treat a string of spaces as equal to ''.
+            // Length preserves the distinction required by string.IsNullOrEmpty.
+            return sqlExpressionFactory.OrElse(
+                sqlExpressionFactory.IsNull(value),
+                sqlExpressionFactory.Equal(length, sqlExpressionFactory.Constant(0)));
+        }
+
         if (instance is null)
         {
             return null;
+        }
+
+        if (method == TrimCharacter || method == TrimStartCharacter || method == TrimEndCharacter
+            || method == TrimCharacters || method == TrimStartCharacters || method == TrimEndCharacters)
+        {
+            if (arguments.Count != 1 || !TryGetTrimCharacters(arguments[0], out var trimCharacters))
+            {
+                return null;
+            }
+
+            var characters = sqlExpressionFactory.Constant(trimCharacters);
+            if (method == TrimStartCharacter || method == TrimStartCharacters)
+            {
+                return Function("LTRIM", [instance, characters], typeof(string),
+                    instance.TypeMapping, [true, false]);
+            }
+
+            if (method == TrimEndCharacter || method == TrimEndCharacters)
+            {
+                return Function("RTRIM", [instance, characters], typeof(string),
+                    instance.TypeMapping, [true, false]);
+            }
+
+            var leftTrimmed = Function("LTRIM", [instance, characters], typeof(string),
+                instance.TypeMapping, [true, false]);
+            return Function("RTRIM", [leftTrimmed, characters], typeof(string),
+                instance.TypeMapping, [true, false]);
         }
 
         if (method == Contains || method == StartsWith || method == EndsWith)
@@ -202,4 +267,18 @@ internal sealed class DamengStringMethodTranslator(ISqlExpressionFactory sqlExpr
         SqlExpression expression,
         RelationalTypeMapping? typeMapping)
         => sqlExpressionFactory.ApplyTypeMapping(expression, typeMapping);
+
+    private static bool TryGetTrimCharacters(SqlExpression argument, out string characters)
+    {
+        characters = argument switch
+        {
+            SqlConstantExpression { Value: char character }
+                when !char.IsSurrogate(character) => character.ToString(),
+            SqlConstantExpression { Value: char[] values }
+                when values.Length > 0 && !values.Any(char.IsSurrogate) => new string(values),
+            _ => string.Empty
+        };
+
+        return characters.Length > 0;
+    }
 }

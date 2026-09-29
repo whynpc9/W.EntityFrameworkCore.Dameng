@@ -25,6 +25,38 @@ internal sealed class DamengQuerySqlGenerator : QuerySqlGenerator
                 : base.GetOperator(binaryExpression);
 
     /// <inheritdoc />
+    protected override Expression VisitExtension(Expression extensionExpression)
+    {
+        if (extensionExpression is not DamengListAggExpression aggregate)
+        {
+            return base.VisitExtension(extensionExpression);
+        }
+
+        Sql.Append("LISTAGG(");
+        Visit(aggregate.Value);
+        Sql.Append(", ");
+        Visit(aggregate.Separator);
+        Sql.Append(")");
+        if (aggregate.Orderings.Count > 0)
+        {
+            Sql.Append(" WITHIN GROUP (ORDER BY ");
+            for (var index = 0; index < aggregate.Orderings.Count; index++)
+            {
+                if (index > 0)
+                {
+                    Sql.Append(", ");
+                }
+
+                Visit(aggregate.Orderings[index]);
+            }
+
+            Sql.Append(")");
+        }
+
+        return aggregate;
+    }
+
+    /// <inheritdoc />
     protected override void GeneratePseudoFromClause()
     {
         // Dameng accepts SELECT statements without a FROM clause.

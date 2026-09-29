@@ -2,7 +2,13 @@
 
 ## 证据术语
 
-本矩阵记录截至 2026-09-22 的仓库基线。2026-09-17 的参考记录仍写明服务器版本 8.1.5.60。2026-09-22 的全量功能测试和迁移脚本测试运行在另一轮真实库上，该实例自报为 `DM Database Server 64 V8`、`DB Version: 0x7000d`、构建号 `03134284604-20260707-335949-20228`，`PAGE()` 为 32768，`COMPATIBLE_MODE` 为 0。这次运行没有返回 8.1.5.60，文档不把两个版本号当成同一个事实。
+原有矩阵记录截至 2026-09-22 的仓库基线。2026-09-17 的参考记录仍写明服务器版本 8.1.5.60。2026-09-22 的全量功能测试和迁移脚本测试运行在另一轮真实库上，该实例自报为 `DM Database Server 64 V8`、`DB Version: 0x7000d`、构建号 `03134284604-20260707-335949-20228`，`PAGE()` 为 32768，`COMPATIBLE_MODE` 为 0。这次运行没有返回 8.1.5.60，文档不把两个版本号当成同一个事实。
+
+2026-09-29 的查询增量另在用户指定实例的独立测试用户/表空间验证。只读环境记录为
+`DM Database Server 64 V8` / `DM Database Server x64 V8`、`PAGE()=32768`、
+`COMPATIBLE_MODE=0`、`LENGTH_IN_CHAR=0`、`GLOBAL_CHARSET=1`、`CALC_AS_DECIMAL=0`、
+`JSON_MODE=0`、`CLOB_MAX_CALC_LEN=20480`。没有将旧实例版本或构建号套用到新实例。
+工作包、探针与回归结果见[实施台账](query-translation-execution.md)；探针成功执行不等于功能验收。
 
 - **真实环境已验证**：自动化提供程序测试已在达梦服务器上通过。版本标识以文首两轮记录为准。
 - **单元级已验证**：确定性的提供程序测试在无服务器环境下覆盖 SQL、元数据或服务行为。
@@ -24,9 +30,14 @@
 | 标识符与参数 | 真实环境已验证 | 使用双引号引用标识符和 `:name` 参数；不生成 `@name` |
 | 标量/无 FROM 查询 | 服务器探测 + 单元级已验证 | 服务器接受不含 `FROM` 的 `SELECT`；提供程序 SQL 生成和布尔值/搜索条件转换具有确定性测试 |
 | 筛选与分页 | 真实环境已验证 | 参数化谓词、排序、`Skip`/`Take`、`OFFSET … FETCH`、`Any`、租户和软删除筛选器 |
-| 字符串翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖 `Trim`、`Length`、`Contains`、`StartsWith`、`EndsWith`，以及默认的 `string.Compare` / `CompareTo`（生成 SQL 比较运算符，语义跟随达梦排序规则，而不是 .NET 区域性）。`IndexOf`、`Replace`、大小写转换、子字符串及其他 trim 结构的生成 SQL 有单元测试覆盖。`IsNullOrWhiteSpace`、`PadLeft`/`PadRight`、带 `char[]` 的 `Trim`、`Split`，以及带 `StringComparison` 的 `Contains`/`StartsWith`/`EndsWith`/`IndexOf`/`Compare` 无法翻译 |
-| 日期/时间与 GUID 翻译 | 部分支持 / 子集真实环境已验证 | 真实执行覆盖 `DateTime` 年/月提取、整数 `AddDays`、`DateTimeOffset` 列比较和 `Guid.NewGuid()`/`NEWID()`；其他已实现的 `DateTime` 成员和整数 `DATEADD` 单位具有生成 SQL 测试。`DateTimeOffset` 的日期部件、`Offset`、`UtcDateTime`、`Now`/`UtcNow` 和 `Add*` 无法翻译 |
-| 小数 `DateTime.Add*` | 无法无损翻译时不支持 | 参数化或非整数 double 参数不会被静默截断；EF 会报告无法翻译的表达式 |
+| 字符串翻译 | 部分支持 / 子集真实环境已验证 | 原有真实执行覆盖 `Trim`、`Length`、`Contains`、`StartsWith`、`EndsWith`，以及默认的 `string.Compare` / `CompareTo`（比较遵循达梦排序规则）。2026-09-29 新增验证：`IsNullOrEmpty` 按长度区分空串与纯空格；二/三/四个 string 参数的 `Concat`、字符串 `+` 保留 null 视为空串语义；常量 BMP char 和非空常量 BMP char[] 的 `Trim`/`TrimStart`/`TrimEnd` 在有界文本、NCLOB 上执行。动态/null/空字符数组及 surrogate 修剪字符继续拒绝。无参数 Trim 的历史实现不构成全部 Unicode 空白保证。`IndexOf`、`Replace`、大小写和 Substring 保留原证据范围；`IsNullOrWhiteSpace`、Padding、Split 和 StringComparison 重载仍无法翻译 |
+| LOB 拼接与空值回退 | 真实环境已验证 / 有服务器边界 | 修正 `COALESCE(NCLOB, '')` 的内部回退类型，显式转换空串为 NCLOB，避免在拼接前降为有界文本。20,000 字中文 NCLOB 拼接完整回读；普通长列回读、`?? ""`、双方 null 和两种 EF 空值模式具有回归。不承诺所有 LOB 运算或任意长度均可执行 |
+| 数值函数翻译 | 部分支持 / 真实环境已验证 | 限可表示的有限值；NaN/正负 Infinity 参数在本实例执行时报数据溢出。`Math.Abs`/`Sign` 的 int、long、decimal、double 重载，`Floor`/`Ceiling` 的 decimal、double 重载；`Exp`、`Log`、二参数 `Log`、`Log10`、`Pow`、`Sqrt` 的 double 重载。int Abs 显式恢复 int 范围，最小有符号整数取绝对值报溢出；decimal 不经过 double。对数底数会按达梦顺序交换。正常定义域有结果验证；域外或溢出可能抛数据库错误，不等同 CLR NaN/Infinity。Round、三角函数、MathF 与未列重载不在本批支持范围 |
+| 日期分桶函数 | 真实环境已验证 / 子集 | `EF.Functions.DamengTruncateHour`、`DamengTruncateMinute`、`DamengStartOfIsoWeek`、`DamengQuarter`，各含 DateTime/DateTime? 重载。ISO 周返回所在周的周一零点日期；null 输入返回 null。覆盖跨年、闰日、四季度及筛选/分组/排序/投影。参考实例拒绝 TRUNC 的 SS 掩码，未发布秒截断 API |
+| 字符串分组聚合 | 部分支持 / 真实环境已验证 | `string.Join(string, IEnumerable<string>)` 和 `string.Concat(IEnumerable<string>)` 的分组聚合，selector 必须映射为有界可变文本。保留显式组内排序、筛选、null/空元素的位置；null 分隔符视为空串，筛选后空集合和全 null 的 Concat 返回空串。Join 用分隔符前缀补偿 LISTAGG 跳过空元素的差异。Distinct、LOB、固定 CHAR/NCHAR 及 LOB 排序明确拒绝；无显式排序不承诺顺序，长度溢出报数据库错误，不截短。Join 中间结果多一个分隔符，可能先于最终 CLR 结果触及服务器长度边界 |
+| 日期/时间与 GUID 翻译 | 部分支持 / 子集真实环境已验证 | 原有真实执行覆盖 `DateTime` 年/月、整数 AddDays、DateTimeOffset 列比较和 Guid.NewGuid()/NEWID()；其他 DateTime 成员和整数 DATEADD 保留原单元证据。2026-09-29 新增 DateTimeOffset 的 Year/Month/Day/Hour/Minute/Second 真库回归，按列保存的原偏移提取本地部件，覆盖同瞬间不同日历日期及可空值。Offset、UtcDateTime、DateTime、Now/UtcNow 和 Add* 仍不翻译；本批不承诺 100ns 精度或时区转换 |
+| 集合 Contains | 有界回归范围真实环境已验证 | 常量/参数集合，参数集合大小 0/1/499/500/501/998/999/1000/2000，含 null、重复、否定、双集合与普通筛选、排序分页和同查询 1→1000→1 重用。每次查询一条命令。本实例证据不支持写死 500 个 IN 元素或 999 个总参数限制，因此本轮未增加拆分或上限；2,000 只是已测样本，不是最大容量或性能保证 |
+| 小数 `DateTime.Add*` | 无法无损翻译时不支持 | 参数化或非整数 double 参数不会被静默截断；EF 会报告无法翻译。2026-09-29 候选日期算术和 INTERVAL 路径的第七位小数未满足保真要求，服务器文本输出也未保留探针中的 100ns 增量，本轮未扩大支持 |
 | 跟踪式 CRUD | 真实环境已验证 | Unicode 插入/读取/更新/删除、null、转换器、标识列键回读和受影响行报告 |
 | 标识列 | 真实环境已验证 / 部分方面单元级已验证 | 生成的键及通过 `SCOPE_IDENTITY()` 回读已在服务器执行；约定和显式种子/增量有单元测试覆盖 |
 | 序列 | 真实环境已验证 | `sequence.NEXTVAL` 默认值和通过 `sequence.CURRVAL` 回读生成的键；不使用标准 `NEXT VALUE FOR` |
@@ -37,7 +48,7 @@
 | `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；精度为 7 的往返和提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较查询已在参考服务器执行。日期部件、偏移量和 `Add*` 方法无法翻译 |
 | `TimeSpan` | 真实环境已验证 | `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留映射的天/小数秒精度，并拒绝造成信息损失的 tick |
 | 二进制与 LOB 映射 | 真实环境已验证 / 查询语义部分支持 | `VARBINARY`、40 KiB `BLOB` 和 40 KiB Unicode `NCLOB` 往返。通过 `TEXT_EQUAL`/`BLOB_EQUAL` 进行参数相等比较，以及通过 NCLOB `INSTR` 搜索，均已在参考服务器执行；排序、分组、distinct 和 distinct 集合操作会提前失败。字符串搜索函数仍受 `CLOB_MAX_CALC_LEN` 约束。键/索引需要有界行内类型，可用行内长度由页面/行配置决定 |
-| JSON 存储 | 真实环境已验证 / 查询不支持 | `JsonElement` 通过 `JSON` 往返。整值 `Equals` 会生成 `"column" = :parameter`，但参考服务器以“数据类型不匹配”拒绝该比较；`GetProperty` 及 JSON 运算符无法翻译 |
+| JSON 存储 | 部分支持 / 查询不支持 | 保留原有 `JsonElement` 的 JSON 往返测试范围。2026-09-29 新实例探针中，原生 JSON 列的补充平面 Unicode 原文回读已失真，不能扩大为完整 Unicode 保证；JSON_VALUE 还将 JSON 空字符串读为 SQL null，数值返回可隐式舍入/转换。因未满足无损契约，本轮未发布 JSON 标量 API；`GetProperty` 仍不翻译。整值 Equals 仍生成列比较并被参考服务器以数据类型不匹配拒绝 |
 | 无符号整数与分面边界 | 单元级已验证 | 保持范围的转换器和存储映射已有覆盖；尚未将广泛的真实服务器边界数据作为发布声明 |
 | 事务 | 真实环境已验证 | 已验证 EF 事务提交/回滚行为 |
 | 保存点 | 真实环境已验证 | 尽管驱动程序的基础能力标志不支持，参考驱动程序/服务器仍可创建保存点并回滚到保存点 |
