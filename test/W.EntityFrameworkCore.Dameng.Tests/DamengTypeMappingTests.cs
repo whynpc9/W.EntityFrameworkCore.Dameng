@@ -73,10 +73,19 @@ public sealed class DamengTypeMappingTests
 
         AssertStringMapping(source, unicode: true, fixedLength: false, 32767, "NVARCHAR2(32767)", DbType.String);
         AssertStringMapping(source, unicode: true, fixedLength: false, 32768, "NCLOB", DbType.String);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 32767, "VARCHAR2(32767 CHAR)", DbType.AnsiString);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 32768, "CLOB", DbType.AnsiString);
+        // Non-Unicode character semantics budget four bytes per character against the inline
+        // limit: 8191 chars fit, 8192 fall back to CLOB.
+        AssertStringMapping(source, unicode: false, fixedLength: false, 8191, "VARCHAR2(8191 CHAR)", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 8192, "CLOB", DbType.AnsiString);
         AssertStringMapping(source, unicode: true, fixedLength: true, 12, "NCHAR(12)", DbType.StringFixedLength);
         AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12 CHAR)", DbType.AnsiStringFixedLength);
+        Assert.Throws<NotSupportedException>(
+            () => source.FindMapping(
+                typeof(string),
+                storeTypeName: null,
+                unicode: false,
+                size: 8192,
+                fixedLength: true));
         Assert.Throws<NotSupportedException>(
             () => source.FindMapping(
                 typeof(string),

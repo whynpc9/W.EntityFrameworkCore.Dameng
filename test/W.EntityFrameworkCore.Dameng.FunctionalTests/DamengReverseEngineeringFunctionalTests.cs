@@ -151,10 +151,10 @@ public sealed class DamengReverseEngineeringFunctionalTests
 
             await using (var otherSchema = new DmConnection(connectionString))
             {
-                var emptyModel = factory.Create(
-                    otherSchema,
-                    new DatabaseModelFactoryOptions(schemas: ["SYSDBA"]));
-                Assert.Empty(emptyModel.Tables);
+                Assert.Throws<NotSupportedException>(
+                    () => factory.Create(
+                        otherSchema,
+                        new DatabaseModelFactoryOptions(schemas: ["SYSDBA"])));
             }
         }
         finally
@@ -296,6 +296,171 @@ public sealed class DamengReverseEngineeringFunctionalTests
             if (parentCreated)
             {
                 await ExecuteAsync(setup, $"DROP TABLE \"{parentTable}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactorySkipsCrossSchemaForeignKeysAndKeepsSelfReferences()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var otherSchema = $"EF10_RO_{suffix}";
+        var sharedName = $"EF10_SHARED_{suffix}";
+        var childTable = $"EF10_RX_{suffix}";
+        var selfTable = $"EF10_SELF_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var schemaCreated = false;
+        var otherTableCreated = false;
+        var sharedCreated = false;
+        var childCreated = false;
+        var selfCreated = false;
+        try
+        {
+            await ExecuteAsync(setup, $"CREATE SCHEMA \"{otherSchema}\"");
+            schemaCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{otherSchema}\".\"{sharedName}\" (\"ID\" INT PRIMARY KEY)");
+            otherTableCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{sharedName}\" (\"ID\" INT PRIMARY KEY)");
+            sharedCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"""
+                CREATE TABLE "{childTable}" (
+                    "ID" INT PRIMARY KEY,
+                    "PID" INT REFERENCES "{otherSchema}"."{sharedName}" ("ID")
+                )
+                """);
+            childCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{selfTable}\" (\"ID\" INT PRIMARY KEY, \"PARENT_ID\" INT REFERENCES \"{selfTable}\" (\"ID\"))");
+            selfCreated = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            // The principal lives in another schema; the local table with the same name must
+            // not become the principal, and the foreign key must be skipped entirely.
+            var child = Assert.Single(model.Tables, candidate => candidate.Name == childTable);
+            Assert.Empty(child.ForeignKeys);
+
+            var self = Assert.Single(model.Tables, candidate => candidate.Name == selfTable);
+            var selfReference = Assert.Single(self.ForeignKeys);
+            Assert.Same(self, selfReference.PrincipalTable);
+            Assert.Equal(["PARENT_ID"], selfReference.Columns.Select(column => column.Name).ToArray());
+            Assert.Equal(["ID"], selfReference.PrincipalColumns.Select(column => column.Name).ToArray());
+        }
+        finally
+        {
+            if (selfCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{selfTable}\"");
+            }
+
+            if (childCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{childTable}\"");
+            }
+
+            if (sharedCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{sharedName}\"");
+            }
+
+            if (otherTableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{otherSchema}\".\"{sharedName}\"");
+            }
+
+            if (schemaCreated)
+            {
+                await ExecuteAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryReadsIdentityFacetsFromTheSessionSchemaNotTheLoginSchema()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var secondSchema = $"EF10_RS_{suffix}";
+        var tableName = $"EF10_DUP_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var loginTableCreated = false;
+        var schemaCreated = false;
+        var sessionTableCreated = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT IDENTITY(100, 5) NOT NULL PRIMARY KEY)");
+            loginTableCreated = true;
+            await ExecuteAsync(setup, $"CREATE SCHEMA \"{secondSchema}\"");
+            schemaCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{secondSchema}\".\"{tableName}\" (\"ID\" INT IDENTITY(3, 2) NOT NULL PRIMARY KEY)");
+            sessionTableCreated = true;
+
+            var factory = new DamengDatabaseModelFactory();
+
+            DatabaseModel loginModel;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                loginModel = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var loginTable = Assert.Single(
+                loginModel.Tables,
+                candidate => candidate.Name == tableName);
+            Assert.Equal(100L, loginTable.Columns[0][DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(5, loginTable.Columns[0][DamengAnnotationNames.IdentityIncrement]);
+
+            DatabaseModel sessionModel;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await ExecuteAsync(connection, $"SET SCHEMA \"{secondSchema}\"");
+                sessionModel = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            Assert.Equal(secondSchema, sessionModel.DefaultSchema);
+            var sessionTable = Assert.Single(
+                sessionModel.Tables,
+                candidate => candidate.Name == tableName);
+            Assert.Equal(secondSchema, sessionTable.Schema);
+            Assert.Equal(3L, sessionTable.Columns[0][DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(2, sessionTable.Columns[0][DamengAnnotationNames.IdentityIncrement]);
+        }
+        finally
+        {
+            if (sessionTableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{secondSchema}\".\"{tableName}\"");
+            }
+
+            if (loginTableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+
+            if (schemaCreated)
+            {
+                await ExecuteAsync(setup, $"DROP SCHEMA \"{secondSchema}\"");
             }
         }
     }

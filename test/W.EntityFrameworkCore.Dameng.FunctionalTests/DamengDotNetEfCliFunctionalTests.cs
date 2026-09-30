@@ -35,6 +35,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
         var tableName = $"EF10_CLI_{suffix}";
         var sequenceName = $"EF10_CLISQ_{suffix}";
+        var historyTableName = $"EF10_CLIH_{suffix}";
 
         var repoRoot = FindRepositoryRoot();
         var (efCoreVersion, dmProviderVersion) = ResolveLockedPackageVersions(repoRoot);
@@ -146,7 +147,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     "1",
                     await ScalarStringAsync(
                         connection,
-                        "SELECT COUNT(*) FROM \"__EFMigrationsHistory\"",
+                        $"SELECT COUNT(*) FROM \"{historyTableName}\"",
                         null));
             }
 
@@ -205,7 +206,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             {
                 await connection.OpenAsync();
                 await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", tableName);
-                await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", "__EFMigrationsHistory");
+                await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", historyTableName);
                 await DropIfExistsAsync(connection, "USER_SEQUENCES", "SEQUENCE_NAME", sequenceName);
             }
 
@@ -270,7 +271,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                     => optionsBuilder.UseDameng(
-                        Environment.GetEnvironmentVariable("DAMENG_TEST_CONNECTION_STRING")!);
+                        Environment.GetEnvironmentVariable("DAMENG_TEST_CONNECTION_STRING")!,
+                        dameng => dameng.MigrationsHistoryTable("EF10_CLIH_{{suffix}}"));
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
                 {
@@ -335,8 +337,11 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start dotnet ef.");
-        var standardOutput = await process.StandardOutput.ReadToEndAsync();
-        var standardError = await process.StandardError.ReadToEndAsync();
+
+        // Drain both pipes concurrently and bound the whole wait; a child that fills one
+        // pipe must not block the other reader or outrun the timeout.
+        var readOutput = process.StandardOutput.ReadToEndAsync();
+        var readError = process.StandardError.ReadToEndAsync();
 
         using var timeout = new CancellationTokenSource(
             TimeSpan.FromSeconds(CommandTimeoutSeconds));
@@ -348,8 +353,11 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         {
             process.Kill(entireProcessTree: true);
             throw new TimeoutException(
-                $"dotnet {string.Join(' ', arguments)} timed out.");
+                Redact(connectionString, $"dotnet {string.Join(' ', arguments)} timed out."));
         }
+
+        var standardOutput = await readOutput;
+        var standardError = await readError;
 
         output.WriteLine(Redact(connectionString, $"dotnet {string.Join(' ', arguments)}"));
         output.WriteLine(Redact(connectionString, standardOutput));
@@ -365,7 +373,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 DebugEnvironmentVariableNames
                     .Select(name => name + "=" + Environment.GetEnvironmentVariable(name)));
             throw new InvalidOperationException(
-                $"dotnet {string.Join(' ', arguments)} exited with {process.ExitCode.ToString(CultureInfo.InvariantCulture)}. "
+                Redact(
+                    connectionString,
+                    $"dotnet {string.Join(' ', arguments)} exited with {process.ExitCode.ToString(CultureInfo.InvariantCulture)}. ")
                 + "env: " + environmentDump + " || "
                 + Redact(connectionString, standardError.Length > 0 ? standardError : standardOutput));
         }

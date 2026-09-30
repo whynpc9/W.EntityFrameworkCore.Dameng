@@ -368,6 +368,29 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ? unicode ? 450 : 900
             : 1;
 
+        // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
+        // multi-byte text on byte-semantics instances. The qualifier makes the server budget
+        // four bytes per character (UTF-8), so only lengths whose worst-case byte count stays
+        // inside the inline limit are declared with CHAR; larger ones fall back to CLOB
+        // instead of declaring a length the server cannot hold.
+        if (!unicode && size.Value * 4L > MaxInlineLength)
+        {
+            if (fixedLength)
+            {
+                throw new NotSupportedException(
+                    $"Dameng fixed-length character semantics cannot hold {size} characters "
+                    + $"within the {MaxInlineLength}-byte inline limit; use a variable-length column.");
+            }
+
+            return new DamengStringTypeMapping(
+                "CLOB",
+                DbType.AnsiString,
+                unicode,
+                size: null,
+                fixedLength: false,
+                lob: true);
+        }
+
         var storeTypeName = unicode
             ? fixedLength ? "NCHAR" : "NVARCHAR2"
             : fixedLength ? "CHAR" : "VARCHAR2";
@@ -375,8 +398,6 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ? fixedLength ? DbType.StringFixedLength : DbType.String
             : fixedLength ? DbType.AnsiStringFixedLength : DbType.AnsiString;
 
-        // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
-        // multi-byte text on byte-semantics instances. Always declare character semantics.
         var lengthQualifier = unicode ? "" : " CHAR";
 
         return new DamengStringTypeMapping(

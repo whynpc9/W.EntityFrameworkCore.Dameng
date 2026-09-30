@@ -275,6 +275,97 @@ public sealed class DamengMigrationsFunctionalTests
     }
 
     [DamengFact]
+    public async Task IdempotentScriptCarriesMultilineCommentsAsSingleBatches()
+    {
+        var suffix = Guid.NewGuid()
+            .ToString("N", CultureInfo.InvariantCulture)[..12]
+            .ToUpperInvariant();
+        var tableName = $"EF10_CML_{suffix}";
+        var historyTableName = $"EF10_CMH_{suffix}";
+        var migrationId = $"202609300001_{suffix}";
+        var tableComment = "首行注释\nEND;\n仍属同一条注释";
+        var columnComment = "列注释\nBEGIN\n尾行";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        var options = new DbContextOptionsBuilder<CommentContext>()
+            .UseDameng(
+                connectionString,
+                damengOptions => damengOptions.MigrationsHistoryTable(historyTableName))
+            .ReplaceService<IModelCacheKeyFactory, CommentModelCacheKeyFactory>()
+            .EnableDetailedErrors()
+            .Options;
+
+        try
+        {
+            await using var context = new CommentContext(options, tableName, tableComment, columnComment);
+            var model = context.GetService<IDesignTimeModel>().Model;
+            var commands = context.GetService<IMigrationsSqlGenerator>()
+                .Generate(
+                    context.GetService<IMigrationsModelDiffer>()
+                        .GetDifferences(source: null, model.GetRelationalModel()),
+                    model,
+                    MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent);
+
+            var historyRepository = context.GetService<IHistoryRepository>();
+            var endIfScript = historyRepository.GetEndIfScript();
+            var script = new StringBuilder()
+                .AppendLine(historyRepository.GetCreateIfNotExistsScript())
+                .AppendLine("/")
+                .AppendLine(historyRepository.GetBeginIfNotExistsScript(migrationId).TrimEnd());
+            foreach (var command in commands)
+            {
+                script.AppendLine(command.CommandText);
+            }
+
+            script
+                .AppendLine(historyRepository.GetInsertScript(new HistoryRow(migrationId, "10.0.12")))
+                .Append(endIfScript);
+
+            await using (var connection = new DmConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await DamengScriptExecutor.ExecuteAsync(
+                    connection,
+                    script.ToString(),
+                    idempotent: true,
+                    redact: text => text);
+            }
+
+            Assert.Equal(tableComment, await ReadTableCommentAsync(connectionString, tableName));
+
+            await using var columnConnection = new DmConnection(connectionString);
+            await columnConnection.OpenAsync();
+            await using var readback = columnConnection.CreateCommand();
+            readback.CommandText =
+                "SELECT COMMENTS FROM USER_COL_COMMENTS WHERE TABLE_NAME = :table_name AND COLUMN_NAME = 'NOTE'";
+            var parameter = readback.CreateParameter();
+            parameter.ParameterName = "table_name";
+            parameter.Value = tableName;
+            readback.Parameters.Add(parameter);
+            Assert.Equal(
+                columnComment,
+                Convert.ToString(await readback.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await using var connection = new DmConnection(connectionString);
+            await connection.OpenAsync();
+            await DropIfExistsAsync(
+                connection,
+                "USER_TABLES",
+                "TABLE_NAME",
+                tableName,
+                $"DROP TABLE \"{tableName}\"");
+            await DropIfExistsAsync(
+                connection,
+                "USER_TABLES",
+                "TABLE_NAME",
+                historyTableName,
+                $"DROP TABLE \"{historyTableName}\"");
+        }
+    }
+
+    [DamengFact]
     public async Task EnsureSchemaGuardSkipsExistingCurrentSchema()
     {
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
@@ -401,6 +492,7 @@ public sealed class DamengMigrationsFunctionalTests
             command => command.CommandText.StartsWith("CREATE TABLE", StringComparison.Ordinal));
         Assert.Contains("\"CODE\" VARCHAR2(3 CHAR)", createTable.CommandText, StringComparison.Ordinal);
         Assert.Contains("\"INITIALS\" CHAR(2 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"LONG_CODE\" VARCHAR2(1000 CHAR)", createTable.CommandText, StringComparison.Ordinal);
 
         try
         {
@@ -410,13 +502,16 @@ public sealed class DamengMigrationsFunctionalTests
                 await context.Database.ExecuteSqlRawAsync(command.CommandText);
             }
 
-            context.Entities.Add(new AnsiStringEntity { Code = "中文字", Initials = "中文" });
+            var longCode = new string('中', 1000);
+            context.Entities.Add(
+                new AnsiStringEntity { Code = "中文字", Initials = "中文", LongCode = longCode });
             await context.SaveChangesAsync();
 
             var readback = await context.Entities
                 .AsNoTracking()
                 .SingleAsync(entity => entity.Code == "中文字");
             Assert.Equal("中文", readback.Initials);
+            Assert.Equal(longCode, readback.LongCode);
 
             await using var connection = new DmConnection(connectionString);
             await connection.OpenAsync();
@@ -463,6 +558,10 @@ public sealed class DamengMigrationsFunctionalTests
                         .HasMaxLength(2)
                         .IsUnicode(false)
                         .IsFixedLength();
+                    entity.Property(item => item.LongCode)
+                        .HasColumnName("LONG_CODE")
+                        .HasMaxLength(1000)
+                        .IsUnicode(false);
                 });
     }
 
@@ -481,6 +580,8 @@ public sealed class DamengMigrationsFunctionalTests
         public string? Code { get; set; }
 
         public string? Initials { get; set; }
+
+        public string? LongCode { get; set; }
     }
 
     private sealed class CommentContext(

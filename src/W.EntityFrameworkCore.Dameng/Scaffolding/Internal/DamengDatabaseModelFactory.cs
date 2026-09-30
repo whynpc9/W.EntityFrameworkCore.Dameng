@@ -54,10 +54,12 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             databaseModel.DefaultSchema = currentSchema;
 
             var schemaFilter = options.Schemas.ToList();
-            if (schemaFilter.Count > 0
-                && !schemaFilter.Contains(currentSchema, StringComparer.Ordinal))
+            if (schemaFilter.Any(entry => !string.Equals(entry, currentSchema, StringComparison.Ordinal)))
             {
-                return databaseModel;
+                throw new NotSupportedException(
+                    "Dameng reverse engineering reads only the session's current schema "
+                    + "(SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())); "
+                    + "the requested schema filter includes a different schema.");
             }
 
             var tableFilter = BuildTableFilter(options.Tables.ToList(), currentSchema);
@@ -128,6 +130,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             {
                 filter.Add(entry);
             }
+        }
+
+        if (filter.Count == 0)
+        {
+            throw new NotSupportedException(
+                "Dameng reverse engineering reads only the session's current schema; "
+                + "all requested tables were qualified with a different schema.");
         }
 
         return filter;
@@ -299,7 +308,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             if (!seedIncrementByTable.TryGetValue(tableName, out var seedIncrement))
             {
-                seedIncrement = GetIdentitySeedIncrement(connection, tableName);
+                seedIncrement = GetIdentitySeedIncrement(connection, schema, tableName);
                 seedIncrementByTable[tableName] = seedIncrement;
             }
 
@@ -313,15 +322,22 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
     private static (long Seed, int Increment) GetIdentitySeedIncrement(
         DbConnection connection,
+        string schema,
         string tableName)
     {
-        var literal = "'" + tableName.Replace("'", "''", StringComparison.Ordinal) + "'";
+        // IDENT_SEED/IDENT_INCR resolve unqualified names in the session default schema,
+        // which can differ from the current schema; always qualify with the schema under scan.
+        var literal = "'"
+            + schema.Replace("'", "''", StringComparison.Ordinal)
+            + "."
+            + tableName.Replace("'", "''", StringComparison.Ordinal)
+            + "'";
         using var command = CreateCommand(
             connection,
             $"SELECT IDENT_SEED({literal}), IDENT_INCR({literal}) FROM dual");
 
         using var reader = command.ExecuteReader();
-        if (!reader.Read())
+        if (!reader.Read() || reader.IsDBNull(0) || reader.IsDBNull(1))
         {
             return (1L, 1);
         }
@@ -529,6 +545,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             connection,
             """
             SELECT C.CONSTRAINT_NAME, C.TABLE_NAME, P.TABLE_NAME AS PRINCIPAL_TABLE_NAME,
+                   P.OWNER AS PRINCIPAL_OWNER,
                    CC.COLUMN_NAME, PC.COLUMN_NAME AS PRINCIPAL_COLUMN_NAME, C.DELETE_RULE
             FROM ALL_CONSTRAINTS C
             INNER JOIN ALL_CONSTRAINTS P
@@ -561,7 +578,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         {
             var tableName = reader.GetString(1);
             var principalTableName = reader.GetString(2);
-            if (!tables.TryGetValue(tableName, out var table)
+            var principalOwner = reader.GetString(3);
+            if (!string.Equals(principalOwner, schema, StringComparison.Ordinal)
+                || !tables.TryGetValue(tableName, out var table)
                 || !tables.TryGetValue(principalTableName, out var principalTable))
             {
                 // Cross-schema principals are outside the current-schema scope.
@@ -569,7 +588,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             var constraintName = reader.GetString(0);
-            var onDelete = MapDeleteRule(GetNullableString(reader, 5));
+            var onDelete = MapDeleteRule(GetNullableString(reader, 6));
 
             var foreignKey = foreignKeys.LastOrDefault()
                 is { } last
@@ -583,8 +602,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 foreignKeys.Add(foreignKey);
             }
 
-            foreignKey.Columns.Add(reader.GetString(3));
-            foreignKey.PrincipalColumns.Add(reader.GetString(4));
+            foreignKey.Columns.Add(reader.GetString(4));
+            foreignKey.PrincipalColumns.Add(reader.GetString(5));
         }
 
         foreach (var (name, table, principalTable, onDelete, columns, principalColumns) in foreignKeys)
@@ -598,6 +617,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             };
             AddColumnsByName(table, columns, databaseForeignKey.Columns);
             AddColumnsByName(principalTable, principalColumns, databaseForeignKey.PrincipalColumns);
+
+            // A partially resolved key would pair remaining columns by position and point the
+            // relationship at the wrong columns; drop it instead.
+            if (databaseForeignKey.Columns.Count != columns.Count
+                || databaseForeignKey.PrincipalColumns.Count != principalColumns.Count)
+            {
+                continue;
+            }
 
             table.ForeignKeys.Add(databaseForeignKey);
         }

@@ -61,47 +61,59 @@ internal static class DamengScriptExecutor
     // Anonymous DMSQL blocks (BEGIN ... END;) are single commands even though they contain
     // semicolons. Blocks may nest (the idempotent history guard wraps the EnsureSchema
     // guard), so depth is tracked and only the outermost END; completes the batch.
-    // Provider-generated blocks place BEGIN / END; on their own lines.
+    // BEGIN / END; lines inside string literals or block comments (e.g. a multi-line comment
+    // text wrapped in EXECUTE IMMEDIATE) must not count as block boundaries, so lexical
+    // state is tracked across lines.
     private static void AddScript(List<string> batches, string script)
     {
         var prologue = new StringBuilder();
         var block = new StringBuilder();
         var blockDepth = 0;
+        var inSingleQuote = false;
+        var inDoubleQuote = false;
+        var inBlockComment = false;
 
         foreach (var rawLine in script.Split(["\r\n", "\n"], StringSplitOptions.None))
         {
             var line = rawLine.Trim();
-            if (blockDepth == 0 && !string.Equals(line, "BEGIN", StringComparison.Ordinal))
+            var isStructuralLine = !inSingleQuote && !inDoubleQuote && !inBlockComment;
+            var isBlockStart = isStructuralLine && string.Equals(line, "BEGIN", StringComparison.Ordinal);
+            var isBlockEnd = isStructuralLine && string.Equals(line, "END;", StringComparison.Ordinal);
+
+            if (blockDepth == 0 && !isBlockStart)
             {
                 prologue.AppendLine(rawLine);
-                continue;
             }
-
-            if (blockDepth == 0)
+            else
             {
-                AddStatements(batches, prologue.ToString());
-                prologue.Clear();
-            }
-
-            block.AppendLine(rawLine);
-            if (string.Equals(line, "BEGIN", StringComparison.Ordinal))
-            {
-                blockDepth++;
-            }
-            else if (string.Equals(line, "END;", StringComparison.Ordinal))
-            {
-                blockDepth--;
                 if (blockDepth == 0)
                 {
-                    var text = block.ToString().Trim();
-                    if (text.Length > 0)
-                    {
-                        batches.Add(text);
-                    }
+                    AddStatements(batches, prologue.ToString());
+                    prologue.Clear();
+                }
 
-                    block.Clear();
+                block.AppendLine(rawLine);
+                if (isBlockStart)
+                {
+                    blockDepth++;
+                }
+                else if (isBlockEnd)
+                {
+                    blockDepth--;
+                    if (blockDepth == 0)
+                    {
+                        var text = block.ToString().Trim();
+                        if (text.Length > 0)
+                        {
+                            batches.Add(text);
+                        }
+
+                        block.Clear();
+                    }
                 }
             }
+
+            UpdateLexicalState(rawLine, ref inSingleQuote, ref inDoubleQuote, ref inBlockComment);
         }
 
         if (blockDepth != 0)
@@ -111,6 +123,77 @@ internal static class DamengScriptExecutor
         }
 
         AddStatements(batches, prologue.ToString());
+    }
+
+    private static void UpdateLexicalState(
+        string line,
+        ref bool inSingleQuote,
+        ref bool inDoubleQuote,
+        ref bool inBlockComment)
+    {
+        for (var index = 0; index < line.Length; index++)
+        {
+            var current = line[index];
+            var next = index + 1 < line.Length ? line[index + 1] : '\0';
+
+            if (inBlockComment)
+            {
+                if (current == '*' && next == '/')
+                {
+                    inBlockComment = false;
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (inSingleQuote)
+            {
+                if (current == '\'' && next == '\'')
+                {
+                    index++;
+                }
+                else if (current == '\'')
+                {
+                    inSingleQuote = false;
+                }
+
+                continue;
+            }
+
+            if (inDoubleQuote)
+            {
+                if (current == '"' && next == '"')
+                {
+                    index++;
+                }
+                else if (current == '"')
+                {
+                    inDoubleQuote = false;
+                }
+
+                continue;
+            }
+
+            if (current == '-' && next == '-')
+            {
+                break;
+            }
+
+            if (current == '/' && next == '*')
+            {
+                inBlockComment = true;
+                index++;
+            }
+            else if (current == '\'')
+            {
+                inSingleQuote = true;
+            }
+            else if (current == '"')
+            {
+                inDoubleQuote = true;
+            }
+        }
     }
 
     private static List<string> SplitOnDisqlTerminator(string script)
