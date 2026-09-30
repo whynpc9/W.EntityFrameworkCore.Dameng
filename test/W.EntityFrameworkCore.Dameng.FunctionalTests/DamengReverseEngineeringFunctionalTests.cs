@@ -465,6 +465,47 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
     }
 
+    [DamengFact]
+    public async Task FactoryReadsIdentityFacetsForDelimitedNamesContainingDots()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_WD.{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var created = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT IDENTITY(9, 7) NOT NULL PRIMARY KEY)");
+            created = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
+            var id = Assert.Single(table.Columns);
+            Assert.Equal(
+                DamengValueGenerationStrategy.IdentityColumn,
+                id[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(9L, id[DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(7, id[DamengAnnotationNames.IdentityIncrement]);
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
     private static async Task ExecuteAsync(DbConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();

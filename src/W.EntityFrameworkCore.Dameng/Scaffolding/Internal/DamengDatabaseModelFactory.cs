@@ -325,13 +325,17 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         string schema,
         string tableName)
     {
-        // IDENT_SEED/IDENT_INCR resolve unqualified names in the session default schema,
-        // which can differ from the current schema; always qualify with the schema under scan.
-        var literal = "'"
-            + schema.Replace("'", "''", StringComparison.Ordinal)
-            + "."
-            + tableName.Replace("'", "''", StringComparison.Ordinal)
-            + "'";
+        // IDENT_SEED/IDENT_INCR take a name string and split it themselves: delimit each
+        // component independently so legal names containing dots still resolve ('a.b' alone
+        // is rejected by the server as too many name prefixes), then escape the whole
+        // literal. A catalog-confirmed identity column whose facets cannot be read is an
+        // error, not a (1,1) default.
+        var qualifiedName = "\""
+            + schema.Replace("\"", "\"\"", StringComparison.Ordinal)
+            + "\".\""
+            + tableName.Replace("\"", "\"\"", StringComparison.Ordinal)
+            + "\"";
+        var literal = "'" + qualifiedName.Replace("'", "''", StringComparison.Ordinal) + "'";
         using var command = CreateCommand(
             connection,
             $"SELECT IDENT_SEED({literal}), IDENT_INCR({literal}) FROM dual");
@@ -339,7 +343,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var reader = command.ExecuteReader();
         if (!reader.Read() || reader.IsDBNull(0) || reader.IsDBNull(1))
         {
-            return (1L, 1);
+            throw new InvalidOperationException(
+                $"Dameng did not return identity facets for '{qualifiedName}' "
+                + "even though the catalog marks one of its columns as IDENTITY.");
         }
 
         return (

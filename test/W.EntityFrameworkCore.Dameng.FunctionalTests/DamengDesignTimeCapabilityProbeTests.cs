@@ -428,6 +428,57 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
 
     [DamengFact]
     [Trait("Category", "CapabilityProbe")]
+    public async Task IdentityLookupQuoting()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var weirdTable = $"EF10_WEIRD.{suffix}";  // quoted name containing a dot
+        var normalTable = $"EF10_NORM_{suffix}";
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var weirdCreated = false;
+        var normalCreated = false;
+        try
+        {
+            await ExecuteNonQueryAsync(
+                connection,
+                $"CREATE TABLE \"{weirdTable}\" (\"ID\" INT IDENTITY(9, 7) NOT NULL PRIMARY KEY)");
+            weirdCreated = true;
+            await ExecuteNonQueryAsync(
+                connection,
+                $"CREATE TABLE \"{normalTable}\" (\"ID\" INT IDENTITY(4, 2) NOT NULL PRIMARY KEY)");
+            normalCreated = true;
+
+            var schema = string.Empty;
+            await using (var schemaCommand = connection.CreateCommand())
+            {
+                schemaCommand.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+                schemaCommand.CommandTimeout = CommandTimeoutSeconds;
+                schema = Convert.ToString(await schemaCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+            }
+
+            await ExecuteCaseAsync(connection, new ProbeCase("IDLQ.normal_plain", $"SELECT IDENT_SEED('{schema}.{normalTable}') FROM dual"));
+            await ExecuteCaseAsync(connection, new ProbeCase("IDLQ.normal_delimited", $"SELECT IDENT_SEED('\"{schema}\".\"{normalTable}\"') FROM dual"));
+            await ExecuteCaseAsync(connection, new ProbeCase("IDLQ.weird_plain", $"SELECT IDENT_SEED('{schema}.{weirdTable}') FROM dual"));
+            await ExecuteCaseAsync(connection, new ProbeCase("IDLQ.weird_delimited", $"SELECT IDENT_SEED('\"{schema}\".\"{weirdTable}\"') FROM dual"));
+            await ExecuteCaseAsync(connection, new ProbeCase("IDLQ.weird_delimited_incr", $"SELECT IDENT_INCR('\"{schema}\".\"{weirdTable}\"') FROM dual"));
+        }
+        finally
+        {
+            if (weirdCreated)
+            {
+                await ExecuteNonQueryAsync(connection, $"DROP TABLE \"{weirdTable}\"");
+            }
+
+            if (normalCreated)
+            {
+                await ExecuteNonQueryAsync(connection, $"DROP TABLE \"{normalTable}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
     public async Task ForeignKeyAndViewCatalog()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();

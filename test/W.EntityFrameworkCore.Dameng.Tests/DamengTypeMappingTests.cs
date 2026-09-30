@@ -131,7 +131,7 @@ public sealed class DamengTypeMappingTests
         Assert.NotNull(unicode);
         Assert.Equal("NVARCHAR2(450)", unicode.StoreType);
         Assert.NotNull(ansi);
-        Assert.Equal("VARCHAR2(900 CHAR)", ansi.StoreType);
+        Assert.Equal("VARCHAR2(450 CHAR)", ansi.StoreType);
     }
 
     [Fact]

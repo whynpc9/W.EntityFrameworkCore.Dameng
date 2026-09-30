@@ -44,7 +44,7 @@
 | 乐观并发 | 真实环境已验证 | 过期并发标记通过驱动程序已验证的 `SQL%ROWCOUNT` 结果协议抛出异常 |
 | `ExecuteUpdate` / `ExecuteDelete` | 真实环境已验证 | 受影响行数以及持久化的布尔值/转换值更新 |
 | 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
-| 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`，已验证 n 为 2、3、1000 的往返）；`n × 4` 字节预算超出行内上限（32767）时回退 CLOB（定长则拒绝），不声明存不住的长度；可用行内长度仍由页面/行配置决定。`NVARCHAR2(n)` 已是字符语义，保持不变 |
+| 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`，已验证 n 为 2、3、1000 的往返）；`n × 4` 字节预算超出行内上限（32767）时回退 CLOB（定长则拒绝），不声明存不住的长度。键/索引字符串默认长度统一为 450 个字符（最坏 1800 字节），在最小 4 KB 页上也能建表；显式更长度的可用行内上限仍由页面/行配置决定。`NVARCHAR2(n)` 已是字符语义，保持不变 |
 | `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；已有往返样本通过提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较及 `Year`/`Month`/`Day`/`Hour`/`Minute`/`Second` 六个本地日期部件已验证，部件按列上保存的原偏移提取。`Offset`、`UtcDateTime`、`DateTime`、`Now`/`UtcNow` 和 `Add*` 仍不翻译；映射精度声明不构成第七位小数保真保证 |
 | `TimeSpan` | 真实环境已验证 | `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留映射的天/小数秒精度，并拒绝造成信息损失的 tick |
 | 二进制与 LOB 映射 | 真实环境已验证 / 查询语义部分支持 | `VARBINARY`、40 KiB `BLOB` 和 40 KiB Unicode `NCLOB` 往返。通过 `TEXT_EQUAL`/`BLOB_EQUAL` 进行参数相等比较，以及通过 NCLOB `INSTR` 搜索，均已在参考服务器执行；排序、分组、distinct 和 distinct 集合操作会提前失败。字符串搜索函数仍受 `CLOB_MAX_CALC_LEN` 约束。键/索引需要有界行内类型，可用行内长度由页面/行配置决定 |
@@ -93,7 +93,7 @@
 2026-09-30 设计时工作验证（Debug，不是 Release 发布快照；实例参数同 2026-09-29 记录）：
 
 - 确定性单元测试套件：303/303 通过；
-- 功能测试套件：84/84 通过，含反向工程（表/视图/列/默认值/注释/约束/索引/外键/自增、跨模式外键跳过、自引用外键、`SET SCHEMA` 模式分离）、注释迁移（含多行注释幂等脚本）、模式守卫、非 Unicode 字符语义和 `dotnet ef` 命令行端到端（版本匹配的本地 dotnet-ef 工具，`artifacts/dotnet-ef-tool`）；
+- 功能测试套件：85/85 通过，含反向工程（表/视图/列/默认值/注释/约束/索引/外键/自增、跨模式外键跳过、自引用外键、`SET SCHEMA` 模式分离）、注释迁移（含多行注释幂等脚本）、模式守卫、非 Unicode 字符语义和 `dotnet ef` 命令行端到端（版本匹配的本地 dotnet-ef 工具，`artifacts/dotnet-ef-tool`）；
 - 提供程序自有关系数据库冒烟测试套件：4/4 通过；
 - 管理员迁移脚本通道：4/4 通过，临时用户与表空间已确认清理；
 - 能力探针通道：24/24 执行完成（探针通过只表示候选均已尝试，不构成能力声明）。

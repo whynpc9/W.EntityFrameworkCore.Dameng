@@ -364,8 +364,11 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
                 lob: true);
         }
 
+        // Character semantics budget four bytes per character (UTF-8) against the smallest
+        // supported page's inline maximum (~1900 bytes on 4 KB pages), so the default key
+        // length stays 450 for both Unicode and non-Unicode columns.
         size ??= mappingInfo.IsKeyOrIndex
-            ? unicode ? 450 : 900
+            ? 450
             : 1;
 
         // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
