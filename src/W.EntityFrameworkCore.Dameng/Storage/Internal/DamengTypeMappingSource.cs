@@ -1,6 +1,8 @@
 using System.Data;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -10,6 +12,10 @@ namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 {
     internal const int MaxInlineLength = 32767;
+
+    private static readonly Regex CharSemanticsStoreTypePattern = new(
+        @"^(?<name>.+?)\(\s*(?<size>\d+)\s+CHAR\s*\)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly RelationalTypeMapping Bool = new BoolTypeMapping("BIT", DbType.Boolean);
     private static readonly RelationalTypeMapping Byte = CreateConvertedMapping(
@@ -194,6 +200,15 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             return ParseQualifiedTemporalStoreType(trimmedStoreType, ref precision, ref scale);
         }
 
+        var charSemanticsMatch = CharSemanticsStoreTypePattern.Match(trimmedStoreType);
+        if (charSemanticsMatch.Success)
+        {
+            size = int.Parse(
+                charSemanticsMatch.Groups["size"].Value,
+                CultureInfo.InvariantCulture);
+            return charSemanticsMatch.Groups["name"].Value;
+        }
+
         return base.ParseStoreTypeName(trimmedStoreType, ref unicode, ref size, ref precision, ref scale);
     }
 
@@ -360,8 +375,12 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ? fixedLength ? DbType.StringFixedLength : DbType.String
             : fixedLength ? DbType.AnsiStringFixedLength : DbType.AnsiString;
 
+        // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
+        // multi-byte text on byte-semantics instances. Always declare character semantics.
+        var lengthQualifier = unicode ? "" : " CHAR";
+
         return new DamengStringTypeMapping(
-            $"{storeTypeName}({size})",
+            $"{storeTypeName}({size}{lengthQualifier})",
             dbType,
             unicode,
             size,

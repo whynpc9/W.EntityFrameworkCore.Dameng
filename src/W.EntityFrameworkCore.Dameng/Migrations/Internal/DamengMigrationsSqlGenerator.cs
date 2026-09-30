@@ -40,6 +40,16 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             // EF places this text inside a DMSQL IF block. Dynamic SQL is required both
             // for DDL and to avoid binding skipped DML against an old schema.
             var commandText = command.CommandText.TrimEnd();
+            if (commandText.StartsWith("BEGIN", StringComparison.Ordinal))
+            {
+                // Anonymous DMSQL blocks carry their own guards and cannot be wrapped:
+                // the server rejects EXECUTE IMMEDIATE when the literal contains a block.
+                builder
+                    .Append(commandText)
+                    .EndCommand(command.TransactionSuppressed);
+                continue;
+            }
+
             var commandLiteral = stringTypeMapping.GenerateSqlLiteral(commandText);
             if (Encoding.UTF8.GetByteCount(commandLiteral) > MaxDynamicSqlLiteralUtf8Length)
             {
@@ -151,6 +161,16 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         builder.AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
         EndStatement(builder);
+
+        if (!string.Equals(operation.Comment, operation.OldColumn?.Comment, StringComparison.Ordinal))
+        {
+            GenerateColumnCommentStatement(
+                operation.Schema,
+                operation.Table,
+                operation.Name,
+                operation.Comment,
+                builder);
+        }
     }
 
     protected override void Generate(
@@ -210,12 +230,92 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
+        // CREATE SCHEMA has no IF NOT EXISTS form; guard with the catalog instead.
+        // The anonymous block must stay a single command (no '/' terminator) and cannot
+        // be wrapped in EXECUTE IMMEDIATE by idempotent generation.
+        var stringTypeMapping = Dependencies.TypeMappingSource.GetMapping(typeof(string));
+
         builder
-            .Append("CREATE SCHEMA ")
-            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name))
-            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+            .AppendLine("BEGIN")
+            .AppendLine("    IF NOT EXISTS (")
+            .AppendLine("        SELECT 1")
+            .AppendLine("        FROM SYS.SYSOBJECTS")
+            .Append("        WHERE TYPE$ = 'SCH' AND NAME = ")
+            .AppendLine(stringTypeMapping.GenerateSqlLiteral(operation.Name))
+            .AppendLine("    ) THEN")
+            .Append("        EXECUTE IMMEDIATE ")
+            .Append(
+                stringTypeMapping.GenerateSqlLiteral(
+                    "CREATE SCHEMA " + Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name)))
+            .AppendLine(";")
+            .AppendLine("    END IF;")
+            .Append("END;");
 
         EndStatement(builder);
+    }
+
+    protected override void Generate(
+        CreateTableOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder,
+        bool terminate = true)
+    {
+        base.Generate(operation, model, builder, terminate);
+
+        if (!terminate)
+        {
+            return;
+        }
+
+        if (operation.Comment is not null)
+        {
+            GenerateTableCommentStatement(operation.Schema, operation.Name, operation.Comment, builder);
+        }
+
+        foreach (var column in operation.Columns)
+        {
+            if (column.Comment is not null)
+            {
+                GenerateColumnCommentStatement(
+                    operation.Schema,
+                    operation.Name,
+                    column.Name,
+                    column.Comment,
+                    builder);
+            }
+        }
+    }
+
+    protected override void Generate(
+        AlterTableOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder)
+    {
+        base.Generate(operation, model, builder);
+
+        if (!string.Equals(operation.Comment, operation.OldTable?.Comment, StringComparison.Ordinal))
+        {
+            GenerateTableCommentStatement(operation.Schema, operation.Name, operation.Comment, builder);
+        }
+    }
+
+    protected override void Generate(
+        AddColumnOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder,
+        bool terminate = true)
+    {
+        base.Generate(operation, model, builder, terminate);
+
+        if (terminate && operation.Comment is not null)
+        {
+            GenerateColumnCommentStatement(
+                operation.Schema,
+                operation.Table,
+                operation.Name,
+                operation.Comment,
+                builder);
+        }
     }
 
     protected override void Generate(
@@ -512,6 +612,47 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         builder.Append(operation.IsNullable ? " NULL" : " NOT NULL");
         DefaultValue(operation.DefaultValue, defaultValueSql, columnType, builder);
     }
+
+    private void GenerateTableCommentStatement(
+        string? schema,
+        string table,
+        string? comment,
+        MigrationCommandListBuilder builder)
+    {
+        builder
+            .Append("COMMENT ON TABLE ")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(table, schema))
+            .Append(" IS ")
+            .Append(GenerateCommentLiteral(comment))
+            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+
+        EndStatement(builder);
+    }
+
+    private void GenerateColumnCommentStatement(
+        string? schema,
+        string table,
+        string column,
+        string? comment,
+        MigrationCommandListBuilder builder)
+    {
+        builder
+            .Append("COMMENT ON COLUMN ")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(table, schema))
+            .Append(".")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(column))
+            .Append(" IS ")
+            .Append(GenerateCommentLiteral(comment))
+            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+
+        EndStatement(builder);
+    }
+
+    // Dameng rejects COMMENT ON ... IS NULL; an empty string clears a comment.
+    private string GenerateCommentLiteral(string? comment)
+        => Dependencies.TypeMappingSource
+            .GetMapping(typeof(string))
+            .GenerateSqlLiteral(comment ?? string.Empty);
 
     private static bool IsIdentity(ColumnOperation operation)
         => operation[DamengAnnotationNames.ValueGenerationStrategy] switch

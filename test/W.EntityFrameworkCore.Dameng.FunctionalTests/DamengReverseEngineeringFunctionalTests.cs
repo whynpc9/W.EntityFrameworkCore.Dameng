@@ -1,0 +1,309 @@
+using System.Data.Common;
+using System.Globalization;
+using Dm;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
+using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+using Xunit;
+
+#pragma warning disable EF1001 // Tests intentionally exercise EF/provider infrastructure contracts.
+
+namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
+
+/// <summary>
+/// Reverse engineering (IDatabaseModelFactory) against a real Dameng schema.
+/// </summary>
+public sealed class DamengReverseEngineeringFunctionalTests
+{
+    [DamengFact]
+    public async Task FactoryReadsTablesColumnsConstraintsIndexesCommentsAndValueGeneration()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_RE_{suffix}";
+        var sequenceName = $"EF10_RESEQ_{suffix}";
+        var primaryKeyName = $"PK_RE_{suffix}";
+        var uniqueName = $"UQ_RE_{suffix}";
+        var indexName = $"IDX_RE_{suffix}";
+        var lowerTableName = $"ef10_relower_{suffix.ToLowerInvariant()}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var sequenceCreated = false;
+        var tableCreated = false;
+        var lowerTableCreated = false;
+        try
+        {
+            await ExecuteAsync(setup, $"CREATE SEQUENCE \"{sequenceName}\" START WITH 41 INCREMENT BY 3");
+            sequenceCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"""
+                CREATE TABLE "{tableName}" (
+                    "ID" BIGINT IDENTITY(3, 2) NOT NULL,
+                    "CODE" VARCHAR(30) NOT NULL,
+                    "NAME" NVARCHAR2(50) NOT NULL,
+                    "SEQ_NUM" INT DEFAULT "{sequenceName}".NEXTVAL,
+                    "STATUS" VARCHAR(8) DEFAULT 'NEW',
+                    "DURATION" INTERVAL DAY(4) TO SECOND(3),
+                    "AMOUNT" DECIMAL(18, 3),
+                    CONSTRAINT "{primaryKeyName}" PRIMARY KEY ("ID"),
+                    CONSTRAINT "{uniqueName}" UNIQUE ("CODE", "NAME")
+                )
+                """);
+            tableCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE INDEX \"{indexName}\" ON \"{tableName}\" (\"STATUS\" ASC, \"NAME\" DESC)");
+            await ExecuteAsync(setup, $"COMMENT ON TABLE \"{tableName}\" IS '反向工程表注释'");
+            await ExecuteAsync(setup, $"COMMENT ON COLUMN \"{tableName}\".\"NAME\" IS '名称注释'");
+
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{lowerTableName}\" (\"id\" INT IDENTITY(7, 4) NOT NULL, CONSTRAINT \"pk_{lowerTableName}\" PRIMARY KEY (\"id\"))");
+            lowerTableCreated = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var currentSchema = model.DefaultSchema;
+            Assert.False(string.IsNullOrEmpty(currentSchema));
+
+            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
+            Assert.Equal(currentSchema, table.Schema);
+            Assert.Equal("反向工程表注释", table.Comment);
+
+            Assert.Equal(
+                ["ID", "CODE", "NAME", "SEQ_NUM", "STATUS", "DURATION", "AMOUNT"],
+                table.Columns.Select(column => column.Name).ToArray());
+
+            var id = table.Columns[0];
+            Assert.Equal("BIGINT", id.StoreType);
+            Assert.False(id.IsNullable);
+            Assert.Equal(
+                DamengValueGenerationStrategy.IdentityColumn,
+                id[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(3L, id[DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(2, id[DamengAnnotationNames.IdentityIncrement]);
+            Assert.Equal(ValueGenerated.OnAdd, id.ValueGenerated);
+            Assert.Null(id.DefaultValueSql);
+
+            Assert.Equal("VARCHAR(30)", table.Columns[1].StoreType);
+
+            var name = table.Columns[2];
+            Assert.Equal("NVARCHAR2(50)", name.StoreType);
+            Assert.Equal("名称注释", name.Comment);
+
+            var sequenceColumn = table.Columns[3];
+            Assert.Equal("INT", sequenceColumn.StoreType);
+            Assert.Equal(
+                DamengValueGenerationStrategy.Sequence,
+                sequenceColumn[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(sequenceName, sequenceColumn[DamengAnnotationNames.SequenceName]);
+            Assert.Null(sequenceColumn[DamengAnnotationNames.SequenceSchema]);
+            Assert.Null(sequenceColumn.DefaultValueSql);
+            Assert.Equal(ValueGenerated.OnAdd, sequenceColumn.ValueGenerated);
+
+            Assert.Equal("VARCHAR(8)", table.Columns[4].StoreType);
+            Assert.Equal("'NEW'", table.Columns[4].DefaultValueSql?.Trim());
+            Assert.Equal("INTERVAL DAY(4) TO SECOND(3)", table.Columns[5].StoreType);
+            Assert.Equal("DECIMAL(18,3)", table.Columns[6].StoreType);
+
+            Assert.NotNull(table.PrimaryKey);
+            Assert.Equal(primaryKeyName, table.PrimaryKey.Name);
+            Assert.Equal(["ID"], table.PrimaryKey.Columns.Select(column => column.Name).ToArray());
+
+            var uniqueConstraint = Assert.Single(table.UniqueConstraints);
+            Assert.Equal(uniqueName, uniqueConstraint.Name);
+            Assert.Equal(
+                ["CODE", "NAME"],
+                uniqueConstraint.Columns.Select(column => column.Name).ToArray());
+
+            var index = Assert.Single(table.Indexes);
+            Assert.Equal(indexName, index.Name);
+            Assert.False(index.IsUnique);
+            Assert.Equal(["STATUS", "NAME"], index.Columns.Select(column => column.Name).ToArray());
+            Assert.Equal([false, true], index.IsDescending.ToArray());
+
+            var lowerTable = Assert.Single(model.Tables, candidate => candidate.Name == lowerTableName);
+            var lowerId = Assert.Single(lowerTable.Columns);
+            Assert.Equal("id", lowerId.Name);
+            Assert.Equal(
+                DamengValueGenerationStrategy.IdentityColumn,
+                lowerId[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(7L, lowerId[DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(4, lowerId[DamengAnnotationNames.IdentityIncrement]);
+
+            await using (var filtered = new DmConnection(connectionString))
+            {
+                var filteredModel = factory.Create(
+                    filtered,
+                    new DatabaseModelFactoryOptions(tables: [tableName]));
+                Assert.Equal([tableName], filteredModel.Tables.Select(table => table.Name).ToArray());
+            }
+
+            await using (var otherSchema = new DmConnection(connectionString))
+            {
+                var emptyModel = factory.Create(
+                    otherSchema,
+                    new DatabaseModelFactoryOptions(schemas: ["SYSDBA"]));
+                Assert.Empty(emptyModel.Tables);
+            }
+        }
+        finally
+        {
+            if (lowerTableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{lowerTableName}\"");
+            }
+
+            if (tableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+
+            if (sequenceCreated)
+            {
+                await ExecuteAsync(setup, $"DROP SEQUENCE \"{sequenceName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryReadsViewsAndForeignKeys()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var parentTable = $"EF10_RP_{suffix}";
+        var compositeParentTable = $"EF10_RP2_{suffix}";
+        var childTable = $"EF10_RC_{suffix}";
+        var viewName = $"EF10_RV_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var parentCreated = false;
+        var compositeParentCreated = false;
+        var childCreated = false;
+        var viewCreated = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{parentTable}\" (\"ID\" INT PRIMARY KEY, \"CODE\" INT UNIQUE, \"NAME\" NVARCHAR2(20))");
+            parentCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{compositeParentTable}\" (\"A\" INT NOT NULL, \"B\" INT NOT NULL, CONSTRAINT \"PK_RP2_{suffix}\" PRIMARY KEY (\"A\", \"B\"))");
+            compositeParentCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"""
+                CREATE TABLE "{childTable}" (
+                    "ID" INT PRIMARY KEY,
+                    "PID_CASCADE" INT REFERENCES "{parentTable}" ("ID") ON DELETE CASCADE,
+                    "PID_SETNULL" INT REFERENCES "{parentTable}" ("ID") ON DELETE SET NULL,
+                    "PID_DEFAULT" INT REFERENCES "{parentTable}" ("ID"),
+                    "PCODE" INT REFERENCES "{parentTable}" ("CODE") ON DELETE CASCADE,
+                    "CA" INT,
+                    "CB" INT,
+                    CONSTRAINT "FK_RC_CMP_{suffix}" FOREIGN KEY ("CA", "CB") REFERENCES "{compositeParentTable}" ("A", "B") ON DELETE CASCADE
+                )
+                """);
+            childCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE VIEW \"{viewName}\" AS SELECT \"ID\", \"NAME\" FROM \"{parentTable}\"");
+            viewCreated = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var view = Assert.Single(model.Tables, candidate => candidate.Name == viewName);
+            Assert.IsType<DatabaseView>(view);
+            Assert.Equal(["ID", "NAME"], view.Columns.Select(column => column.Name).ToArray());
+            Assert.Equal("INT", view.Columns[0].StoreType);
+            Assert.Equal("NVARCHAR2(20)", view.Columns[1].StoreType);
+
+            var child = Assert.Single(model.Tables, candidate => candidate.Name == childTable);
+            Assert.Equal(5, child.ForeignKeys.Count);
+
+            var cascade = Assert.Single(
+                child.ForeignKeys,
+                foreignKey => foreignKey.Columns is [{ Name: "PID_CASCADE" }]);
+            Assert.Equal(ReferentialAction.Cascade, cascade.OnDelete);
+            Assert.Equal(parentTable, cascade.PrincipalTable.Name);
+            Assert.Equal(["ID"], cascade.PrincipalColumns.Select(column => column.Name).ToArray());
+
+            var setNull = Assert.Single(
+                child.ForeignKeys,
+                foreignKey => foreignKey.Columns is [{ Name: "PID_SETNULL" }]);
+            Assert.Equal(ReferentialAction.SetNull, setNull.OnDelete);
+
+            var noAction = Assert.Single(
+                child.ForeignKeys,
+                foreignKey => foreignKey.Columns is [{ Name: "PID_DEFAULT" }]);
+            Assert.Equal(ReferentialAction.NoAction, noAction.OnDelete);
+
+            var toUnique = Assert.Single(
+                child.ForeignKeys,
+                foreignKey => foreignKey.Columns is [{ Name: "PCODE" }]);
+            Assert.Equal(
+                ["CODE"],
+                toUnique.PrincipalColumns.Select(column => column.Name).ToArray());
+
+            var composite = Assert.Single(
+                child.ForeignKeys,
+                foreignKey => foreignKey.Name == $"FK_RC_CMP_{suffix}");
+            Assert.Equal(
+                ["CA", "CB"],
+                composite.Columns.Select(column => column.Name).ToArray());
+            Assert.Equal(
+                ["A", "B"],
+                composite.PrincipalColumns.Select(column => column.Name).ToArray());
+            Assert.Equal(compositeParentTable, composite.PrincipalTable.Name);
+
+            var parent = Assert.Single(model.Tables, candidate => candidate.Name == parentTable);
+            Assert.Empty(parent.ForeignKeys);
+        }
+        finally
+        {
+            if (viewCreated)
+            {
+                await ExecuteAsync(setup, $"DROP VIEW \"{viewName}\"");
+            }
+
+            if (childCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{childTable}\"");
+            }
+
+            if (compositeParentCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{compositeParentTable}\"");
+            }
+
+            if (parentCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{parentTable}\"");
+            }
+        }
+    }
+
+    private static async Task ExecuteAsync(DbConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+}

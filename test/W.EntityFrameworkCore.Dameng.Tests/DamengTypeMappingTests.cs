@@ -73,10 +73,10 @@ public sealed class DamengTypeMappingTests
 
         AssertStringMapping(source, unicode: true, fixedLength: false, 32767, "NVARCHAR2(32767)", DbType.String);
         AssertStringMapping(source, unicode: true, fixedLength: false, 32768, "NCLOB", DbType.String);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 32767, "VARCHAR2(32767)", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 32767, "VARCHAR2(32767 CHAR)", DbType.AnsiString);
         AssertStringMapping(source, unicode: false, fixedLength: false, 32768, "CLOB", DbType.AnsiString);
         AssertStringMapping(source, unicode: true, fixedLength: true, 12, "NCHAR(12)", DbType.StringFixedLength);
-        AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12)", DbType.AnsiStringFixedLength);
+        AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12 CHAR)", DbType.AnsiStringFixedLength);
         Assert.Throws<NotSupportedException>(
             () => source.FindMapping(
                 typeof(string),
@@ -122,7 +122,30 @@ public sealed class DamengTypeMappingTests
         Assert.NotNull(unicode);
         Assert.Equal("NVARCHAR2(450)", unicode.StoreType);
         Assert.NotNull(ansi);
-        Assert.Equal("VARCHAR2(900)", ansi.StoreType);
+        Assert.Equal("VARCHAR2(900 CHAR)", ansi.StoreType);
+    }
+
+    [Fact]
+    public void CharQualifiedAnsiStoreTypeParsesAndRoundTrips()
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+
+        var mapping = source.FindMapping("VARCHAR2(20 CHAR)");
+        Assert.NotNull(mapping);
+        Assert.Equal("VARCHAR2(20 CHAR)", mapping.StoreType);
+        Assert.Equal(20, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+
+        var fixedMapping = source.FindMapping("CHAR(5 CHAR)");
+        Assert.NotNull(fixedMapping);
+        Assert.Equal("CHAR(5 CHAR)", fixedMapping.StoreType);
+        Assert.Equal(5, fixedMapping.Size);
+
+        // Unicode declarations are already character-based and stay unchanged.
+        var unicode = source.FindMapping("NVARCHAR2(20)");
+        Assert.NotNull(unicode);
+        Assert.Equal("NVARCHAR2(20)", unicode.StoreType);
     }
 
     [Fact]

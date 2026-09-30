@@ -41,7 +41,7 @@ EF Core Relational 10     DM.DmProvider
 | 更新 | 单命令修改批次、标识列/序列值回读、已验证的受影响行协议、并发、`ExecuteUpdate` 和 `ExecuteDelete` |
 | 迁移 | 已测试的达梦 DDL 子集、对 DDL 禁用事务、种子数据、幂等脚本、历史记录仓储及 `DBMS_LOCK` 迁移锁 |
 | 数据库生命周期 | 连接/表存在性和模式对象管理；不支持创建/删除物理数据库 |
-| 设计时 | 用于迁移的提供程序/注解代码生成；尚未实现反向工程 |
+| 设计时 | 用于迁移的提供程序/注解代码生成；当前模式的反向工程（表、视图、列、默认值、注释、约束、索引、外键与两种自增模型）及 dotnet ef 命令行端到端 |
 
 EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 EF Core Relational
 约束为 `>= 10.0.12 && < 11.0.0`，并锁定解析后的依赖项。成功编译是必要条件，
@@ -82,9 +82,10 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 
 仅声明支持[兼容性矩阵](compatibility.md)中列出的迁移操作。`GenerateCreateScript()`、
 非幂等 `IMigrator.GenerateScript()` 和幂等脚本都已在该实例上执行。幂等脚本在迁移历史记录守卫中
-使用已转义的动态 SQL，并以 DIsql `/` 终止块；执行前要去掉 `/`，并把每个 `BEGIN ... END;` 作为一条命令。
-它们不会使达梦 DDL 具备事务性。给人看的 `dotnet ef` 步骤见 [迁移操作说明](migrations.md)；代理执行细节见 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。
-反向工程仍不在当前基线范围内。
+使用已转义的动态 SQL，并以 DIsql `/` 终止块；执行前要去掉 `/`，并把每个 `BEGIN ... END;` 作为一条命令
+（块可以嵌套：历史记录守卫内的 `EnsureSchema` 守卫块是一个整体命令）。它们不会使达梦 DDL 具备事务性。
+给人看的 `dotnet ef` 步骤见 [迁移操作说明](migrations.md)；代理执行细节见 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。
+反向工程覆盖当前模式的表、视图、列、默认值、注释、约束、索引与外键，见[兼容性矩阵](compatibility.md)。
 
 ## ADO.NET 边界
 

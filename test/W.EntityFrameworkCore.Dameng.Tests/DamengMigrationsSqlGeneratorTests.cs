@@ -288,7 +288,17 @@ public sealed class DamengMigrationsSqlGeneratorTests
             },
             new DropSchemaOperation { Name = "app" });
 
-        Assert.Contains("CREATE SCHEMA \"app\";\n", sql, StringComparison.Ordinal);
+        Assert.Contains(
+            "IF NOT EXISTS (" + Environment.NewLine
+            + "        SELECT 1" + Environment.NewLine
+            + "        FROM SYS.SYSOBJECTS" + Environment.NewLine
+            + "        WHERE TYPE$ = 'SCH' AND NAME = 'app'",
+            sql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';",
+            sql,
+            StringComparison.Ordinal);
         Assert.Contains(
             "CREATE SEQUENCE \"app\".\"OrderSequence\" START WITH 10 "
             + "INCREMENT BY 5 MINVALUE 10 MAXVALUE 100 CYCLE;\n",
@@ -429,6 +439,203 @@ public sealed class DamengMigrationsSqlGeneratorTests
 
         Assert.Contains("seed or increment", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Drop and recreate", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateTableGeneratesCommentStatements()
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation
+        {
+            Name = "Orders",
+            Schema = "app",
+            Comment = "订单表 'v2'"
+        };
+        operation.Columns.Add(
+            new AddColumnOperation
+            {
+                Name = "Id",
+                Table = operation.Name,
+                Schema = operation.Schema,
+                ClrType = typeof(long),
+                ColumnType = "BIGINT",
+                IsNullable = false
+            });
+        operation.Columns.Add(
+            new AddColumnOperation
+            {
+                Name = "Name",
+                Table = operation.Name,
+                Schema = operation.Schema,
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = false,
+                Comment = "名称"
+            });
+
+        var sql = GenerateSql(context, operation);
+
+        Assert.Contains(
+            "COMMENT ON TABLE \"app\".\"Orders\" IS '订单表 ''v2''';\n",
+            sql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "COMMENT ON COLUMN \"app\".\"Orders\".\"Name\" IS '名称';\n",
+            sql,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "COMMENT ON COLUMN \"app\".\"Orders\".\"Id\"",
+            sql,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AlterTableGeneratesCommentOnlyWhenChanged()
+    {
+        using var context = CreateContext();
+
+        var changedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                Comment = "新注释",
+                OldTable = new CreateTableOperation { Comment = "旧注释" }
+            });
+        var clearedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                OldTable = new CreateTableOperation { Comment = "旧注释" }
+            });
+        var unchangedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                Comment = "同一条注释",
+                OldTable = new CreateTableOperation { Comment = "同一条注释" }
+            });
+
+        Assert.Equal("COMMENT ON TABLE \"app\".\"Orders\" IS '新注释';\n", changedSql);
+        Assert.Equal("COMMENT ON TABLE \"app\".\"Orders\" IS '';\n", clearedSql);
+        Assert.Equal(string.Empty, unchangedSql);
+    }
+
+    [Fact]
+    public void AddAndAlterColumnGenerateCommentChanges()
+    {
+        using var context = CreateContext();
+
+        var addSql = GenerateSql(
+            context,
+            new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "备注"
+            });
+
+        var alter = new AlterColumnOperation
+        {
+            Name = "Note",
+            Table = "Orders",
+            Schema = "app",
+            ClrType = typeof(string),
+            ColumnType = "NVARCHAR2(100)",
+            IsNullable = true,
+            OldColumn = new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "旧备注"
+            }
+        };
+        var alterSql = GenerateSql(context, alter);
+
+        var alterUnchanged = new AlterColumnOperation
+        {
+            Name = "Note",
+            Table = "Orders",
+            Schema = "app",
+            ClrType = typeof(string),
+            ColumnType = "NVARCHAR2(200)",
+            IsNullable = true,
+            Comment = "保留备注",
+            OldColumn = new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "保留备注"
+            }
+        };
+        var alterUnchangedSql = GenerateSql(context, alterUnchanged);
+
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" ADD \"Note\" NVARCHAR2(100) NULL;\n"
+            + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '备注';\n",
+            addSql);
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(100) NULL;\n"
+            + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '';\n",
+            alterSql);
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(200) NULL;\n",
+            alterUnchangedSql);
+    }
+
+    [Fact]
+    public void EnsureSchemaUsesCatalogGuardAndStaysUnwrappedInIdempotentScripts()
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        var command = Assert.Single(
+            generator.Generate([new EnsureSchemaOperation { Name = "app" }]));
+
+        Assert.Equal(
+            "BEGIN" + Environment.NewLine
+            + "    IF NOT EXISTS (" + Environment.NewLine
+            + "        SELECT 1" + Environment.NewLine
+            + "        FROM SYS.SYSOBJECTS" + Environment.NewLine
+            + "        WHERE TYPE$ = 'SCH' AND NAME = 'app'" + Environment.NewLine
+            + "    ) THEN" + Environment.NewLine
+            + "        EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';" + Environment.NewLine
+            + "    END IF;" + Environment.NewLine
+            + "END;",
+            command.CommandText);
+
+        var idempotentCommand = Assert.Single(
+            generator.Generate(
+                [new EnsureSchemaOperation { Name = "app" }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.StartsWith("BEGIN", idempotentCommand.CommandText, StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';",
+            idempotentCommand.CommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "EXECUTE IMMEDIATE 'BEGIN",
+            idempotentCommand.CommandText,
+            StringComparison.Ordinal);
     }
 
     [Fact]

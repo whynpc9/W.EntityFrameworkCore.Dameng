@@ -1,0 +1,800 @@
+using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using Dm;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
+using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+
+namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+
+/// <summary>
+/// Reads the current Dameng schema into a <see cref="DatabaseModel"/> for reverse engineering.
+/// Only the session's current schema is scanned; the connection login and the current schema
+/// may differ, so catalog queries filter by <c>SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())</c>.
+/// </summary>
+internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
+{
+    private static readonly Regex NextValDefaultPattern = new(
+        @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|\w+)\.)?(?<seq>""(?:[^""]|"""")*""|\w+)\.NEXTVAL\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    public override DatabaseModel Create(
+        string connectionString,
+        DatabaseModelFactoryOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(connectionString);
+
+        using var connection = new DmConnection(connectionString);
+        return Create(connection, options);
+    }
+
+    public override DatabaseModel Create(
+        DbConnection connection,
+        DatabaseModelFactoryOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var databaseModel = new DatabaseModel();
+
+        var connectionStartedOpen = connection.State == ConnectionState.Open;
+        if (!connectionStartedOpen)
+        {
+            connection.Open();
+        }
+
+        try
+        {
+            var currentSchema = GetCurrentSchema(connection);
+            databaseModel.DefaultSchema = currentSchema;
+
+            var schemaFilter = options.Schemas.ToList();
+            if (schemaFilter.Count > 0
+                && !schemaFilter.Contains(currentSchema, StringComparer.Ordinal))
+            {
+                return databaseModel;
+            }
+
+            var tableFilter = BuildTableFilter(options.Tables.ToList(), currentSchema);
+
+            var tables = GetTables(connection, currentSchema, tableFilter);
+            tables.AddRange(GetViews(connection, currentSchema, tableFilter));
+            if (tables.Count == 0)
+            {
+                return databaseModel;
+            }
+
+            var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
+
+            LoadColumns(connection, currentSchema, tableLookup);
+            LoadIdentityAnnotations(connection, currentSchema, tableLookup);
+            LoadConstraints(connection, currentSchema, tableLookup);
+            LoadIndexes(connection, currentSchema, tableLookup);
+            LoadForeignKeys(connection, currentSchema, tableLookup);
+            LoadComments(connection, currentSchema, tableLookup);
+
+            foreach (var table in tables)
+            {
+                table.Database = databaseModel;
+                databaseModel.Tables.Add(table);
+            }
+
+            return databaseModel;
+        }
+        finally
+        {
+            if (!connectionStartedOpen)
+            {
+                connection.Close();
+            }
+        }
+    }
+
+    private static string GetCurrentSchema(DbConnection connection)
+    {
+        using var command = CreateCommand(
+            connection,
+            "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual");
+        return Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture)!;
+    }
+
+    private static HashSet<string>? BuildTableFilter(List<string> tables, string currentSchema)
+    {
+        if (tables.Count == 0)
+        {
+            return null;
+        }
+
+        var filter = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in tables)
+        {
+            var separatorIndex = entry.IndexOf('.', StringComparison.Ordinal);
+            if (separatorIndex >= 0)
+            {
+                var schema = entry[..separatorIndex];
+                if (!string.Equals(schema, currentSchema, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                filter.Add(entry[(separatorIndex + 1)..]);
+            }
+            else
+            {
+                filter.Add(entry);
+            }
+        }
+
+        return filter;
+    }
+
+    private static List<DatabaseTable> GetTables(
+        DbConnection connection,
+        string schema,
+        HashSet<string>? tableFilter)
+    {
+        using var command = CreateCommand(
+            connection,
+            "SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
+        AddParameter(command, "schema", schema);
+
+        var tables = new List<DatabaseTable>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var name = reader.GetString(0);
+            if (tableFilter is not null && !tableFilter.Contains(name))
+            {
+                continue;
+            }
+
+            tables.Add(
+                new DatabaseTable
+                {
+                    Name = name,
+                    Schema = schema
+                });
+        }
+
+        return tables;
+    }
+
+    private static List<DatabaseTable> GetViews(
+        DbConnection connection,
+        string schema,
+        HashSet<string>? tableFilter)
+    {
+        using var command = CreateCommand(
+            connection,
+            "SELECT VIEW_NAME FROM ALL_VIEWS WHERE OWNER = :schema ORDER BY VIEW_NAME");
+        AddParameter(command, "schema", schema);
+
+        var views = new List<DatabaseTable>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var name = reader.GetString(0);
+            if (tableFilter is not null && !tableFilter.Contains(name))
+            {
+                continue;
+            }
+
+            views.Add(
+                new DatabaseView
+                {
+                    Name = name,
+                    Schema = schema
+                });
+        }
+
+        return views;
+    }
+
+    private static void LoadColumns(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        using var command = CreateCommand(
+            connection,
+            """
+            SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE,
+                   NULLABLE, CHAR_LENGTH, CHAR_USED, DATA_DEFAULT, COLUMN_ID
+            FROM ALL_TAB_COLUMNS
+            WHERE OWNER = :schema
+            ORDER BY TABLE_NAME, COLUMN_ID
+            """);
+        AddParameter(command, "schema", schema);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var tableName = reader.GetString(0);
+            if (!tables.TryGetValue(tableName, out var table))
+            {
+                continue;
+            }
+
+            var dataType = reader.GetString(2).Trim();
+            var dataLength = GetNullableInt64(reader, 3);
+            var dataPrecision = GetNullableInt64(reader, 4);
+            var dataScale = GetNullableInt64(reader, 5);
+            var nullable = string.Equals(reader.GetString(6), "Y", StringComparison.Ordinal);
+            var charLength = GetNullableInt64(reader, 7);
+            var charUsed = GetNullableString(reader, 8);
+            var defaultValue = GetNullableString(reader, 9);
+
+            var column = new DatabaseColumn
+            {
+                Table = table,
+                Name = reader.GetString(1),
+                StoreType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed),
+                IsNullable = nullable
+            };
+
+            if (defaultValue is not null
+                && TryParseSequenceDefault(defaultValue, out var sequenceName, out var sequenceSchema))
+            {
+                column[DamengAnnotationNames.ValueGenerationStrategy]
+                    = DamengValueGenerationStrategy.Sequence;
+                column[DamengAnnotationNames.SequenceName] = sequenceName;
+                column[DamengAnnotationNames.SequenceSchema] = sequenceSchema;
+                column.ValueGenerated = ValueGenerated.OnAdd;
+            }
+            else if (defaultValue is not null)
+            {
+                column.DefaultValueSql = defaultValue;
+            }
+
+            table.Columns.Add(column);
+        }
+    }
+
+    private static void LoadIdentityAnnotations(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        var identityColumns = new List<(string Table, string Column)>();
+        using (var command = CreateCommand(
+            connection,
+            """
+            SELECT O.NAME AS TABLE_NAME, C.NAME AS COLUMN_NAME
+            FROM SYS.SYSCOLUMNS C
+            INNER JOIN SYS.SYSOBJECTS O ON C.ID = O.ID
+            INNER JOIN SYS.SYSOBJECTS S ON O.SCHID = S.ID
+            WHERE S.NAME = :schema
+              AND O.TYPE$ = 'SCHOBJ'
+              AND O.SUBTYPE$ = 'UTAB'
+              AND C.INFO2 = 1
+            """))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                identityColumns.Add((reader.GetString(0), reader.GetString(1)));
+            }
+        }
+
+        var seedIncrementByTable = new Dictionary<string, (long Seed, int Increment)>(StringComparer.Ordinal);
+        foreach (var (tableName, columnName) in identityColumns)
+        {
+            if (!tables.TryGetValue(tableName, out var table))
+            {
+                continue;
+            }
+
+            var column = table.Columns.FirstOrDefault(
+                candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
+            if (column is null)
+            {
+                continue;
+            }
+
+            if (!seedIncrementByTable.TryGetValue(tableName, out var seedIncrement))
+            {
+                seedIncrement = GetIdentitySeedIncrement(connection, tableName);
+                seedIncrementByTable[tableName] = seedIncrement;
+            }
+
+            column[DamengAnnotationNames.ValueGenerationStrategy]
+                = DamengValueGenerationStrategy.IdentityColumn;
+            column[DamengAnnotationNames.IdentitySeed] = seedIncrement.Seed;
+            column[DamengAnnotationNames.IdentityIncrement] = seedIncrement.Increment;
+            column.ValueGenerated = ValueGenerated.OnAdd;
+        }
+    }
+
+    private static (long Seed, int Increment) GetIdentitySeedIncrement(
+        DbConnection connection,
+        string tableName)
+    {
+        var literal = "'" + tableName.Replace("'", "''", StringComparison.Ordinal) + "'";
+        using var command = CreateCommand(
+            connection,
+            $"SELECT IDENT_SEED({literal}), IDENT_INCR({literal}) FROM dual");
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return (1L, 1);
+        }
+
+        return (
+            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+            Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture));
+    }
+
+    private static void LoadConstraints(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        using var command = CreateCommand(
+            connection,
+            """
+            SELECT C.CONSTRAINT_NAME, C.CONSTRAINT_TYPE, C.TABLE_NAME, CC.COLUMN_NAME, CC.POSITION
+            FROM ALL_CONSTRAINTS C
+            INNER JOIN ALL_CONS_COLUMNS CC
+                ON CC.OWNER = C.OWNER
+                AND CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME
+                AND CC.TABLE_NAME = C.TABLE_NAME
+            WHERE C.OWNER = :schema
+              AND C.CONSTRAINT_TYPE IN ('P', 'U')
+            ORDER BY C.TABLE_NAME, C.CONSTRAINT_NAME, CC.POSITION
+            """);
+        AddParameter(command, "schema", schema);
+
+        var constraints = new List<(
+            string Name,
+            string Type,
+            DatabaseTable Table,
+            List<string> Columns)>();
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var tableName = reader.GetString(2);
+            if (!tables.TryGetValue(tableName, out var table))
+            {
+                continue;
+            }
+
+            var constraintName = reader.GetString(0);
+            var constraintType = reader.GetString(1);
+            var columnName = reader.GetString(3);
+
+            var constraint = constraints.LastOrDefault()
+                is { } last
+                && string.Equals(last.Name, constraintName, StringComparison.Ordinal)
+                && string.Equals(last.Type, constraintType, StringComparison.Ordinal)
+                && ReferenceEquals(last.Table, table)
+                    ? last
+                    : default;
+            if (constraint == default)
+            {
+                constraint = (constraintName, constraintType, table, []);
+                constraints.Add(constraint);
+            }
+
+            constraint.Columns.Add(columnName);
+        }
+
+        foreach (var (name, type, table, columns) in constraints)
+        {
+            if (type == "P")
+            {
+                var primaryKey = new DatabasePrimaryKey
+                {
+                    Table = table,
+                    Name = name
+                };
+                AddColumnsByName(table, columns, primaryKey.Columns);
+                table.PrimaryKey = primaryKey;
+            }
+            else
+            {
+                var uniqueConstraint = new DatabaseUniqueConstraint
+                {
+                    Table = table,
+                    Name = name
+                };
+                AddColumnsByName(table, columns, uniqueConstraint.Columns);
+                table.UniqueConstraints.Add(uniqueConstraint);
+            }
+        }
+    }
+
+    private static void AddColumnsByName(
+        DatabaseTable table,
+        IEnumerable<string> columnNames,
+        IList<DatabaseColumn> target)
+    {
+        foreach (var columnName in columnNames)
+        {
+            var column = table.Columns.FirstOrDefault(
+                candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
+            if (column is not null)
+            {
+                target.Add(column);
+            }
+        }
+    }
+
+    private static void LoadIndexes(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        var constraintIndexNames = new HashSet<string>(StringComparer.Ordinal);
+        using (var command = CreateCommand(
+            connection,
+            "SELECT INDEX_NAME FROM ALL_CONSTRAINTS WHERE OWNER = :schema AND INDEX_NAME IS NOT NULL"))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                constraintIndexNames.Add(reader.GetString(0));
+            }
+        }
+
+        using var indexCommand = CreateCommand(
+            connection,
+            """
+            SELECT I.INDEX_NAME, I.TABLE_NAME, I.UNIQUENESS, IC.COLUMN_NAME, IC.COLUMN_POSITION, IC.DESCEND
+            FROM ALL_INDEXES I
+            INNER JOIN ALL_IND_COLUMNS IC
+                ON IC.INDEX_OWNER = I.OWNER
+                AND IC.INDEX_NAME = I.INDEX_NAME
+                AND IC.TABLE_NAME = I.TABLE_NAME
+            WHERE I.OWNER = :schema
+              AND I.INDEX_TYPE <> 'CLUSTER'
+            ORDER BY I.TABLE_NAME, I.INDEX_NAME, IC.COLUMN_POSITION
+            """);
+        AddParameter(indexCommand, "schema", schema);
+
+        var indexes = new List<(
+            string Name,
+            DatabaseTable Table,
+            bool IsUnique,
+            List<string> Columns,
+            List<bool> Descending)>();
+
+        using var indexReader = indexCommand.ExecuteReader();
+        while (indexReader.Read())
+        {
+            var indexName = indexReader.GetString(0);
+            if (constraintIndexNames.Contains(indexName))
+            {
+                continue;
+            }
+
+            var tableName = indexReader.GetString(1);
+            if (!tables.TryGetValue(tableName, out var table))
+            {
+                continue;
+            }
+
+            var isUnique = string.Equals(indexReader.GetString(2), "UNIQUE", StringComparison.Ordinal);
+            var columnName = indexReader.GetString(3);
+            var descending = string.Equals(indexReader.GetString(5), "DESC", StringComparison.Ordinal);
+
+            var index = indexes.LastOrDefault()
+                is { } last
+                && string.Equals(last.Name, indexName, StringComparison.Ordinal)
+                && ReferenceEquals(last.Table, table)
+                    ? last
+                    : default;
+            if (index == default)
+            {
+                index = (indexName, table, isUnique, [], []);
+                indexes.Add(index);
+            }
+
+            index.Columns.Add(columnName);
+            index.Descending.Add(descending);
+        }
+
+        foreach (var (name, table, isUnique, columns, descending) in indexes)
+        {
+            var databaseIndex = new DatabaseIndex
+            {
+                Table = table,
+                Name = name,
+                IsUnique = isUnique
+            };
+            AddColumnsByName(table, columns, databaseIndex.Columns);
+            foreach (var isDescending in descending)
+            {
+                databaseIndex.IsDescending.Add(isDescending);
+            }
+
+            table.Indexes.Add(databaseIndex);
+        }
+    }
+
+    private static void LoadForeignKeys(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        using var command = CreateCommand(
+            connection,
+            """
+            SELECT C.CONSTRAINT_NAME, C.TABLE_NAME, P.TABLE_NAME AS PRINCIPAL_TABLE_NAME,
+                   CC.COLUMN_NAME, PC.COLUMN_NAME AS PRINCIPAL_COLUMN_NAME, C.DELETE_RULE
+            FROM ALL_CONSTRAINTS C
+            INNER JOIN ALL_CONSTRAINTS P
+                ON P.OWNER = C.R_OWNER AND P.CONSTRAINT_NAME = C.R_CONSTRAINT_NAME
+            INNER JOIN ALL_CONS_COLUMNS CC
+                ON CC.OWNER = C.OWNER
+                AND CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME
+                AND CC.TABLE_NAME = C.TABLE_NAME
+            INNER JOIN ALL_CONS_COLUMNS PC
+                ON PC.OWNER = P.OWNER
+                AND PC.CONSTRAINT_NAME = P.CONSTRAINT_NAME
+                AND PC.TABLE_NAME = P.TABLE_NAME
+                AND PC.POSITION = CC.POSITION
+            WHERE C.OWNER = :schema
+              AND C.CONSTRAINT_TYPE = 'R'
+            ORDER BY C.TABLE_NAME, C.CONSTRAINT_NAME, CC.POSITION
+            """);
+        AddParameter(command, "schema", schema);
+
+        var foreignKeys = new List<(
+            string Name,
+            DatabaseTable Table,
+            DatabaseTable PrincipalTable,
+            ReferentialAction? OnDelete,
+            List<string> Columns,
+            List<string> PrincipalColumns)>();
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var tableName = reader.GetString(1);
+            var principalTableName = reader.GetString(2);
+            if (!tables.TryGetValue(tableName, out var table)
+                || !tables.TryGetValue(principalTableName, out var principalTable))
+            {
+                // Cross-schema principals are outside the current-schema scope.
+                continue;
+            }
+
+            var constraintName = reader.GetString(0);
+            var onDelete = MapDeleteRule(GetNullableString(reader, 5));
+
+            var foreignKey = foreignKeys.LastOrDefault()
+                is { } last
+                && string.Equals(last.Name, constraintName, StringComparison.Ordinal)
+                && ReferenceEquals(last.Table, table)
+                    ? last
+                    : default;
+            if (foreignKey == default)
+            {
+                foreignKey = (constraintName, table, principalTable, onDelete, [], []);
+                foreignKeys.Add(foreignKey);
+            }
+
+            foreignKey.Columns.Add(reader.GetString(3));
+            foreignKey.PrincipalColumns.Add(reader.GetString(4));
+        }
+
+        foreach (var (name, table, principalTable, onDelete, columns, principalColumns) in foreignKeys)
+        {
+            var databaseForeignKey = new DatabaseForeignKey
+            {
+                Table = table,
+                PrincipalTable = principalTable,
+                Name = name,
+                OnDelete = onDelete
+            };
+            AddColumnsByName(table, columns, databaseForeignKey.Columns);
+            AddColumnsByName(principalTable, principalColumns, databaseForeignKey.PrincipalColumns);
+
+            table.ForeignKeys.Add(databaseForeignKey);
+        }
+    }
+
+    private static ReferentialAction? MapDeleteRule(string? deleteRule)
+        => deleteRule?.ToUpperInvariant() switch
+        {
+            "CASCADE" => ReferentialAction.Cascade,
+            "SET NULL" => ReferentialAction.SetNull,
+            "NO ACTION" => ReferentialAction.NoAction,
+            "RESTRICT" => ReferentialAction.Restrict,
+            _ => null
+        };
+
+    private static void LoadComments(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        using (var command = CreateCommand(
+            connection,
+            """
+            SELECT TABLE_NAME, COMMENTS
+            FROM ALL_TAB_COMMENTS
+            WHERE OWNER = :schema AND TABLE_TYPE = 'TABLE'
+            """))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (tables.TryGetValue(reader.GetString(0), out var table))
+                {
+                    table.Comment = GetNullableString(reader, 1);
+                }
+            }
+        }
+
+        using (var command = CreateCommand(
+            connection,
+            """
+            SELECT TABLE_NAME, COLUMN_NAME, COMMENTS
+            FROM ALL_COL_COMMENTS
+            WHERE OWNER = :schema
+            """))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!tables.TryGetValue(reader.GetString(0), out var table))
+                {
+                    continue;
+                }
+
+                var columnName = reader.GetString(1);
+                var comment = GetNullableString(reader, 2);
+                if (comment is null)
+                {
+                    continue;
+                }
+
+                var column = table.Columns.FirstOrDefault(
+                    candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
+                if (column is not null)
+                {
+                    column.Comment = comment;
+                }
+            }
+        }
+    }
+
+    internal static string BuildStoreType(
+        string dataType,
+        long? dataLength,
+        long? dataPrecision,
+        long? dataScale,
+        long? charLength,
+        string? charUsed)
+    {
+        var normalizedType = dataType.Trim().ToUpperInvariant();
+        switch (normalizedType)
+        {
+            case "CHAR":
+            case "VARCHAR":
+            case "VARCHAR2":
+            case "NCHAR":
+            case "NVARCHAR":
+            case "NVARCHAR2":
+                var textLength = string.Equals(charUsed, "C", StringComparison.Ordinal)
+                    ? charLength ?? dataLength
+                    : dataLength ?? charLength;
+                if (textLength is null or <= 0)
+                {
+                    return normalizedType;
+                }
+
+                // Character-declared lengths must keep the CHAR qualifier; otherwise a byte-sized
+                // instance truncates multi-byte text. NVARCHAR2/NCHAR are always character-based.
+                var isCharacterDeclared = string.Equals(charUsed, "C", StringComparison.Ordinal);
+                return isCharacterDeclared
+                    && normalizedType is "CHAR" or "VARCHAR" or "VARCHAR2"
+                        ? $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)} CHAR)"
+                        : $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)})";
+
+            case "DECIMAL":
+            case "DEC":
+            case "NUMERIC":
+            case "NUMBER":
+                return dataPrecision is null
+                    ? normalizedType
+                    : $"{normalizedType}({dataPrecision.Value.ToString(CultureInfo.InvariantCulture)},{(dataScale ?? 0L).ToString(CultureInfo.InvariantCulture)})";
+
+            case "TIME":
+            case "DATETIME":
+            case "TIMESTAMP":
+                return dataScale is > 0
+                    ? $"{normalizedType}({dataScale.Value.ToString(CultureInfo.InvariantCulture)})"
+                    : normalizedType;
+
+            case "DATETIME WITH TIME ZONE":
+                return dataScale is > 0
+                    ? $"DATETIME({dataScale.Value.ToString(CultureInfo.InvariantCulture)}) WITH TIME ZONE"
+                    : normalizedType;
+
+            case "TIMESTAMP WITH TIME ZONE":
+                return dataScale is > 0
+                    ? $"TIMESTAMP({dataScale.Value.ToString(CultureInfo.InvariantCulture)}) WITH TIME ZONE"
+                    : normalizedType;
+
+            case "INTERVAL DAY TO SECOND":
+                return string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"INTERVAL DAY({dataPrecision ?? 2L}) TO SECOND({dataScale ?? 6L})");
+
+            case "INTERVAL YEAR TO MONTH":
+                return string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"INTERVAL YEAR({dataPrecision ?? 2L}) TO MONTH");
+
+            case "BINARY":
+            case "VARBINARY":
+                return dataLength is > 0 and < int.MaxValue
+                    ? $"{normalizedType}({dataLength.Value.ToString(CultureInfo.InvariantCulture)})"
+                    : normalizedType;
+
+            default:
+                return normalizedType;
+        }
+    }
+
+    internal static bool TryParseSequenceDefault(
+        string defaultValueSql,
+        out string sequenceName,
+        out string? sequenceSchema)
+    {
+        var match = NextValDefaultPattern.Match(defaultValueSql);
+        if (!match.Success)
+        {
+            sequenceName = string.Empty;
+            sequenceSchema = null;
+            return false;
+        }
+
+        sequenceName = UnquoteIdentifier(match.Groups["seq"].Value);
+        sequenceSchema = match.Groups["schema"].Success
+            ? UnquoteIdentifier(match.Groups["schema"].Value)
+            : null;
+        return true;
+    }
+
+    private static string UnquoteIdentifier(string value)
+        => value.Length >= 2 && value[0] == '"' && value[^1] == '"'
+            ? value[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal)
+            : value;
+
+    private static DbCommand CreateCommand(DbConnection connection, string commandText)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        return command;
+    }
+
+    private static void AddParameter(DbCommand command, string name, string value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static long? GetNullableInt64(DbDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal)
+            ? null
+            : Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+
+    private static string? GetNullableString(DbDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+}

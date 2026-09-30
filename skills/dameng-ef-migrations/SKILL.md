@@ -24,12 +24,12 @@ metadata:
 | --- | --- | --- | --- |
 | 按当前模型建对象 | `Database.GenerateCreateScript()` | 不写 | 是 |
 | 应用内升级 | `Database.Migrate()` | 写 | 是 |
-| 把已有 migration 交给执行器 | `IMigrator.GenerateScript()`，或尚未做命令行回归的 `dotnet ef migrations script` | 写 | 进程内生成并执行已验证；`dotnet ef` 命令行没有端到端回归 |
+| 把已有 migration 交给执行器 | `IMigrator.GenerateScript()` 或 `dotnet ef migrations script` | 写 | 进程内生成并执行已验证；`dotnet ef` 命令行已做端到端回归 |
 | 同一脚本重复执行 | `GenerateScript(MigrationsSqlGenerationOptions.Idempotent)` | 写，并用 `IF NOT EXISTS` 守卫 | 是，同一脚本执行两遍 |
 
 三条脚本都不会让 DDL 变成事务。`CREATE` / `ALTER` / `DROP` 会隐式提交。失败后按对象名清理，不要指望 `ROLLBACK` 收回已执行的 DDL。
 
-`dotnet ef dbcontext scaffold` 没有实现。
+`dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
 
 ## 账户
 
@@ -46,7 +46,7 @@ metadata:
 
 ## 非幂等脚本
 
-`GenerateCreateScript()` 和 `GenerateScript()` 都不加 `Idempotent`。语句以 `;` 结束，标识符使用双引号，不生成 `@name`。
+`GenerateCreateScript()` 和 `GenerateScript()` 都不加 `Idempotent`。语句以 `;` 结束，标识符使用双引号，不生成 `@name`。`EnsureSchema` 是例外：它生成自带存在性守卫的匿名 `BEGIN ... END;` 块，作为一条命令执行，不按分号切开。
 
 执行时按分号切开。分号出现在单引号字符串、双引号标识符或注释里时不要切开。`''` 和 `""` 是转义。空语句丢掉。每条剩下的文本单独 `ExecuteNonQuery`。`COMMIT;` 可以单独执行。
 
@@ -59,14 +59,15 @@ metadata:
 1. `CREATE TABLE IF NOT EXISTS` 创建历史表。
 2. 每个命令外面包一层 `BEGIN ... IF NOT EXISTS ... THEN ... END IF; END;`。
 3. DDL 和种子放在 `EXECUTE IMMEDIATE '...'` 里。历史插入留在块内，不再套一层动态 SQL。
-4. 每个块后面有单独一行 `/`。这是 disql 批次分隔符，不是 SQL。
+4. 例外：`EnsureSchema` 生成自带 `SYS.SYSOBJECTS`（`TYPE$ = 'SCH'`）存在性守卫的匿名块。服务器不接受把块再包进 `EXECUTE IMMEDIATE`，所以该命令以原样的内嵌 `BEGIN ... END;` 出现在历史守卫内（块可以嵌套）。
+5. 每个块后面有单独一行 `/`。这是 disql 批次分隔符，不是 SQL。
 
 disql 可以直接跑带 `/` 的文件。ADO.NET 不能把 `/` 放进 `CommandText`。应用执行时：
 
 1. 按不在字符串内、且 trim 后恰好是 `/` 的行切开。
 2. `/` 行本身不执行。
 3. 每个片段里，`BEGIN` 之前的语句按分号执行。
-4. 从 `BEGIN` 到单独一行 `END;` 作为一条命令执行。
+4. 从 `BEGIN` 到配平的 `END;` 作为一条命令执行；块内允许再嵌套 `BEGIN ... END;`，按深度配对。
 
 同一脚本执行第二遍应保持种子一行、每个 `MigrationId` 一行。单条动态 SQL 转义后的 UTF-8 超过 32767 字节时，生成阶段会抛 `NotSupportedException`，把 migration 拆小。自定义 `migrationBuilder.Sql(...)` 里不能出现单独一行 `/`。
 

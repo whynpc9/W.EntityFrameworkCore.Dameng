@@ -43,7 +43,7 @@ internal static class DamengScriptExecutor
     internal static IReadOnlyList<string> SplitStatements(string script)
     {
         var batches = new List<string>();
-        AddStatements(batches, script);
+        AddScript(batches, script);
         return batches;
     }
 
@@ -52,53 +52,65 @@ internal static class DamengScriptExecutor
         var batches = new List<string>();
         foreach (var segment in SplitOnDisqlTerminator(script))
         {
-            var lines = segment.Split(["\r\n", "\n"], StringSplitOptions.None);
-            var prologue = new StringBuilder();
-            var block = new StringBuilder();
-            var inBlock = false;
-
-            foreach (var line in lines)
-            {
-                if (!inBlock && string.Equals(line.Trim(), "BEGIN", StringComparison.Ordinal))
-                {
-                    AddStatements(batches, prologue.ToString());
-                    prologue.Clear();
-                    inBlock = true;
-                    block.AppendLine(line);
-                    continue;
-                }
-
-                if (inBlock)
-                {
-                    block.AppendLine(line);
-                    if (string.Equals(line.Trim(), "END;", StringComparison.Ordinal))
-                    {
-                        var text = block.ToString().Trim();
-                        if (text.Length > 0)
-                        {
-                            batches.Add(text);
-                        }
-
-                        block.Clear();
-                        inBlock = false;
-                    }
-
-                    continue;
-                }
-
-                prologue.AppendLine(line);
-            }
-
-            if (inBlock)
-            {
-                throw new InvalidOperationException(
-                    "A Dameng idempotent script contains a BEGIN block without END;.");
-            }
-
-            AddStatements(batches, prologue.ToString());
+            AddScript(batches, segment);
         }
 
         return batches;
+    }
+
+    // Anonymous DMSQL blocks (BEGIN ... END;) are single commands even though they contain
+    // semicolons. Blocks may nest (the idempotent history guard wraps the EnsureSchema
+    // guard), so depth is tracked and only the outermost END; completes the batch.
+    // Provider-generated blocks place BEGIN / END; on their own lines.
+    private static void AddScript(List<string> batches, string script)
+    {
+        var prologue = new StringBuilder();
+        var block = new StringBuilder();
+        var blockDepth = 0;
+
+        foreach (var rawLine in script.Split(["\r\n", "\n"], StringSplitOptions.None))
+        {
+            var line = rawLine.Trim();
+            if (blockDepth == 0 && !string.Equals(line, "BEGIN", StringComparison.Ordinal))
+            {
+                prologue.AppendLine(rawLine);
+                continue;
+            }
+
+            if (blockDepth == 0)
+            {
+                AddStatements(batches, prologue.ToString());
+                prologue.Clear();
+            }
+
+            block.AppendLine(rawLine);
+            if (string.Equals(line, "BEGIN", StringComparison.Ordinal))
+            {
+                blockDepth++;
+            }
+            else if (string.Equals(line, "END;", StringComparison.Ordinal))
+            {
+                blockDepth--;
+                if (blockDepth == 0)
+                {
+                    var text = block.ToString().Trim();
+                    if (text.Length > 0)
+                    {
+                        batches.Add(text);
+                    }
+
+                    block.Clear();
+                }
+            }
+        }
+
+        if (blockDepth != 0)
+        {
+            throw new InvalidOperationException(
+                "A Dameng script contains a BEGIN block without END;.");
+        }
+
+        AddStatements(batches, prologue.ToString());
     }
 
     private static List<string> SplitOnDisqlTerminator(string script)

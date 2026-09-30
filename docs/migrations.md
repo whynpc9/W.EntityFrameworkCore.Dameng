@@ -4,9 +4,10 @@
 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。能力边界以
 [兼容性矩阵](compatibility.md) 为准。
 
-本仓库验证的是进程内的 `IMigrator.GenerateScript()` 和 `Database.Migrate()`。
-`dotnet ef` 命令会走到同一套设计时服务和 SQL 生成器，但命令行进程本身还没有端到端回归。
-`dotnet ef dbcontext scaffold` 不在当前范围内。
+进程内的 `IMigrator.GenerateScript()`、`Database.Migrate()` 与命令行 `dotnet ef`
+（`migrations add` / `migrations script` / `database update` / `dbcontext scaffold`）
+都在同一套设计时服务和 SQL 生成器上完成过真实库回归。命令行回归使用仓库内
+`artifacts/dotnet-ef-tool` 的版本匹配 dotnet-ef 本地工具（全局旧版工具在 Unix 上有已知构建问题）。
 
 不要把连接字符串、主机、用户或口令写进仓库、脚本、日志或本文档。
 
@@ -201,7 +202,8 @@ SQL> START /path/migrate.sql
 
 幂等脚本必须交给 DIsql。`/` 是客户端批次结束符，不是服务器 SQL。
 不要把整个文件交给 ADO.NET、`ExecuteSqlRaw` 或其他按分号拆批的执行器。
-应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送。
+应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送；
+块可以嵌套（历史记录守卫内的 `EnsureSchema` 守卫块），按 `BEGIN`/`END;` 深度配对，不要在内层 `END;` 处提前截断。
 
 脚本正文里如果出现 `&`，DIsql 会把它当成替换变量。执行前在会话里运行 `SET DEFINE OFF`。
 

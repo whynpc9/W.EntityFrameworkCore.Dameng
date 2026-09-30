@@ -44,7 +44,7 @@
 | 乐观并发 | 真实环境已验证 | 过期并发标记通过驱动程序已验证的 `SQL%ROWCOUNT` 结果协议抛出异常 |
 | `ExecuteUpdate` / `ExecuteDelete` | 真实环境已验证 | 受影响行数以及持久化的布尔值/转换值更新 |
 | 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
-| 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime` |
+| 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`）；`NVARCHAR2(n)` 已是字符语义，保持不变 |
 | `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；已有往返样本通过提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较及 `Year`/`Month`/`Day`/`Hour`/`Minute`/`Second` 六个本地日期部件已验证，部件按列上保存的原偏移提取。`Offset`、`UtcDateTime`、`DateTime`、`Now`/`UtcNow` 和 `Add*` 仍不翻译；映射精度声明不构成第七位小数保真保证 |
 | `TimeSpan` | 真实环境已验证 | `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留映射的天/小数秒精度，并拒绝造成信息损失的 tick |
 | 二进制与 LOB 映射 | 真实环境已验证 / 查询语义部分支持 | `VARBINARY`、40 KiB `BLOB` 和 40 KiB Unicode `NCLOB` 往返。通过 `TEXT_EQUAL`/`BLOB_EQUAL` 进行参数相等比较，以及通过 NCLOB `INSTR` 搜索，均已在参考服务器执行；排序、分组、distinct 和 distinct 集合操作会提前失败。字符串搜索函数仍受 `CLOB_MAX_CALC_LEN` 约束。键/索引需要有界行内类型，可用行内长度由页面/行配置决定 |
@@ -56,7 +56,7 @@
 | 重试执行策略 | 单元级已验证 | 保守的 `DmException.Number` 分类和有界设置；当前没有真实故障注入套件证明每个错误码都可恢复 |
 | DDL 事务性 | 不支持原子迁移 | 达梦 DDL 会隐式提交；生成的 DDL 命令会禁用 EF 事务 |
 | 创建/删除物理数据库 | 不支持 | `Create`/`Delete` 会抛出异常；应连接到现有数据库并管理当前模式中的对象 |
-| 迁移 DDL | 部分支持 / 子集真实环境已验证 | 2026-09-22 已在独立用户模式中执行 `Database.GenerateCreateScript()`、非幂等 `IMigrator.GenerateScript()`、幂等脚本的重复执行，以及 `Database.Migrate()`。覆盖标识列种子与 `SET IDENTITY_INSERT`、序列 `NEXTVAL`、虚拟计算列、主键、唯一约束、检查约束、`ON DELETE CASCADE`、升降序唯一索引、额外模式中的表、列/表/索引重命名、带默认值的非空列（已有行回填为该默认值）和删除列。在第一次 `NEXTVAL` 之前把增量从 3 改成 5 时，第一个值是 43 而不是 41。筛选索引、存储计算列、修改标识列和跨模式重命名仍在生成时拒绝 |
+| 迁移 DDL | 部分支持 / 子集真实环境已验证 | 2026-09-22 已在独立用户模式中执行 `Database.GenerateCreateScript()`、非幂等 `IMigrator.GenerateScript()`、幂等脚本的重复执行，以及 `Database.Migrate()`。覆盖标识列种子与 `SET IDENTITY_INSERT`、序列 `NEXTVAL`、虚拟计算列、主键、唯一约束、检查约束、`ON DELETE CASCADE`、升降序唯一索引、额外模式中的表、列/表/索引重命名、带默认值的非空列（已有行回填为该默认值）和删除列。在第一次 `NEXTVAL` 之前把增量从 3 改成 5 时，第一个值是 43 而不是 41。筛选索引、存储计算列、修改标识列和跨模式重命名仍在生成时拒绝。2026-09-30 起 `HasComment` 经 `COMMENT ON TABLE` / `COMMENT ON COLUMN` 落库（服务器不接受 `IS NULL`，清除生成 `IS ''`），覆盖幂等与非幂等脚本及真实库回读 |
 | 迁移历史记录 | 真实环境已验证 | 存在性、按需创建、插入、查询和删除路径。存在性查询 `SYS.SYSOBJECTS`。`RESOURCE` 可以执行生成的脚本，但不能做这次查询；2026-09-22 的实例上要再授予 `SOI`，`Database.Migrate()` 才能通过。脚本里的历史插入不经过这次查询 |
 | 迁移锁 | 真实环境已验证 / 服务器特定 | 使用 `DBMS_LOCK`；已在参考非 MPP 服务器上验证。达梦 MPP 不提供相同基线 |
 | 幂等迁移脚本 | 真实环境已验证 / 部分支持 | `IMigrator.GenerateScript(Idempotent)` 在历史表守卫中使用已转义的 `EXECUTE IMMEDIATE`，块以单独一行 `/` 结束。2026-09-22 将 `/` 剔除后，把每个 `BEGIN ... END;` 作为一条命令执行了两遍，Unicode 和引号种子只保留一行，历史记录不重复。`/` 本身不能放进 ADO.NET 命令。转义后 UTF-8 表示超过 32767 字节的动态命令字面量会提前失败，必须拆分 |
@@ -65,9 +65,9 @@
 | 修改标识列 | 不支持 | 拒绝通过 `ALTER COLUMN` 添加/移除 `IDENTITY`，或修改其种子/增量；应重新创建该列 |
 | 跨模式重命名 | 不支持 | 不能通过表/序列重命名将对象移动到其他模式 |
 | TPT/TPC 值生成 | 单元级已验证 / 部分支持 | TPT 仅向根表应用标识列/序列生成。由于多个具体表可能发生冲突，因此拒绝 TPC 标识列；可改用共享达梦序列 |
-| 模式创建与不常见 DDL | 部分支持 | 2026-09-22 已执行 `CREATE SCHEMA` 以及该模式中的表。其余未测试的 DDL 不能据此视为已支持 |
-| 设计时迁移代码生成 | 单元级已验证 / 部分支持 | 提供程序和注解代码生成器会生成 `UseDameng` 和达梦值生成 API。进程内 `GenerateCreateScript`、`IMigrator.GenerateScript` 和 `Database.Migrate()` 已在服务器执行。`dotnet ef` 命令行端到端覆盖仍然有限。人工步骤见 [迁移操作说明](migrations.md) |
-| 反向工程 | 未实现 / 单元级已验证为缺失 | 设计时服务不注册 `IDatabaseModelFactory`；`dotnet ef dbcontext scaffold` 不在当前提供程序范围内 |
+| 模式创建与不常见 DDL | 部分支持 | 2026-09-22 已执行 `CREATE SCHEMA` 以及该模式中的表。2026-09-30 起 `EnsureSchema` 生成带 `SYS.SYSOBJECTS`（`TYPE$ = 'SCH'`）存在性守卫的匿名块，模式已存在时不重复创建；服务器不支持 `CREATE SCHEMA IF NOT EXISTS`。其余未测试的 DDL 不能据此视为已支持 |
+| 设计时迁移代码生成 | 真实环境已验证 | 提供程序和注解代码生成器会生成 `UseDameng` 和达梦值生成 API。进程内 `GenerateCreateScript`、`IMigrator.GenerateScript` 和 `Database.Migrate()` 已在服务器执行。2026-09-30 起 `dotnet ef migrations add` / `migrations script`（含幂等）/ `database update` / `dbcontext scaffold` 在以版本匹配的 dotnet-ef 本地工具（`artifacts/dotnet-ef-tool`）驱动下完成真实库端到端回归：注释、`IDENTITY` 种子/增量、`NEXTVAL` 默认和降序索引均往返。人工步骤见 [迁移操作说明](migrations.md) |
+| 反向工程 | 部分支持 / 真实环境已验证 | 设计时服务注册 `IDatabaseModelFactory`，覆盖当前模式（以 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定，不受登录用户与当前模式分离影响）的表、视图、列、列默认值、表/列注释、主键、唯一约束、普通索引（含升降序）和外键（含复合键与 CASCADE/SET NULL/NO ACTION）。自增识别原生 `IDENTITY`（`SYSCOLUMNS.INFO2` 标记，`IDENT_SEED`/`IDENT_INCR` 还原种子与增量）与列默认值 `序列.NEXTVAL`；仅存在同名序列不算自增。`INTERVAL DAY TO SECOND` 从目录 `DATA_PRECISION`/`DATA_SCALE` 还原天精度与秒小数位。标识符按目录原始拼写加引号，不强制大写。边界：只扫当前模式；跨模式主体表的外键跳过；视图注释不可用（服务器拒绝 `COMMENT ON` 视图）；目录中虚拟计算列与普通列不可区分，按普通列读回 |
 | EF 关系数据库规范一致性 | 未声明 | 规范测试项目包含四项提供程序自有冒烟测试并使用 EF 测试工具，但不继承上游关系数据库 `*TestBase` 测试套件 |
 | 裁剪 / NativeAOT | 未验证 | 不对提供程序或当前驱动程序的裁剪、编译模型优化或 NativeAOT 兼容性作任何声明 |
 | 异步 I/O 与取消 | 受驱动程序限制 | 已测试的驱动程序资产会回退到同步 ADO.NET 实现；EF 异步 API 仍然可用，但无法保证非阻塞 I/O 或及时取消 |
@@ -89,6 +89,14 @@
 - 提供程序自有关系数据库冒烟测试套件：4/4 通过；
 - `dotnet format --verify-no-changes`：通过；
 - 未重新做 Release 构建。上面的 2026-09-17 Release 快照仍然有效，但不能把 48 这个数字写回那次快照。
+
+2026-09-30 设计时工作验证（Debug，不是 Release 发布快照；实例参数同 2026-09-29 记录）：
+
+- 确定性单元测试套件：303/303 通过；
+- 功能测试套件：78/78 通过，含反向工程（表/视图/列/默认值/注释/约束/索引/外键/自增）、注释迁移、模式守卫、非 Unicode 字符语义和 `dotnet ef` 命令行端到端（版本匹配的本地 dotnet-ef 工具，`artifacts/dotnet-ef-tool`）；
+- 提供程序自有关系数据库冒烟测试套件：4/4 通过；
+- 管理员迁移脚本通道：4/4 通过，临时用户与表空间已确认清理；
+- 能力探针通道：24/24 执行完成（探针通过只表示候选均已尝试，不构成能力声明）。
 
 ## 真实数据库测试契约
 
