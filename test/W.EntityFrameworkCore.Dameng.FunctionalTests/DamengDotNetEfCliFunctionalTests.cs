@@ -190,6 +190,12 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     StringComparison.Ordinal),
                 "Scaffolded context must use the public sequence API.");
             Assert.True(
+                scaffoldedContext.Contains("HasSequence", StringComparison.Ordinal)
+                && scaffoldedContext.Contains(sequenceName, StringComparison.Ordinal)
+                && scaffoldedContext.Contains("StartsAt(41", StringComparison.Ordinal)
+                && scaffoldedContext.Contains("IncrementsBy(3", StringComparison.Ordinal),
+                "Scaffolded context must carry the sequence catalog facets, not invented defaults.");
+            Assert.True(
                 scaffoldedContext.Contains("IsDescending()", StringComparison.Ordinal),
                 "Scaffolded context must keep the descending index.");
 

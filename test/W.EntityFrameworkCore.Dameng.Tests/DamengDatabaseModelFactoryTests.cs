@@ -20,13 +20,20 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("DECIMAL", 22, 18, 3, 0, null, "DECIMAL(18,3)")]
     [InlineData("DECIMAL", 22, null, null, 0, null, "DECIMAL")]
     [InlineData("NUMERIC", 22, 9, 0, 0, null, "NUMERIC(9,0)")]
-    // Temporal scale comes from DATA_SCALE.
+    // Temporal scale comes from DATA_SCALE; a declared (0) is preserved because the
+    // unqualified type would fall back to the server's default precision.
     [InlineData("DATETIME", 8, null, 6, 0, null, "DATETIME(6)")]
     [InlineData("DATETIME", 8, null, 7, 0, null, "DATETIME(7)")]
+    [InlineData("DATETIME", 8, null, 0, 0, null, "DATETIME(0)")]
     [InlineData("TIME", 5, null, 3, 0, null, "TIME(3)")]
-    [InlineData("TIMESTAMP", 8, null, 0, 0, null, "TIMESTAMP")]
+    [InlineData("TIME", 5, null, 0, 0, null, "TIME(0)")]
+    [InlineData("TIME", 5, null, null, 0, null, "TIME")]
+    [InlineData("TIMESTAMP", 8, null, 0, 0, null, "TIMESTAMP(0)")]
+    [InlineData("TIMESTAMP", 8, null, 6, 0, null, "TIMESTAMP(6)")]
     [InlineData("DATETIME WITH TIME ZONE", 11, null, 7, 0, null, "DATETIME(7) WITH TIME ZONE")]
+    [InlineData("DATETIME WITH TIME ZONE", 11, null, 0, 0, null, "DATETIME(0) WITH TIME ZONE")]
     [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 6, 0, null, "TIMESTAMP(6) WITH TIME ZONE")]
+    [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 0, 0, null, "TIMESTAMP(0) WITH TIME ZONE")]
     // Interval precision and scale restore the declared facets.
     [InlineData("INTERVAL DAY TO SECOND", 24, 9, 6, 0, null, "INTERVAL DAY(9) TO SECOND(6)")]
     [InlineData("INTERVAL DAY TO SECOND", 24, 4, 3, 0, null, "INTERVAL DAY(4) TO SECOND(3)")]
@@ -95,5 +102,25 @@ public sealed class DamengDatabaseModelFactoryTests
             out _);
 
         Assert.False(matched);
+    }
+
+    [Theory]
+    [InlineData("USERS", null, "USERS")]
+    [InlineData("APP.USERS", "APP", "USERS")]
+    [InlineData("\"A.B\"", null, "A.B")]
+    [InlineData("APP.\"A.B\"", "APP", "A.B")]
+    [InlineData("\"MY.SCHEMA\".T", "MY.SCHEMA", "T")]
+    [InlineData("\"MY.SCHEMA\".\"T.U\"", "MY.SCHEMA", "T.U")]
+    [InlineData("\"WEIRD\"\"NAME\".T", "WEIRD\"NAME", "T")]
+    [InlineData("app.\"Quoted\"", "app", "Quoted")]
+    public void SplitQualifiedNameParsesIdentifierComponents(
+        string entry,
+        string? expectedSchema,
+        string expectedName)
+    {
+        var (schema, name) = DamengDatabaseModelFactory.SplitQualifiedName(entry);
+
+        Assert.Equal(expectedSchema, schema);
+        Assert.Equal(expectedName, name);
     }
 }

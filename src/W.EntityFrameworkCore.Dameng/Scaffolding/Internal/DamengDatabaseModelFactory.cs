@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Dm;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,12 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static readonly Regex NextValDefaultPattern = new(
         @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|\w+)\.)?(?<seq>""(?:[^""]|"""")*""|\w+)\.NEXTVAL\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private sealed record PendingSequenceDefault(
+        DatabaseColumn Column,
+        string RawDefault,
+        string SequenceName,
+        string? SequenceSchema);
 
     public override DatabaseModel Create(
         string connectionString,
@@ -73,7 +80,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
 
-            LoadColumns(connection, currentSchema, tableLookup);
+            var pendingSequenceDefaults = new List<PendingSequenceDefault>();
+            LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults);
+            ResolveSequenceDefaults(connection, currentSchema, databaseModel, pendingSequenceDefaults);
             LoadIdentityAnnotations(connection, currentSchema, tableLookup);
             LoadConstraints(connection, currentSchema, tableLookup);
             LoadIndexes(connection, currentSchema, tableLookup);
@@ -115,20 +124,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         var filter = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in tables)
         {
-            var separatorIndex = entry.IndexOf('.', StringComparison.Ordinal);
-            if (separatorIndex >= 0)
+            var (entrySchema, entryName) = SplitQualifiedName(entry);
+            if (entrySchema is not null)
             {
-                var schema = entry[..separatorIndex];
-                if (!string.Equals(schema, currentSchema, StringComparison.Ordinal))
+                if (!string.Equals(entrySchema, currentSchema, StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                filter.Add(entry[(separatorIndex + 1)..]);
+                filter.Add(entryName);
             }
             else
             {
-                filter.Add(entry);
+                filter.Add(entryName);
             }
         }
 
@@ -207,7 +215,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadColumns(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        List<PendingSequenceDefault> pendingSequenceDefaults)
     {
         using var command = CreateCommand(
             connection,
@@ -249,11 +258,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             if (defaultValue is not null
                 && TryParseSequenceDefault(defaultValue, out var sequenceName, out var sequenceSchema))
             {
-                column[DamengAnnotationNames.ValueGenerationStrategy]
-                    = DamengValueGenerationStrategy.Sequence;
-                column[DamengAnnotationNames.SequenceName] = sequenceName;
-                column[DamengAnnotationNames.SequenceSchema] = sequenceSchema;
-                column.ValueGenerated = ValueGenerated.OnAdd;
+                // Facets are resolved against the catalog after all columns are read; only then
+                // is the default converted into a sequence strategy.
+                pendingSequenceDefaults.Add(
+                    new PendingSequenceDefault(column, defaultValue, sequenceName, sequenceSchema));
             }
             else if (defaultValue is not null)
             {
@@ -262,6 +270,123 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             table.Columns.Add(column);
         }
+    }
+
+    // A NEXTVAL default becomes a sequence strategy only when the referenced sequence is read
+    // from the catalog with its real facets; otherwise the model would scaffold an EF sequence
+    // with invented default facets and recreate a different sequence on migration. Cross-schema
+    // or unreadable references keep the raw default SQL instead.
+    private static void ResolveSequenceDefaults(
+        DbConnection connection,
+        string schema,
+        DatabaseModel databaseModel,
+        List<PendingSequenceDefault> pending)
+    {
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        var facets = LoadSequenceFacets(
+            connection,
+            schema,
+            pending
+                .Where(
+                    entry => entry.SequenceSchema is null
+                        || string.Equals(entry.SequenceSchema, schema, StringComparison.Ordinal))
+                .Select(entry => entry.SequenceName)
+                .Distinct(StringComparer.Ordinal)
+                .ToList());
+
+        var addedToModel = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in pending)
+        {
+            if (entry.SequenceSchema is not null
+                && !string.Equals(entry.SequenceSchema, schema, StringComparison.Ordinal))
+            {
+                entry.Column.DefaultValueSql = entry.RawDefault;
+                continue;
+            }
+
+            if (!facets.TryGetValue(entry.SequenceName, out var sequence))
+            {
+                entry.Column.DefaultValueSql = entry.RawDefault;
+                continue;
+            }
+
+            entry.Column[DamengAnnotationNames.ValueGenerationStrategy]
+                = DamengValueGenerationStrategy.Sequence;
+            entry.Column[DamengAnnotationNames.SequenceName] = entry.SequenceName;
+            entry.Column[DamengAnnotationNames.SequenceSchema] = entry.SequenceSchema;
+            entry.Column.ValueGenerated = ValueGenerated.OnAdd;
+
+            if (addedToModel.Add(sequence.Name))
+            {
+                databaseModel.Sequences.Add(sequence);
+            }
+        }
+    }
+
+    private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(
+        DbConnection connection,
+        string schema,
+        List<string> sequenceNames)
+    {
+        var facets = new Dictionary<string, DatabaseSequence>(StringComparer.Ordinal);
+        if (sequenceNames.Count == 0)
+        {
+            return facets;
+        }
+
+        // LAST_NUMBER is the next value the sequence will issue (an unused sequence reports its
+        // START WITH), so recreating from it continues without reusing generated values.
+        var nameParameters = new StringBuilder();
+        for (var index = 0; index < sequenceNames.Count; index++)
+        {
+            if (index > 0)
+            {
+                nameParameters.Append(", ");
+            }
+
+            nameParameters.Append(":seq").Append(index);
+        }
+
+        using var command = CreateCommand(
+            connection,
+            "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER"
+            + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema"
+            + $" AND SEQUENCE_NAME IN ({nameParameters})");
+        AddParameter(command, "schema", schema);
+        for (var index = 0; index < sequenceNames.Count; index++)
+        {
+            AddParameter(command, $"seq{index}", sequenceNames[index]);
+        }
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            // INCREMENT_BY beyond the EF facet type cannot round-trip; skip the facets and let
+            // the column keep its raw default instead of inventing new ones.
+            var increment = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
+            if (increment is < int.MinValue or > int.MaxValue)
+            {
+                continue;
+            }
+
+            var name = reader.GetString(0);
+            facets[name] = new DatabaseSequence
+            {
+                Name = name,
+                Schema = schema,
+                IncrementBy = (int)increment,
+                MinValue = Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture),
+                MaxValue = Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture),
+                IsCyclic = string.Equals(reader.GetString(4), "Y", StringComparison.Ordinal),
+                StartValue = Convert.ToInt64(reader.GetValue(5), CultureInfo.InvariantCulture)
+            };
+        }
+
+        return facets;
     }
 
     private static void LoadIdentityAnnotations(
@@ -748,17 +873,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             case "TIME":
             case "DATETIME":
             case "TIMESTAMP":
-                return dataScale is > 0
+                // The catalog reports a concrete scale even for scale zero; the unqualified type
+                // would pick up the server's default precision instead of the declared (0).
+                return dataScale is not null
                     ? $"{normalizedType}({dataScale.Value.ToString(CultureInfo.InvariantCulture)})"
                     : normalizedType;
 
             case "DATETIME WITH TIME ZONE":
-                return dataScale is > 0
+                return dataScale is not null
                     ? $"DATETIME({dataScale.Value.ToString(CultureInfo.InvariantCulture)}) WITH TIME ZONE"
                     : normalizedType;
 
             case "TIMESTAMP WITH TIME ZONE":
-                return dataScale is > 0
+                return dataScale is not null
                     ? $"TIMESTAMP({dataScale.Value.ToString(CultureInfo.InvariantCulture)}) WITH TIME ZONE"
                     : normalizedType;
 
@@ -801,6 +928,36 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             ? UnquoteIdentifier(match.Groups["schema"].Value)
             : null;
         return true;
+    }
+
+    // A table filter entry is a qualified name whose components may be delimited; the schema
+    // separator is the first dot outside a double-quoted component, so a legal name containing
+    // a dot (APP."A.B" or "MY.SCHEMA".T) still resolves to the catalog's stored names.
+    internal static (string? Schema, string Name) SplitQualifiedName(string entry)
+    {
+        var inQuotes = false;
+        for (var index = 0; index < entry.Length; index++)
+        {
+            var current = entry[index];
+            if (current == '"')
+            {
+                if (inQuotes && index + 1 < entry.Length && entry[index + 1] == '"')
+                {
+                    index++;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+            }
+            else if (current == '.' && !inQuotes)
+            {
+                return (
+                    UnquoteIdentifier(entry[..index]),
+                    UnquoteIdentifier(entry[(index + 1)..]));
+            }
+        }
+
+        return (null, UnquoteIdentifier(entry));
     }
 
     private static string UnquoteIdentifier(string value)

@@ -562,6 +562,58 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
 
     [DamengFact]
     [Trait("Category", "CapabilityProbe")]
+    public async Task SequenceFacetDdl()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var defaultFacets = $"EF10_DTSQD_{suffix}";
+        var cycled = $"EF10_DTSQC_{suffix}";
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var defaultCreated = false;
+        var cycledCreated = false;
+        try
+        {
+            // Explicitly spelling out the server-default range must be accepted: scaffolded
+            // sequences carry the catalog MIN/MAX verbatim and recreate with them.
+            await ProbeDdlStepAsync(
+                connection,
+                "SEQF.create_default_facets",
+                $"CREATE SEQUENCE \"{defaultFacets}\" MINVALUE 1 MAXVALUE 9223372036854775807 INCREMENT BY 1 START WITH 1 NOCYCLE");
+            defaultCreated = true;
+            await ProbeDdlStepAsync(
+                connection,
+                "SEQF.create_cycled",
+                $"CREATE SEQUENCE \"{cycled}\" START WITH 41 INCREMENT BY 3 MINVALUE 1 MAXVALUE 1000000 CYCLE");
+            cycledCreated = true;
+
+            await DumpRowsAsync(
+                connection,
+                "SEQF.user_sequences_default",
+                "SELECT SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY, CYCLE_FLAG, LAST_NUMBER FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :name",
+                defaultFacets);
+            await DumpRowsAsync(
+                connection,
+                "SEQF.user_sequences_cycled",
+                "SELECT SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY, CYCLE_FLAG, LAST_NUMBER FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :name",
+                cycled);
+        }
+        finally
+        {
+            if (cycledCreated)
+            {
+                await ProbeDdlStepAsync(connection, "SEQF.drop_cycled", $"DROP SEQUENCE \"{cycled}\"");
+            }
+
+            if (defaultCreated)
+            {
+                await ProbeDdlStepAsync(connection, "SEQF.drop_default", $"DROP SEQUENCE \"{defaultFacets}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
     public async Task CommentLifecycle()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();

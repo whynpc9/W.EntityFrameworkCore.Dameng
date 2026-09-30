@@ -37,7 +37,9 @@ public sealed class DamengReverseEngineeringFunctionalTests
         var lowerTableCreated = false;
         try
         {
-            await ExecuteAsync(setup, $"CREATE SEQUENCE \"{sequenceName}\" START WITH 41 INCREMENT BY 3");
+            await ExecuteAsync(
+                setup,
+                $"CREATE SEQUENCE \"{sequenceName}\" START WITH 41 INCREMENT BY 3 MAXVALUE 1000000 CYCLE");
             sequenceCreated = true;
             await ExecuteAsync(
                 setup,
@@ -110,6 +112,18 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Null(sequenceColumn[DamengAnnotationNames.SequenceSchema]);
             Assert.Null(sequenceColumn.DefaultValueSql);
             Assert.Equal(ValueGenerated.OnAdd, sequenceColumn.ValueGenerated);
+
+            // The referenced sequence lands in the model with its catalog facets, so a
+            // recreated sequence keeps the same start/increment/min/max/cycle behavior.
+            var sequence = Assert.Single(
+                model.Sequences,
+                candidate => candidate.Name == sequenceName);
+            Assert.Equal(currentSchema, sequence.Schema);
+            Assert.Equal(41L, sequence.StartValue);
+            Assert.Equal(3, sequence.IncrementBy);
+            Assert.Equal(1L, sequence.MinValue);
+            Assert.Equal(1000000L, sequence.MaxValue);
+            Assert.True(sequence.IsCyclic);
 
             Assert.Equal("VARCHAR(8)", table.Columns[4].StoreType);
             Assert.Equal("'NEW'", table.Columns[4].DefaultValueSql?.Trim());
@@ -502,6 +516,181 @@ public sealed class DamengReverseEngineeringFunctionalTests
             if (created)
             {
                 await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryPreservesZeroFractionalSecondPrecision()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_RT_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var created = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"""
+                CREATE TABLE "{tableName}" (
+                    "T0" TIME(0),
+                    "T" TIME,
+                    "TS0" TIMESTAMP(0),
+                    "TS" TIMESTAMP,
+                    "DT0" DATETIME(0),
+                    "DT" DATETIME,
+                    "DTZ0" DATETIME(0) WITH TIME ZONE
+                )
+                """);
+            created = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
+            var storeTypes = table.Columns.ToDictionary(column => column.Name, column => column.StoreType, StringComparer.Ordinal);
+            Assert.Equal("TIME(0)", storeTypes["T0"]);
+            Assert.Equal("TIMESTAMP(0)", storeTypes["TS0"]);
+            Assert.Equal("DATETIME(0)", storeTypes["DT0"]);
+            Assert.Equal("DATETIME(0) WITH TIME ZONE", storeTypes["DTZ0"]);
+
+            // The catalog reports the server's default scale for unqualified types; emitting it
+            // explicitly recreates the same facet instead of depending on the default again.
+            Assert.Equal("TIME(0)", storeTypes["T"]);
+            Assert.Equal("TIMESTAMP(6)", storeTypes["TS"]);
+            Assert.Equal("DATETIME(6)", storeTypes["DT"]);
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryMatchesDelimitedTableFiltersContainingDots()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_WF.{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        var currentSchema = string.Empty;
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var created = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY)");
+            created = true;
+
+            await using (var schemaCommand = setup.CreateCommand())
+            {
+                schemaCommand.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+                currentSchema = Convert.ToString(await schemaCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+
+            // A qualified filter whose table component is delimited and contains a dot.
+            await using (var connection = new DmConnection(connectionString))
+            {
+                var model = factory.Create(
+                    connection,
+                    new DatabaseModelFactoryOptions(
+                        tables: [$"{currentSchema}.\"{tableName}\""]));
+                Assert.Equal([tableName], model.Tables.Select(table => table.Name).ToArray());
+            }
+
+            // The same table selected by its delimited component alone.
+            await using (var connection = new DmConnection(connectionString))
+            {
+                var model = factory.Create(
+                    connection,
+                    new DatabaseModelFactoryOptions(tables: [$"\"{tableName}\""]));
+                Assert.Equal([tableName], model.Tables.Select(table => table.Name).ToArray());
+            }
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryKeepsRawDefaultForCrossSchemaSequenceReferences()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var otherSchema = $"EF10_RQ_{suffix}";
+        var sequenceName = $"EF10_RQS_{suffix}";
+        var tableName = $"EF10_RQT_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var schemaCreated = false;
+        var sequenceCreated = false;
+        var tableCreated = false;
+        try
+        {
+            await ExecuteAsync(setup, $"CREATE SCHEMA \"{otherSchema}\"");
+            schemaCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE SEQUENCE \"{otherSchema}\".\"{sequenceName}\" START WITH 7 INCREMENT BY 2");
+            sequenceCreated = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"N\" INT DEFAULT \"{otherSchema}\".\"{sequenceName}\".NEXTVAL)");
+            tableCreated = true;
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
+            var column = Assert.Single(table.Columns, candidate => candidate.Name == "N");
+
+            // The referenced sequence is outside the current-schema scope: keep the raw default
+            // rather than scaffolding an EF sequence with invented facets.
+            Assert.Null(column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Null(column[DamengAnnotationNames.SequenceName]);
+            Assert.NotNull(column.DefaultValueSql);
+            Assert.Contains(sequenceName, column.DefaultValueSql, StringComparison.Ordinal);
+            Assert.Contains("NEXTVAL", column.DefaultValueSql, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(model.Sequences, candidate => candidate.Name == sequenceName);
+        }
+        finally
+        {
+            if (tableCreated)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+            }
+
+            if (sequenceCreated)
+            {
+                await ExecuteAsync(setup, $"DROP SEQUENCE \"{otherSchema}\".\"{sequenceName}\"");
+            }
+
+            if (schemaCreated)
+            {
+                await ExecuteAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
             }
         }
     }
