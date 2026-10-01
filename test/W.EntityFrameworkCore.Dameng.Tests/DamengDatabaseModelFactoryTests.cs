@@ -34,6 +34,11 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("DATETIME WITH TIME ZONE", 11, null, 0, 0, null, "DATETIME(0) WITH TIME ZONE")]
     [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 6, 0, null, "TIMESTAMP(6) WITH TIME ZONE")]
     [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 0, 0, null, "TIMESTAMP(0) WITH TIME ZONE")]
+    // The catalog offsets TIMESTAMP WITH LOCAL TIME ZONE scale by 4096.
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4102, 0, null, "TIMESTAMP(6) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4096, 0, null, "TIMESTAMP(0) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4099, 0, null, "TIMESTAMP(3) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, null, 0, null, "TIMESTAMP WITH LOCAL TIME ZONE")]
     // Interval precision and scale restore the declared facets.
     [InlineData("INTERVAL DAY TO SECOND", 24, 9, 6, 0, null, "INTERVAL DAY(9) TO SECOND(6)")]
     [InlineData("INTERVAL DAY TO SECOND", 24, 4, 3, 0, null, "INTERVAL DAY(4) TO SECOND(3)")]

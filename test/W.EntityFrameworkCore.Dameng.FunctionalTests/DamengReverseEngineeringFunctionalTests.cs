@@ -556,7 +556,10 @@ public sealed class DamengReverseEngineeringFunctionalTests
                     "TS" TIMESTAMP,
                     "DT0" DATETIME(0),
                     "DT" DATETIME,
-                    "DTZ0" DATETIME(0) WITH TIME ZONE
+                    "DTZ0" DATETIME(0) WITH TIME ZONE,
+                    "LTZ" TIMESTAMP WITH LOCAL TIME ZONE,
+                    "LTZ0" TIMESTAMP(0) WITH LOCAL TIME ZONE,
+                    "LTZ3" TIMESTAMP(3) WITH LOCAL TIME ZONE
                 )
                 """);
             created = true;
@@ -580,6 +583,11 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal("TIME(0)", storeTypes["T"]);
             Assert.Equal("TIMESTAMP(6)", storeTypes["TS"]);
             Assert.Equal("DATETIME(6)", storeTypes["DT"]);
+
+            // LOCAL TIME ZONE columns offset DATA_SCALE by 4096 in the catalog.
+            Assert.Equal("TIMESTAMP(6) WITH LOCAL TIME ZONE", storeTypes["LTZ"]);
+            Assert.Equal("TIMESTAMP(0) WITH LOCAL TIME ZONE", storeTypes["LTZ0"]);
+            Assert.Equal("TIMESTAMP(3) WITH LOCAL TIME ZONE", storeTypes["LTZ3"]);
         }
         finally
         {

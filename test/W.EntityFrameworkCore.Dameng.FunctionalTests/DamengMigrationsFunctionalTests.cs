@@ -493,6 +493,8 @@ public sealed class DamengMigrationsFunctionalTests
         Assert.Contains("\"CODE\" VARCHAR2(3 CHAR)", createTable.CommandText, StringComparison.Ordinal);
         Assert.Contains("\"INITIALS\" CHAR(2 CHAR)", createTable.CommandText, StringComparison.Ordinal);
         Assert.Contains("\"LONG_CODE\" VARCHAR2(1000 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"BOUNDARY_CODE\" VARCHAR2(2047 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"OVERSIZE_CODE\" CLOB", createTable.CommandText, StringComparison.Ordinal);
 
         try
         {
@@ -503,8 +505,17 @@ public sealed class DamengMigrationsFunctionalTests
             }
 
             var longCode = new string('中', 1000);
+            var boundaryCode = new string('中', 2047);
+            var oversizeCode = new string('中', 2048);
             context.Entities.Add(
-                new AnsiStringEntity { Code = "中文字", Initials = "中文", LongCode = longCode });
+                new AnsiStringEntity
+                {
+                    Code = "中文字",
+                    Initials = "中文",
+                    LongCode = longCode,
+                    BoundaryCode = boundaryCode,
+                    OversizeCode = oversizeCode
+                });
             await context.SaveChangesAsync();
 
             var readback = await context.Entities
@@ -512,6 +523,8 @@ public sealed class DamengMigrationsFunctionalTests
                 .SingleAsync(entity => entity.Code == "中文字");
             Assert.Equal("中文", readback.Initials);
             Assert.Equal(longCode, readback.LongCode);
+            Assert.Equal(boundaryCode, readback.BoundaryCode);
+            Assert.Equal(oversizeCode, readback.OversizeCode);
 
             await using var connection = new DmConnection(connectionString);
             await connection.OpenAsync();
@@ -562,6 +575,17 @@ public sealed class DamengMigrationsFunctionalTests
                         .HasColumnName("LONG_CODE")
                         .HasMaxLength(1000)
                         .IsUnicode(false);
+                    // 2047 chars (8188 bytes worst case) is the largest CHAR-semantics
+                    // declaration inside the documented 32 KB-page column limit; 2048 falls
+                    // back to CLOB because the server cannot hold it inline.
+                    entity.Property(item => item.BoundaryCode)
+                        .HasColumnName("BOUNDARY_CODE")
+                        .HasMaxLength(2047)
+                        .IsUnicode(false);
+                    entity.Property(item => item.OversizeCode)
+                        .HasColumnName("OVERSIZE_CODE")
+                        .HasMaxLength(2048)
+                        .IsUnicode(false);
                 });
     }
 
@@ -582,6 +606,10 @@ public sealed class DamengMigrationsFunctionalTests
         public string? Initials { get; set; }
 
         public string? LongCode { get; set; }
+
+        public string? BoundaryCode { get; set; }
+
+        public string? OversizeCode { get; set; }
     }
 
     private sealed class CommentContext(

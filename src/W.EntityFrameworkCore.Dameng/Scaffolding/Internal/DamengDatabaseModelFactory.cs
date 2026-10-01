@@ -944,6 +944,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     ? $"TIMESTAMP({dataScale.Value.ToString(CultureInfo.InvariantCulture)}) WITH TIME ZONE"
                     : normalizedType;
 
+            case "TIMESTAMP WITH LOCAL TIME ZONE":
+                // The catalog offsets this type's DATA_SCALE by 4096: unqualified reports 4102
+                // (default 6), (0) reports 4096, (3) reports 4099.
+                return dataScale is >= 4096
+                    ? $"TIMESTAMP({(dataScale.Value - 4096).ToString(CultureInfo.InvariantCulture)}) WITH LOCAL TIME ZONE"
+                    : normalizedType;
+
             case "INTERVAL DAY TO SECOND":
                 return string.Create(
                     CultureInfo.InvariantCulture,

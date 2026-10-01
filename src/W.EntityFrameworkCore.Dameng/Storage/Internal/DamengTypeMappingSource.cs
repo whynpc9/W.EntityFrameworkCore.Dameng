@@ -13,6 +13,13 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 {
     internal const int MaxInlineLength = 32767;
 
+    // Documented per-column inline limit for character data on 32 KB pages (4 KB: 1900,
+    // 8 KB: 3900, 16 KB: 8000); a row filled past it fails with "record too long" even when
+    // the page-derived DDL declaration limit (up to 32767 bytes on 32 KB pages) accepted the
+    // column. Verified on the reference instance by filling VARCHAR(n CHAR) with n three-byte
+    // characters: 2729 (8187 bytes) stores, 8191 (24573 bytes) is rejected.
+    internal const int MaxCharSemanticsBytes = 8188;
+
     private static readonly Regex CharSemanticsStoreTypePattern = new(
         @"^(?<name>.+?)\(\s*(?<size>\d+)\s+CHAR\s*\)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -374,15 +381,15 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
         // multi-byte text on byte-semantics instances. The qualifier makes the server budget
         // four bytes per character (UTF-8), so only lengths whose worst-case byte count stays
-        // inside the inline limit are declared with CHAR; larger ones fall back to CLOB
-        // instead of declaring a length the server cannot hold.
-        if (!unicode && size.Value * 4L > MaxInlineLength)
+        // inside the documented 32 KB-page column limit (8188 bytes) are declared with CHAR;
+        // larger ones fall back to CLOB instead of declaring a length the server cannot hold.
+        if (!unicode && size.Value * 4L > MaxCharSemanticsBytes)
         {
             if (fixedLength)
             {
                 throw new NotSupportedException(
                     $"Dameng fixed-length character semantics cannot hold {size} characters "
-                    + $"within the {MaxInlineLength}-byte inline limit; use a variable-length column.");
+                    + $"within the {MaxCharSemanticsBytes}-byte inline limit; use a variable-length column.");
             }
 
             return new DamengStringTypeMapping(

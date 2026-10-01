@@ -706,6 +706,74 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
 
     [DamengFact]
     [Trait("Category", "CapabilityProbe")]
+    public async Task CharSemanticsInlineBudget()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+
+        // CREATE TABLE acceptance is page-derived and hollow: what matters is whether a row
+        // whose bytes fill the declared characters actually stores. Each table is filled with
+        // 3-byte characters so the byte count is exact (UTF-8 instance).
+        await ExecuteCaseAsync(connection, new ProbeCase("CHRB.page_size", "SELECT PAGE() FROM DUAL"));
+        // Column limit vs row limit: a single-column row filled past the documented 8188-byte
+        // column limit but under the documented 16000-byte row limit tells which one binds.
+        foreach (var declared in new[] { 2000, 2729, 2730, 5000, 5333, 5334, 8191 })
+        {
+            var tableName = $"EF10_DTCB{declared}_{suffix}";
+            await ProbeDdlStepAsync(
+                connection,
+                $"CHRB.create_{declared}",
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL, \"V\" VARCHAR({declared} CHAR))");
+            await ProbeFillTextAsync(connection, tableName, $"CHRB.fill_{declared}", declared);
+            await DropIfExistsAsync(connection, tableName, $"CHRB.drop_{declared}");
+        }
+
+        var longRowTable = $"EF10_DTCBL_{suffix}";
+        await ProbeDdlStepAsync(
+            connection,
+            "CHRB.create_longrow",
+            $"CREATE TABLE \"{longRowTable}\" (\"ID\" INT NOT NULL, \"V\" VARCHAR(8191 CHAR)) USING LONG ROW");
+        await ProbeFillTextAsync(connection, longRowTable, "CHRB.fill_longrow", 8191);
+        await DropIfExistsAsync(connection, longRowTable, "CHRB.drop_longrow");
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
+    public async Task LocalTimeZoneCatalog()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_DTLTZ_{suffix}";
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        try
+        {
+            await ProbeDdlStepAsync(
+                connection,
+                "LTZ.create_table",
+                $"""
+                CREATE TABLE "{tableName}" (
+                    "C_LTZ" TIMESTAMP WITH LOCAL TIME ZONE,
+                    "C_LTZ0" TIMESTAMP(0) WITH LOCAL TIME ZONE,
+                    "C_LTZ3" TIMESTAMP(3) WITH LOCAL TIME ZONE
+                )
+                """);
+            await DumpRowsAsync(
+                connection,
+                "LTZ.tab_columns",
+                "SELECT COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE FROM ALL_TAB_COLUMNS WHERE OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME = :name ORDER BY COLUMN_ID",
+                tableName);
+        }
+        finally
+        {
+            await DropIfExistsAsync(connection, tableName, "LTZ.drop");
+        }
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
     public async Task CommentLifecycle()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
@@ -807,6 +875,60 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
                 ElapsedMs = watch.ElapsedMilliseconds
             });
         }
+    }
+
+    // Fills a VARCHAR(n CHAR) column with n three-byte characters so the stored byte count is
+    // exact; a declaration the server cannot actually hold inline fails here, not at DDL.
+    private async Task ProbeFillTextAsync(DbConnection connection, string tableName, string id, int chars)
+    {
+        var value = new string('中', chars);
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"INSERT INTO \"{tableName}\" (\"ID\", \"V\") VALUES (1, :value)";
+                command.CommandTimeout = CommandTimeoutSeconds;
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "value";
+                parameter.Value = value;
+                command.Parameters.Add(parameter);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var storedLength = await ExecuteNonQueryScalarAsync(connection, tableName);
+            Write(new
+            {
+                Id = id,
+                Status = "inserted",
+                CharLength = chars,
+                Utf8Length = System.Text.Encoding.UTF8.GetByteCount(value),
+                StoredLength = storedLength,
+                ElapsedMs = watch.ElapsedMilliseconds
+            });
+        }
+        catch (DbException error)
+        {
+            Write(new
+            {
+                Id = id,
+                Status = "sql_error",
+                error.ErrorCode,
+                Summary = SafeSummary(error.Message),
+                CharLength = chars,
+                Utf8Length = System.Text.Encoding.UTF8.GetByteCount(value),
+                ElapsedMs = watch.ElapsedMilliseconds
+            });
+        }
+    }
+
+    private static async Task<int?> ExecuteNonQueryScalarAsync(DbConnection connection, string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT LENGTH(\"V\") FROM \"{tableName}\" WHERE \"ID\" = 1";
+        command.CommandTimeout = CommandTimeoutSeconds;
+        var result = await command.ExecuteScalarAsync();
+        return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private async Task ProbeInsertTextAsync(DbConnection connection, string tableName, string id, string column, string value)
