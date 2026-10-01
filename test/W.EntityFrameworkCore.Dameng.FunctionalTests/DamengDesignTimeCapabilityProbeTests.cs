@@ -597,6 +597,17 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
                 "SEQF.user_sequences_cycled",
                 "SELECT SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY, CYCLE_FLAG, LAST_NUMBER FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :name",
                 cycled);
+
+            // LAST_NUMBER must keep meaning "next value to issue" after values are consumed;
+            // scaffolding uses it as the recreation start.
+            await ExecuteCaseAsync(
+                connection,
+                new ProbeCase("SEQF.consume_nextval", $"SELECT \"{cycled}\".NEXTVAL FROM dual"));
+            await DumpRowsAsync(
+                connection,
+                "SEQF.user_sequences_after_consume",
+                "SELECT SEQUENCE_NAME, MIN_VALUE, MAX_VALUE, INCREMENT_BY, CYCLE_FLAG, LAST_NUMBER FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :name",
+                cycled);
         }
         finally
         {
@@ -610,6 +621,87 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
                 await ProbeDdlStepAsync(connection, "SEQF.drop_default", $"DROP SEQUENCE \"{defaultFacets}\"");
             }
         }
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
+    public async Task ExpressionIndexCatalog()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_DTEI_{suffix}";
+        var expressionIndex = $"EF10_DTEIX_{suffix}";
+        var plainIndex = $"EF10_DTPIX_{suffix}";
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var tableCreated = false;
+        try
+        {
+            await ExecuteNonQueryAsync(
+                connection,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"NAME\" VARCHAR(30))");
+            tableCreated = true;
+            await ProbeDdlStepAsync(
+                connection,
+                "EXI.create_expression_index",
+                $"CREATE INDEX \"{expressionIndex}\" ON \"{tableName}\" (UPPER(\"NAME\"))");
+            await ProbeDdlStepAsync(
+                connection,
+                "EXI.create_plain_index",
+                $"CREATE INDEX \"{plainIndex}\" ON \"{tableName}\" (\"NAME\" DESC)");
+
+            // What the column catalog exposes for an expression index decides whether
+            // scaffolding can resolve it or must drop it.
+            await DumpRowsAsync(
+                connection,
+                "EXI.ind_columns",
+                "SELECT INDEX_NAME, COLUMN_NAME, COLUMN_POSITION, DESCEND FROM ALL_IND_COLUMNS WHERE INDEX_OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME = :name ORDER BY INDEX_NAME, COLUMN_POSITION",
+                tableName);
+            await DumpRowsAsync(
+                connection,
+                "EXI.ind_expressions",
+                "SELECT * FROM ALL_IND_EXPRESSIONS WHERE INDEX_OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME = :name",
+                tableName);
+            await DumpRowsAsync(
+                connection,
+                "EXI.tab_columns",
+                "SELECT COLUMN_NAME, DATA_TYPE, HIDDEN_COLUMN FROM ALL_TAB_COLS WHERE OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME = :name ORDER BY COLUMN_ID",
+                tableName);
+        }
+        finally
+        {
+            if (tableCreated)
+            {
+                await ExecuteNonQueryAsync(connection, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    [Trait("Category", "CapabilityProbe")]
+    public async Task CharSemanticsPageBudget()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var midLength = $"EF10_DTPCM_{suffix}";
+        var maxLength = $"EF10_DTPCX_{suffix}";
+
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+
+        // The generation budget n x 4 <= 32767 is the 32K-page boundary; which lengths the
+        // server actually accepts inline depends on the instance page size.
+        await ExecuteCaseAsync(connection, new ProbeCase("CHR.page_size", "SELECT PAGE() FROM DUAL"));
+        await ProbeDdlStepAsync(
+            connection,
+            "CHR.create_2048char",
+            $"CREATE TABLE \"{midLength}\" (\"V\" VARCHAR(2048 CHAR))");
+        await ProbeDdlStepAsync(
+            connection,
+            "CHR.create_8191char",
+            $"CREATE TABLE \"{maxLength}\" (\"V\" VARCHAR(8191 CHAR))");
+
+        await DropIfExistsAsync(connection, midLength, "CHR.drop_2048char");
+        await DropIfExistsAsync(connection, maxLength, "CHR.drop_8191char");
     }
 
     [DamengFact]
@@ -672,6 +764,28 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
             ? "SELECT COMMENTS FROM USER_TAB_COMMENTS WHERE TABLE_NAME = :name"
             : "SELECT COMMENTS FROM USER_COL_COMMENTS WHERE TABLE_NAME = :name AND COLUMN_NAME = 'NOTE'";
         await DumpRowsAsync(connection, $"{id}.readback", readback, tableName);
+    }
+
+    // Probe creation steps must not leave objects behind when the create unexpectedly
+    // succeeds; the drop itself is a hard step so cleanup failures surface.
+    private async Task DropIfExistsAsync(DbConnection connection, string tableName, string id)
+    {
+        await using (var count = connection.CreateCommand())
+        {
+            count.CommandText = "SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = :name";
+            count.CommandTimeout = CommandTimeoutSeconds;
+            var parameter = count.CreateParameter();
+            parameter.ParameterName = "name";
+            parameter.Value = tableName;
+            count.Parameters.Add(parameter);
+            if (Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 0L)
+            {
+                return;
+            }
+        }
+
+        await ExecuteNonQueryAsync(connection, $"DROP TABLE \"{tableName}\"");
+        Write(new { Id = id, Status = "executed" });
     }
 
     private async Task ProbeDdlStepAsync(DbConnection connection, string id, string sql)

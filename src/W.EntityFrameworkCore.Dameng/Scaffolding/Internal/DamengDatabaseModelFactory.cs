@@ -365,10 +365,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            // INCREMENT_BY beyond the EF facet type cannot round-trip; skip the facets and let
-            // the column keep its raw default instead of inventing new ones.
-            var increment = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
-            if (increment is < int.MinValue or > int.MaxValue)
+            // Any facet that cannot be represented exactly (INCREMENT_BY beyond int, bounds or
+            // next value beyond long) skips the catalog facets; the column keeps its raw
+            // default instead of scaffolding invented ones.
+            if (!TryReadInt64Facet(reader, 1, out var increment)
+                || increment is < int.MinValue or > int.MaxValue
+                || !TryReadInt64Facet(reader, 2, out var minValue)
+                || !TryReadInt64Facet(reader, 3, out var maxValue)
+                || !TryReadInt64Facet(reader, 5, out var startValue))
             {
                 continue;
             }
@@ -379,14 +383,40 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 Name = name,
                 Schema = schema,
                 IncrementBy = (int)increment,
-                MinValue = Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture),
-                MaxValue = Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture),
+                MinValue = minValue,
+                MaxValue = maxValue,
                 IsCyclic = string.Equals(reader.GetString(4), "Y", StringComparison.Ordinal),
-                StartValue = Convert.ToInt64(reader.GetValue(5), CultureInfo.InvariantCulture)
+                StartValue = startValue
             };
         }
 
         return facets;
+    }
+
+    private static bool TryReadInt64Facet(DbDataReader reader, int ordinal, out long value)
+    {
+        if (reader.GetValue(ordinal) is decimal decimalValue)
+        {
+            if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+            {
+                value = 0L;
+                return false;
+            }
+
+            value = (long)decimalValue;
+            return true;
+        }
+
+        try
+        {
+            value = Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch (OverflowException)
+        {
+            value = 0L;
+            return false;
+        }
     }
 
     private static void LoadIdentityAnnotations(
@@ -613,6 +643,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             bool IsUnique,
             List<string> Columns,
             List<bool> Descending)>();
+        var expressionIndexNames = new HashSet<string>(StringComparer.Ordinal);
 
         using var indexReader = indexCommand.ExecuteReader();
         while (indexReader.Read())
@@ -631,7 +662,18 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             var isUnique = string.Equals(indexReader.GetString(2), "UNIQUE", StringComparison.Ordinal);
             var columnName = indexReader.GetString(3);
+
+            // Expression/function-based index rows report the base column name with
+            // COLUMN_POSITION -1 (the real expression lives in ALL_IND_EXPRESSIONS) and an
+            // unreliable DESCEND flag, so they cannot be scaffolded as a column index.
+            var isExpressionRow = indexReader.GetInt64(4) <= 0;
             var descending = string.Equals(indexReader.GetString(5), "DESC", StringComparison.Ordinal);
+
+            if (isExpressionRow)
+            {
+                expressionIndexNames.Add(indexName);
+                continue;
+            }
 
             var index = indexes.LastOrDefault()
                 is { } last
@@ -651,6 +693,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
         foreach (var (name, table, isUnique, columns, descending) in indexes)
         {
+            // Indexes with expression parts or columns that never resolve to a table column
+            // are dropped whole: a partially resolved index would pair sort directions with
+            // the wrong columns (same rule as foreign keys).
+            if (expressionIndexNames.Contains(name))
+            {
+                continue;
+            }
+
             var databaseIndex = new DatabaseIndex
             {
                 Table = table,
@@ -658,6 +708,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 IsUnique = isUnique
             };
             AddColumnsByName(table, columns, databaseIndex.Columns);
+            if (databaseIndex.Columns.Count != columns.Count)
+            {
+                continue;
+            }
+
             foreach (var isDescending in descending)
             {
                 databaseIndex.IsDescending.Add(isDescending);

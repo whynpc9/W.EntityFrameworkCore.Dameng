@@ -144,6 +144,10 @@ public sealed class DamengMigrationScriptFunctionalTests
         Assert.Contains("IF NOT EXISTS", script, StringComparison.Ordinal);
         Assert.Contains(Environment.NewLine + "/" + Environment.NewLine, script, StringComparison.Ordinal);
         Assert.DoesNotContain("BEGIN TRANSACTION", script, StringComparison.Ordinal);
+        // The custom lowercase block passes through unwrapped; a wrapped block's literal would
+        // end as end;'; and the server rejects blocks inside EXECUTE IMMEDIATE.
+        Assert.Contains("VALUES (7)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("end;';", script, StringComparison.Ordinal);
 
         await using var connection = await _database.OpenAsync();
         await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, _database.Redact);
@@ -217,9 +221,11 @@ public sealed class DamengMigrationScriptFunctionalTests
             "SELECT COUNT(*) FROM USER_INDEXES WHERE INDEX_NAME = :name",
             ("name", names.Index)));
         await AssertIndexAsync(connection, names.RenamedIndex, descendingColumn: null);
-        Assert.Equal(0L, await ScalarInt64Async(
+        // The custom lowercase block inserted this row; the lookup table is otherwise unseeded.
+        Assert.Equal(1L, await ScalarInt64Async(
             connection,
-            "SELECT COUNT(*) FROM \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\""));
+            "SELECT COUNT(*) FROM \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\" WHERE \"ID\" = :id",
+            ("id", 7)));
         Assert.Equal(0L, await CountColumnAsync(connection, names.RenamedLookupTable, "LABEL"));
     }
 
@@ -802,6 +808,14 @@ public sealed class AlterScriptObjectsMigration : Migration
             name: names.LookupTable,
             schema: names.Schema,
             newName: names.RenamedLookupTable);
+        // Custom anonymous blocks in any casing/indentation must pass idempotent generation
+        // unwrapped; the server rejects blocks inside EXECUTE IMMEDIATE. The lookup table uses
+        // an explicit key, so the block does not disturb identity sequencing.
+        migrationBuilder.Sql(
+            "\n  begin\n"
+            + "    INSERT INTO \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\" (\"ID\") VALUES (7);\n"
+            + "  end;",
+            suppressTransaction: true);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

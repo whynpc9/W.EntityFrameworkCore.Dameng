@@ -125,6 +125,20 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal(1000000L, sequence.MaxValue);
             Assert.True(sequence.IsCyclic);
 
+            // LAST_NUMBER is the next value to issue: after one NEXTVAL (41) the catalog
+            // reports 44, and a re-scaffolded model starts the recreated sequence there.
+            await ExecuteAsync(setup, $"SELECT \"{sequenceName}\".NEXTVAL FROM dual");
+            DatabaseModel modelAfterConsume;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                modelAfterConsume = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            var consumedSequence = Assert.Single(
+                modelAfterConsume.Sequences,
+                candidate => candidate.Name == sequenceName);
+            Assert.Equal(44L, consumedSequence.StartValue);
+
             Assert.Equal("VARCHAR(8)", table.Columns[4].StoreType);
             Assert.Equal("'NEW'", table.Columns[4].DefaultValueSql?.Trim());
             Assert.Equal("INTERVAL DAY(4) TO SECOND(3)", table.Columns[5].StoreType);
@@ -691,6 +705,56 @@ public sealed class DamengReverseEngineeringFunctionalTests
             if (schemaCreated)
             {
                 await ExecuteAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryDropsExpressionIndexesWhole()
+    {
+        var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
+        var tableName = $"EF10_REI_{suffix}";
+        var plainIndexName = $"IDX_REIP_{suffix}";
+        var expressionIndexName = $"IDX_REIE_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        await using var setup = new DmConnection(connectionString);
+        await setup.OpenAsync();
+        var created = false;
+        try
+        {
+            await ExecuteAsync(
+                setup,
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"NAME\" VARCHAR(30))");
+            created = true;
+            await ExecuteAsync(
+                setup,
+                $"CREATE INDEX \"{plainIndexName}\" ON \"{tableName}\" (\"NAME\" DESC)");
+            await ExecuteAsync(
+                setup,
+                $"CREATE INDEX \"{expressionIndexName}\" ON \"{tableName}\" (UPPER(\"NAME\"))");
+
+            var factory = new DamengDatabaseModelFactory();
+            DatabaseModel model;
+            await using (var connection = new DmConnection(connectionString))
+            {
+                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+            }
+
+            // The catalog reports the expression index row with the base column name and
+            // COLUMN_POSITION -1 (plus an unreliable DESCEND), so the index is dropped whole
+            // instead of scaffolding a bogus descending column index.
+            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
+            var index = Assert.Single(table.Indexes);
+            Assert.Equal(plainIndexName, index.Name);
+            Assert.Equal(["NAME"], index.Columns.Select(column => column.Name).ToArray());
+            Assert.Equal([true], index.IsDescending.ToArray());
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
         }
     }

@@ -40,7 +40,7 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             // EF places this text inside a DMSQL IF block. Dynamic SQL is required both
             // for DDL and to avoid binding skipped DML against an old schema.
             var commandText = command.CommandText.TrimEnd();
-            if (commandText.StartsWith("BEGIN", StringComparison.Ordinal))
+            if (IsAnonymousBlock(commandText))
             {
                 // Anonymous DMSQL blocks carry their own guards and cannot be wrapped:
                 // the server rejects EXECUTE IMMEDIATE when the literal contains a block.
@@ -68,6 +68,30 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         return builder.GetCommandList();
     }
+
+    // Block detection ignores leading whitespace and keyword casing; both BEGIN and DECLARE
+    // open an anonymous DMSQL block. A trailing keyword boundary keeps words like
+    // "BEGINNING" from being misread as a block.
+    private static bool IsAnonymousBlock(string commandText)
+    {
+        var trimmed = commandText.TrimStart();
+        return StartsWithKeyword(trimmed, "BEGIN")
+            || StartsWithKeyword(trimmed, "DECLARE");
+    }
+
+    private static bool StartsWithKeyword(string text, string keyword)
+    {
+        if (!text.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return text.Length == keyword.Length
+            || !IsIdentifierCharacter(text[keyword.Length]);
+    }
+
+    private static bool IsIdentifierCharacter(char value)
+        => char.IsLetterOrDigit(value) || value is '_' or '$' or '#';
 
     protected override void Generate(
         MigrationOperation operation,

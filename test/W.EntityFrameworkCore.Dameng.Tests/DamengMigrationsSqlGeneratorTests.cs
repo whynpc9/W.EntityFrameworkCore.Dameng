@@ -638,6 +638,47 @@ public sealed class DamengMigrationsSqlGeneratorTests
             StringComparison.Ordinal);
     }
 
+    [Theory]
+    // Baseline uppercase block.
+    [InlineData("BEGIN\n    NULL;\nEND;")]
+    // Leading whitespace/newlines and lowercase keywords are the same anonymous block.
+    [InlineData("\n  \nbegin\n    null;\n  end;")]
+    [InlineData("  BEGIN\n    NULL;\n  END;")]
+    // DECLARE opens the block form with declarations.
+    [InlineData("DECLARE\n    v INT;\nBEGIN\n    v := 1;\nEND;")]
+    [InlineData("declare v int;\nbegin\n    null;\nend;")]
+    public void IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(string blockSql)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        var command = Assert.Single(
+            generator.Generate(
+                [new SqlOperation { Sql = blockSql, SuppressTransaction = true }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.Equal(blockSql.TrimEnd(), command.CommandText);
+    }
+
+    [Theory]
+    [InlineData("BEGINNING")]
+    [InlineData("DECLARES")]
+    public void IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(string sql)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        // The keyword prefix alone must not trigger block passthrough (word boundary).
+        var command = Assert.Single(
+            generator.Generate(
+                [new SqlOperation { Sql = sql, SuppressTransaction = true }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.StartsWith("EXECUTE IMMEDIATE '", command.CommandText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void SeedDataOperationsGenerateInsertUpdateAndDelete()
     {

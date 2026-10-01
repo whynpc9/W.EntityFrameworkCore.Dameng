@@ -58,17 +58,20 @@ internal static class DamengScriptExecutor
         return batches;
     }
 
-    // Anonymous DMSQL blocks (BEGIN ... END;) are single commands even though they contain
-    // semicolons. Blocks may nest (the idempotent history guard wraps the EnsureSchema
-    // guard), so depth is tracked and only the outermost END; completes the batch.
-    // BEGIN / END; lines inside string literals or block comments (e.g. a multi-line comment
-    // text wrapped in EXECUTE IMMEDIATE) must not count as block boundaries, so lexical
-    // state is tracked across lines.
+    // Anonymous DMSQL blocks (BEGIN ... END;, optionally opened by DECLARE) are single
+    // commands even though they contain semicolons. Blocks may nest (the idempotent history
+    // guard wraps the EnsureSchema guard), so depth is tracked and only the outermost END;
+    // completes the batch. Keyword casing and indentation are normalized because custom
+    // migrationBuilder.Sql blocks pass through verbatim. BEGIN / END; lines inside string
+    // literals or block comments (e.g. a multi-line comment text wrapped in EXECUTE
+    // IMMEDIATE) must not count as block boundaries, so lexical state is tracked across
+    // lines.
     private static void AddScript(List<string> batches, string script)
     {
         var prologue = new StringBuilder();
         var block = new StringBuilder();
         var blockDepth = 0;
+        var declarePendingBlock = false;
         var inSingleQuote = false;
         var inDoubleQuote = false;
         var inBlockComment = false;
@@ -77,22 +80,33 @@ internal static class DamengScriptExecutor
         {
             var line = rawLine.Trim();
             var isStructuralLine = !inSingleQuote && !inDoubleQuote && !inBlockComment;
-            var isBlockStart = isStructuralLine && string.Equals(line, "BEGIN", StringComparison.Ordinal);
-            var isBlockEnd = isStructuralLine && string.Equals(line, "END;", StringComparison.Ordinal);
+            var isBlockStart = isStructuralLine
+                && string.Equals(line, "BEGIN", StringComparison.OrdinalIgnoreCase);
+            var isBlockEnd = isStructuralLine
+                && string.Equals(line, "END;", StringComparison.OrdinalIgnoreCase);
+            var isDeclareStart = isStructuralLine
+                && blockDepth == 0
+                && !declarePendingBlock
+                && IsKeywordLine(line, "DECLARE");
 
-            if (blockDepth == 0 && !isBlockStart)
+            if (blockDepth == 0 && !declarePendingBlock && !isBlockStart && !isDeclareStart)
             {
                 prologue.AppendLine(rawLine);
             }
             else
             {
-                if (blockDepth == 0)
+                if (blockDepth == 0 && !declarePendingBlock)
                 {
                     AddStatements(batches, prologue.ToString());
                     prologue.Clear();
                 }
 
                 block.AppendLine(rawLine);
+                if (isDeclareStart)
+                {
+                    declarePendingBlock = true;
+                }
+
                 if (isBlockStart)
                 {
                     blockDepth++;
@@ -102,6 +116,7 @@ internal static class DamengScriptExecutor
                     blockDepth--;
                     if (blockDepth == 0)
                     {
+                        declarePendingBlock = false;
                         var text = block.ToString().Trim();
                         if (text.Length > 0)
                         {
@@ -116,13 +131,25 @@ internal static class DamengScriptExecutor
             UpdateLexicalState(rawLine, ref inSingleQuote, ref inDoubleQuote, ref inBlockComment);
         }
 
-        if (blockDepth != 0)
+        if (blockDepth != 0 || declarePendingBlock)
         {
             throw new InvalidOperationException(
                 "A Dameng script contains a BEGIN block without END;.");
         }
 
         AddStatements(batches, prologue.ToString());
+    }
+
+    private static bool IsKeywordLine(string line, string keyword)
+    {
+        if (!line.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return line.Length == keyword.Length
+            || !(char.IsLetterOrDigit(line[keyword.Length])
+                || line[keyword.Length] is '_' or '$' or '#');
     }
 
     private static void UpdateLexicalState(

@@ -94,4 +94,43 @@ public sealed class DamengScriptExecutorTests
         Assert.StartsWith("BEGIN", batches[0], StringComparison.Ordinal);
         Assert.StartsWith("CREATE TABLE", batches[1], StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void SplitKeepsLowercaseAndIndentedBlocksWhole()
+    {
+        var script = """
+
+              begin
+                null;
+              end;
+            CREATE TABLE "T" ("ID" INT);
+            """;
+
+        var batches = DamengScriptExecutor.SplitStatements(script);
+
+        Assert.Equal(2, batches.Count);
+        Assert.StartsWith("begin", batches[0], StringComparison.Ordinal);
+        Assert.EndsWith("end;", batches[0], StringComparison.Ordinal);
+        Assert.StartsWith("CREATE TABLE", batches[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SplitKeepsDeclareOpenedBlocksWhole()
+    {
+        var script = """
+            DECLARE
+                v INT;
+            BEGIN
+                v := 1;
+            END;
+            CREATE TABLE "T" ("ID" INT);
+            """;
+
+        var batches = DamengScriptExecutor.SplitStatements(script);
+
+        Assert.Equal(2, batches.Count);
+        Assert.StartsWith("DECLARE", batches[0], StringComparison.Ordinal);
+        Assert.EndsWith("END;", batches[0], StringComparison.Ordinal);
+        Assert.StartsWith("CREATE TABLE", batches[1], StringComparison.Ordinal);
+    }
 }
