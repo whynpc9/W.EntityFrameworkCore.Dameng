@@ -23,6 +23,89 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FactoryRejectsNonPrimaryClustering(bool uniqueConstraint)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_NPC_{suffix}";
+        var index = $"EF10_NPCI_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = false;
+        try
+        {
+            var extra = uniqueConstraint ? $", CONSTRAINT \"{index}\" CLUSTER UNIQUE KEY(N)" : "";
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT NOT NULL, N INT, NOT CLUSTER PRIMARY KEY(ID){extra})");
+            created = true;
+            if (!uniqueConstraint)
+            {
+                await ExecuteAsync(connection, $"CREATE CLUSTER INDEX \"{index}\" ON \"{table}\"(N)");
+            }
+
+            var error = Assert.Throws<NotSupportedException>(() => new DamengDatabaseModelFactory().Create(
+                connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(index, error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
+    [DamengTheory]
+    [InlineData("check")]
+    [InlineData("check_not_null")]
+    [InlineData("disabled_check")]
+    [InlineData("virtual")]
+    public async Task FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(string kind)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var safe = $"EF10_SSAFE_{suffix}";
+        var table = $"EF10_SBAD_{suffix}";
+        var constraint = $"EF10_SCHECK_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT NOT NULL PRIMARY KEY, N INT NOT NULL)");
+            created.Add(safe);
+            var extra = kind switch
+            {
+                "virtual" => "CALC AS (N + 1)",
+                "check_not_null" => $"CONSTRAINT \"{constraint}\" CHECK (N IS NOT NULL)",
+                _ => $"CONSTRAINT \"{constraint}\" CHECK (N > 0)"
+            };
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N INT, {extra})");
+            created.Add(table);
+            if (kind == "disabled_check")
+            {
+                await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DISABLE CONSTRAINT \"{constraint}\"");
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(
+                connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(kind == "virtual" ? "virtual computed column" : "CHECK constraint", error.Message, StringComparison.Ordinal);
+            var selected = Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [safe])).Tables);
+            Assert.Equal(safe, selected.Name);
+            Assert.All(selected.Columns, column => Assert.False(column.IsNullable));
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task FactoryPreservesPrimaryKeyClusteringThroughGeneratedDdl(bool clustered)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
@@ -44,6 +127,11 @@ public sealed class DamengReverseEngineeringFunctionalTests
             await using var context = new ClusteringContext(target, actual);
             var sql = context.Database.GenerateCreateScript();
             Assert.Contains(clause, sql, StringComparison.Ordinal);
+            if (clustered)
+            {
+                Assert.DoesNotContain("NOT CLUSTER PRIMARY KEY", sql, StringComparison.Ordinal);
+            }
+
             await DamengScriptExecutor.ExecuteAsync(connection, sql, false, text => text);
             created.Add(target);
             var copy = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [target])).Tables);

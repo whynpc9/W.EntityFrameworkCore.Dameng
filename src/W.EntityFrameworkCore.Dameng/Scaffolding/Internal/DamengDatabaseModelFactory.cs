@@ -79,6 +79,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
+            ValidateUnsupportedTableStructures(connection, currentSchema, tableLookup);
             ValidateConstraintStates(connection, currentSchema, tableLookup);
 
             var pendingSequenceDefaults = new List<PendingSequenceDefault>();
@@ -509,6 +510,58 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture));
     }
 
+    private static void ValidateUnsupportedTableStructures(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        // Native SYSCONS excludes NOT NULL constraints. This avoids mistaking a user CHECK
+        // (including an explicit CHECK (... IS NOT NULL)) for column nullability metadata.
+        using (var command = CreateCommand(connection,
+            "SELECT T.NAME, C.NAME FROM SYS.SYSCONS K "
+            + "INNER JOIN SYS.SYSOBJECTS C ON C.ID = K.ID "
+            + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = K.TABLEID "
+            + "INNER JOIN SYS.SYSOBJECTS S ON S.ID = T.SCHID "
+            + "WHERE S.NAME = :schema AND K.TYPE$ = 'C'"))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (tables.ContainsKey(reader.GetString(0)))
+                {
+                    throw new NotSupportedException(
+                        $"Dameng table '{reader.GetString(0)}' contains CHECK constraint '{reader.GetString(1)}'. "
+                        + "Reverse engineering cannot preserve CHECK constraints; exclude this table.");
+                }
+            }
+        }
+
+        // SYSCOLINFOS.INFO1 bit 0 is the documented virtual-column marker. ALL_TAB_COLUMNS
+        // alone does not expose enough information to treat these columns as writable.
+        using var columns = CreateCommand(connection,
+            "SELECT T.NAME, C.NAME, I.INFO1 FROM SYS.SYSCOLINFOS I "
+            + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = I.ID "
+            + "INNER JOIN SYS.SYSOBJECTS S ON S.ID = T.SCHID "
+            + "INNER JOIN SYS.SYSCOLUMNS C ON C.ID = I.ID AND C.COLID = I.COLID "
+            + "WHERE S.NAME = :schema AND T.TYPE$ = 'SCHOBJ' AND T.SUBTYPE$ = 'UTAB'");
+        AddParameter(columns, "schema", schema);
+        using var columnReader = columns.ExecuteReader();
+        while (columnReader.Read())
+        {
+            if (tables.ContainsKey(columnReader.GetString(0))
+                && IsVirtualColumnFlags(Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture)))
+            {
+                throw new NotSupportedException(
+                    $"Dameng table '{columnReader.GetString(0)}' contains virtual computed column '{columnReader.GetString(1)}'. "
+                    + "Reverse engineering cannot preserve its expression; exclude this table.");
+            }
+        }
+    }
+
+    internal static bool IsVirtualColumnFlags(long flags)
+        => (flags & 1L) != 0;
+
     private static void ValidateConstraintStates(
         DbConnection connection,
         string schema,
@@ -615,6 +668,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
             else
             {
+                if (!string.Equals(indexType, "NORMAL", StringComparison.Ordinal))
+                {
+                    throw new NotSupportedException(
+                        $"Dameng unique constraint '{name}' has unsupported backing index type '{indexType ?? "NULL"}'. "
+                        + "Reverse engineering cannot preserve this index shape; exclude this table.");
+                }
+
                 var uniqueConstraint = new DatabaseUniqueConstraint
                 {
                     Table = table,
@@ -656,6 +716,31 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         string schema,
         Dictionary<string, DatabaseTable> tables)
     {
+        // An implicit row-storage index is a system index (FLAG bit 0). An explicit
+        // clustered index outside the PK would otherwise disappear from the model.
+        using (var clusterCommand = CreateCommand(connection,
+            "SELECT I.TABLE_NAME, I.INDEX_NAME, X.FLAG FROM ALL_INDEXES I "
+            + "INNER JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
+            + "INNER JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME "
+            + "INNER JOIN SYS.SYSINDEXES X ON X.ID = O.ID "
+            + "WHERE I.OWNER = :schema AND I.INDEX_TYPE = 'CLUSTER' "
+            + "AND NOT EXISTS (SELECT 1 FROM ALL_CONSTRAINTS C WHERE C.OWNER = I.OWNER "
+            + "AND C.TABLE_NAME = I.TABLE_NAME AND C.INDEX_NAME = I.INDEX_NAME AND C.CONSTRAINT_TYPE = 'P')"))
+        {
+            AddParameter(clusterCommand, "schema", schema);
+            using var reader = clusterCommand.ExecuteReader();
+            while (reader.Read())
+            {
+                if (tables.ContainsKey(reader.GetString(0))
+                    && (Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture) & 1L) == 0)
+                {
+                    throw new NotSupportedException(
+                        $"Dameng table '{reader.GetString(0)}' has clustered index '{reader.GetString(1)}' outside its primary key. "
+                        + "Reverse engineering cannot preserve this index shape; exclude this table.");
+                }
+            }
+        }
+
         var constraintIndexNames = new HashSet<string>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,

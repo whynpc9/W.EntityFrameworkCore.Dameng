@@ -9,6 +9,16 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void VirtualColumnMarkerUsesOnlyTheDocumentedBit(long flags, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.IsVirtualColumnFlags(flags));
+
+    [Theory]
     [InlineData("NORMAL", false)]
     [InlineData("CLUSTER", true)]
     public void PrimaryKeyClusteringIsReadFromTheBackingIndex(string indexType, bool expected)

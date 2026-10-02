@@ -199,7 +199,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 scaffoldedContext.Contains("IsDescending()", StringComparison.Ordinal),
                 "Scaffolded context must keep the descending index.");
 
-            Assert.Contains("HasAnnotation(\"Dameng:IsClustered\",", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
                 ["build", "--no-restore", "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false", "--disable-build-servers"]);
             await RunDotNetEfAsync(dotnetEf, projectDirectory, connectionString,
@@ -294,7 +294,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     modelBuilder.Entity<CliOrder>(entity =>
                     {
                         entity.ToTable("{{tableName}}", table => table.HasComment("命令行订单表"));
-                        entity.HasKey(item => item.Id);
+                        entity.HasKey(item => item.Id).HasAnnotation("Dameng:IsClustered", false);
                         entity.Property(item => item.Id).UseDamengIdentityColumn(5, 2);
                         entity.Property(item => item.Code)
                             .HasColumnName("CODE")
@@ -344,6 +344,22 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        if (arguments[0] is "build" or "restore")
+        {
+            foreach (var flag in new[] { "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false" })
+            {
+                if (!startInfo.ArgumentList.Contains(flag))
+                {
+                    startInfo.ArgumentList.Add(flag);
+                }
+            }
+
+            if (arguments[0] == "build" && !startInfo.ArgumentList.Contains("--disable-build-servers"))
+            {
+                startInfo.ArgumentList.Add("--disable-build-servers");
+            }
         }
 
         startInfo.Environment["DAMENG_TEST_CONNECTION_STRING"] = connectionString;

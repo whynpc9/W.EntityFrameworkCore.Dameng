@@ -27,7 +27,12 @@ public sealed class DamengMigrationsSqlGeneratorTests
         using var context = CreateContext();
         var operation = new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["ID"] };
         operation["Dameng:IsClustered"] = clustered;
-        Assert.Contains(expected + " (\"ID\")", GenerateSql(context, operation), StringComparison.Ordinal);
+        var sql = GenerateSql(context, operation);
+        Assert.Contains(expected + " (\"ID\")", sql, StringComparison.Ordinal);
+        if (clustered)
+        {
+            Assert.DoesNotContain("NOT CLUSTER PRIMARY KEY", sql, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
