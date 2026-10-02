@@ -161,7 +161,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT TABLE_NAME, TEMPORARY FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
+            "SELECT TABLE_NAME, TEMPORARY, PARTITIONED FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var tables = new List<DatabaseTable>();
@@ -174,7 +174,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
-            ValidateTableKind(name, GetNullableString(reader, 1));
+            ValidateTableKind(name, GetNullableString(reader, 1), GetNullableString(reader, 2));
             tables.Add(
                 new DatabaseTable
                 {
@@ -186,13 +186,20 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         return tables;
     }
 
-    internal static void ValidateTableKind(string table, string? temporary)
+    internal static void ValidateTableKind(string table, string? temporary, string? partitioned)
     {
         if (!string.Equals(temporary, "N", StringComparison.Ordinal))
         {
             throw new NotSupportedException(
                 $"Dameng table '{table}' has unsupported TEMPORARY marker '{temporary ?? "NULL"}'. "
                 + "Reverse engineering cannot preserve temporary-table lifetime; exclude this table.");
+        }
+
+        if (!string.Equals(partitioned, "NO", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' has unsupported PARTITIONED marker '{partitioned ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve partition definitions; exclude this table.");
         }
     }
 

@@ -23,6 +23,56 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FactoryRejectsPartitionedTablesWithoutBlockingOrdinaryTableFilters(bool hash)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var partitioned = $"EF10_PART_{suffix}";
+        var ordinary = $"EF10_PSAFE_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            var partition = hash
+                ? "PARTITION BY HASH(ID) PARTITIONS 2"
+                : $"PARTITION BY RANGE(ID) (PARTITION \"PL_{suffix}\" VALUES LESS THAN(100), PARTITION \"PH_{suffix}\" VALUES LESS THAN(MAXVALUE))";
+            await ExecuteAsync(connection, $"CREATE TABLE \"{partitioned}\" (ID INT, N INT) {partition}");
+            created.Add(partitioned);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT PRIMARY KEY)");
+            created.Add(ordinary);
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT TEMPORARY, PARTITIONED FROM USER_TABLES WHERE TABLE_NAME = :name";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = partitioned;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("N", reader.GetString(0));
+                Assert.Equal("YES", reader.GetString(1));
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [partitioned])));
+            Assert.Contains(partitioned, error.Message, StringComparison.Ordinal);
+            Assert.Contains("partition definitions", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ForeignKeyBackingIndexesKeepTheirCatalogRole(bool physical)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();

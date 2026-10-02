@@ -10,14 +10,25 @@ public sealed class DamengDatabaseModelFactoryTests
 {
     [Fact]
     public void PermanentTableKindCanBeScaffolded()
-        => DamengDatabaseModelFactory.ValidateTableKind("T", "N");
+        => DamengDatabaseModelFactory.ValidateTableKind("T", "N", "NO");
 
     [Theory]
     [InlineData("Y")]
     [InlineData("UNKNOWN")]
     [InlineData(null)]
     public void TemporaryOrUnknownTableKindIsRejected(string? marker)
-        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableKind("T", marker));
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableKind("T", marker, "NO"));
+
+    [Theory]
+    [InlineData("YES")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void PartitionedOrUnknownPermanentTableKindIsRejected(string? marker)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateTableKind("T", "N", marker));
+        Assert.Contains("partition definitions", error.Message, StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData("NORMAL", true)]
