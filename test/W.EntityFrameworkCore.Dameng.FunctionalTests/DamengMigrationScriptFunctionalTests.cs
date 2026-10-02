@@ -31,6 +31,127 @@ public sealed class DamengMigrationScriptFunctionalTests
     }
 
     [DamengFact]
+    public async Task ScaffoldingValidatesPhysicalIndexPlacementSeparatelyFromDataPlacement()
+    {
+        var database = new DamengScriptTestDatabase();
+        var alternate = new DamengScriptTestDatabase();
+        try
+        {
+            await database.InitializeAsync();
+            await alternate.InitializeAsync();
+            // The fixture omits DEFAULT INDEX TABLESPACE when creating this user.
+            await using (var baseline = await database.OpenAsync())
+            {
+                await ExecuteAsync(baseline, "CREATE TABLE BASELINE (ID INT NOT CLUSTER PRIMARY KEY, N INT) STORAGE(CLUSTERBTR)");
+                await ExecuteAsync(baseline, "CREATE INDEX BASELINE_IX ON BASELINE(N)");
+                await using var command = baseline.CreateCommand();
+                command.CommandText = "SELECT X.GROUPID, U.INFO3 FROM ALL_INDEXES I "
+                    + "JOIN SYS.SYSOBJECTS S ON S.NAME=I.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' "
+                    + "JOIN SYS.SYSOBJECTS O ON O.SCHID=S.ID AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' "
+                    + "JOIN SYS.SYSINDEXES X ON X.ID=O.ID WHERE S.ID=CURRENT_SCHID() AND I.INDEX_NAME='BASELINE_IX'";
+                await using (var reader = await command.ExecuteReaderAsync())
+                {
+                    Assert.True(await reader.ReadAsync());
+                    var ownerInfo3 = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
+                    Assert.Equal(0L, (ownerInfo3 >> 16) & 0xFFFFL);
+                    Assert.Equal(ownerInfo3 & 0xFFFFL, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+                }
+                using var baselineContext = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+                var baselineFactory = new DamengDatabaseModelFactory(baselineContext.GetService<IRelationalTypeMappingSource>(), baselineContext.GetService<ISqlGenerationHelper>());
+                Assert.Equal("BASELINE", Assert.Single(baselineFactory.Create(baseline, new DatabaseModelFactoryOptions(tables: ["BASELINE"])).Tables).Name);
+                await ExecuteAsync(baseline, "DROP TABLE BASELINE");
+            }
+
+            await database.UseDefaultIndexTablespaceAsync(_database);
+            await using var connection = await database.OpenAsync();
+            await ExecuteAsync(connection, "CREATE TABLE GOOD (ID INT NOT NULL, N INT, U INT UNIQUE, NOT CLUSTER PRIMARY KEY(ID)) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE INDEX GOOD_IX ON GOOD(N)");
+            await ExecuteAsync(connection, "CREATE TABLE VIRTUAL_CHILD (PID INT REFERENCES GOOD(ID)) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE TABLE PHYSICAL_CHILD (PID INT REFERENCES GOOD(ID) WITH INDEX) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE TABLE BAD_INDEX (N INT) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, $"CREATE INDEX BAD_IX ON BAD_INDEX(N) STORAGE(ON \"{alternate.TablespaceName}\")");
+            await ExecuteAsync(connection, $"CREATE TABLE BAD_PK (ID INT NOT CLUSTER PRIMARY KEY USING INDEX TABLESPACE \"{alternate.TablespaceName}\") STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, $"CREATE TABLE BAD_UNIQUE (ID INT UNIQUE USING INDEX TABLESPACE \"{alternate.TablespaceName}\") STORAGE(CLUSTERBTR)");
+
+            var misplacedIndexes = new Dictionary<string, string>(StringComparer.Ordinal);
+            var normalDefaults = 0;
+            var virtualIndexes = 0;
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT I.TABLE_NAME, I.INDEX_NAME, I.INDEX_TYPE, X.GROUPID, U.INFO3 "
+                    + "FROM ALL_INDEXES I JOIN SYS.SYSOBJECTS S ON S.NAME=I.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' "
+                    + "JOIN SYS.SYSOBJECTS O ON O.SCHID=S.ID AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' "
+                    + "LEFT JOIN SYS.SYSINDEXES X ON X.ID=O.ID WHERE S.ID=CURRENT_SCHID()";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var table = reader.GetString(0);
+                    var kind = reader.GetString(2);
+                    var ownerInfo3 = Convert.ToInt64(reader.GetValue(4), CultureInfo.InvariantCulture);
+                    var dataSpace = ownerInfo3 & 0xFFFFL;
+                    var indexSpace = (ownerInfo3 >> 16) & 0xFFFFL;
+                    Assert.NotEqual(dataSpace, indexSpace);
+                    if (kind == "VIRTUAL")
+                    {
+                        virtualIndexes++;
+                        continue;
+                    }
+
+                    var actualSpace = Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture);
+                    if (kind == "CLUSTER") Assert.Equal(dataSpace, actualSpace);
+                    else if (table.StartsWith("BAD_", StringComparison.Ordinal))
+                    {
+                        Assert.Equal("NORMAL", kind);
+                        Assert.NotEqual(dataSpace, actualSpace);
+                        Assert.NotEqual(indexSpace, actualSpace);
+                        misplacedIndexes.Add(table, reader.GetString(1));
+                    }
+                    else
+                    {
+                        Assert.Equal("NORMAL", kind);
+                        Assert.Equal(indexSpace, actualSpace);
+                        normalDefaults++;
+                    }
+                }
+            }
+
+            Assert.Equal(3, misplacedIndexes.Count);
+            Assert.Equal(4, normalDefaults); // secondary index, PK, UNIQUE and physical FK
+            Assert.Equal(1, virtualIndexes);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+            foreach (var (table, index) in misplacedIndexes)
+            {
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+                Assert.Contains(table, error.Message, StringComparison.Ordinal);
+                Assert.Contains(index, error.Message, StringComparison.Ordinal);
+                Assert.Contains("index tablespace", error.Message, StringComparison.Ordinal);
+            }
+
+            var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["GOOD", "VIRTUAL_CHILD", "PHYSICAL_CHILD"]));
+            Assert.Equal(3, model.Tables.Count);
+            var good = Assert.Single(model.Tables, table => table.Name == "GOOD");
+            Assert.NotNull(good.PrimaryKey);
+            Assert.Single(good.UniqueConstraints);
+            Assert.Equal("GOOD_IX", Assert.Single(good.Indexes).Name);
+            var virtualChild = Assert.Single(model.Tables, table => table.Name == "VIRTUAL_CHILD");
+            Assert.Single(virtualChild.ForeignKeys);
+            Assert.Empty(virtualChild.Indexes);
+            var physicalChild = Assert.Single(model.Tables, table => table.Name == "PHYSICAL_CHILD");
+            Assert.Single(physicalChild.ForeignKeys);
+            Assert.Single(physicalChild.Indexes);
+        }
+        finally
+        {
+            // Drop the owning user first, including all its indexes in the other spaces.
+            try { await database.DisposeAsync(); }
+            finally { await alternate.DisposeAsync(); }
+        }
+    }
+
+    [DamengFact]
     public async Task ScaffoldingRejectsNonDefaultTablespacesAndUsesSchemaOwnerDefault()
     {
         var alternate = new DamengScriptTestDatabase();

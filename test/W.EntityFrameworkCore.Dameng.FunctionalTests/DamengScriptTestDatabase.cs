@@ -158,6 +158,19 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
         _hugeStorageEnabled = true;
     }
 
+    internal async Task UseDefaultIndexTablespaceAsync(DamengScriptTestDatabase tablespaceOwner)
+    {
+        if (!_userCreated || UserName is null || _adminConnectionString is null
+            || !tablespaceOwner._tablespaceCreated || tablespaceOwner.TablespaceName is null)
+        {
+            throw new InvalidOperationException("Owned temporary test users and tablespaces are required.");
+        }
+
+        await using var admin = new DmConnection(_adminConnectionString);
+        await admin.OpenAsync();
+        await ExecuteAsync(admin, $"ALTER USER \"{UserName}\" DEFAULT INDEX TABLESPACE \"{tablespaceOwner.TablespaceName}\"");
+    }
+
     public async Task<DmConnection> OpenAsync()
     {
         if (string.IsNullOrWhiteSpace(ConnectionString))

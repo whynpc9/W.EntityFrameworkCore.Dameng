@@ -221,6 +221,23 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
+    internal static void ValidateIndexTablespace(string table, string index, long? tablespaceId, long? ownerInfo3)
+    {
+        // User INFO3 bytes 2-3 contain the default index tablespace, independently
+        // of the data tablespace used by the table's clustered storage index.
+        var defaultTablespaceId = (ownerInfo3 >> 16) & 0xFFFFL;
+        // Zero means no explicit index default: Dameng uses the table's data space.
+        // Accepted tables are separately required to use the owner's default data space.
+        if (defaultTablespaceId == 0) defaultTablespaceId = ownerInfo3 & 0xFFFFL;
+        if (tablespaceId is null || defaultTablespaceId is null || tablespaceId != defaultTablespaceId)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' index '{index}' uses tablespace ID '{tablespaceId?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}', "
+                + $"but its schema owner's default index tablespace ID is '{defaultTablespaceId?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve non-default or unknown index tablespace placement; exclude this table.");
+        }
+    }
+
     internal static void ValidateTableKind(string table, string? temporary, string? partitioned)
     {
         if (!string.Equals(temporary, "N", StringComparison.Ordinal))
@@ -1052,6 +1069,12 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 {
                     ValidateTableTablespace(table, GetNullableInt64(reader, 4), GetNullableInt64(reader, 5));
                     tables[table][DamengAnnotationNames.IsClusterBtree] = true;
+                }
+                else if (GetNullableString(reader, 2) == "NORMAL")
+                {
+                    // Validate every physical index, including P/U backing indexes whose
+                    // columns are modeled as constraints instead of DatabaseIndex objects.
+                    ValidateIndexTablespace(table, name, GetNullableInt64(reader, 4), GetNullableInt64(reader, 5));
                 }
                 if (!readColumns)
                 {

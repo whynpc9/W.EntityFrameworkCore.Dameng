@@ -15,6 +15,28 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(4L, 589828L)]
+    [InlineData(10L, 589828L)]
+    [InlineData(5L, 4L)]
+    [InlineData(null, 589828L)]
+    [InlineData(9L, null)]
+    [InlineData(null, null)]
+    public void NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(long? tablespaceId, long? ownerInfo3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIndexTablespace("T", "IX_T", tablespaceId, ownerInfo3));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("index tablespace", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(9L, 589828L)]
+    [InlineData(4L, 262148L)]
+    [InlineData(4L, 4L)]
+    public void PhysicalIndexesUseDefaultIndexTablespaceIndependentlyOfDataTablespace(long tablespaceId, long ownerInfo3)
+        => DamengDatabaseModelFactory.ValidateIndexTablespace("T", "IX_T", tablespaceId, ownerInfo3);
+
+    [Theory]
     [InlineData(5L, 4L)]
     [InlineData(null, 4L)]
     [InlineData(4L, null)]
