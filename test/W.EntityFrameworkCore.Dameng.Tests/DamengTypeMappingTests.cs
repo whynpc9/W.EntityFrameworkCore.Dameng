@@ -41,6 +41,18 @@ public sealed class DamengTypeMappingTests
         };
 
     [Theory]
+    [InlineData("FLOAT(7)")]
+    [InlineData("FLOAT(24)")]
+    [InlineData("FLOAT(53)")]
+    public void ExplicitFloatPrecisionRemainsInStoreType(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+    }
+
+    [Theory]
     [MemberData(nameof(DefaultMappings))]
     public void ClrTypesHaveRangeSafeDefaultMappings(Type clrType, string storeType, DbType? dbType)
     {

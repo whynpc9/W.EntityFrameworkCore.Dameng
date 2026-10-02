@@ -23,6 +23,155 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FactoryRejectsUnrepresentedColumnGeneration(bool onUpdate)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_GEN_{suffix}";
+        var safe = $"EF10_GSAFE_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY, N INT NOT NULL DEFAULT 7)");
+            created.Add(safe);
+            var definition = onUpdate ? "N TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE NOW" : "N INT DEFAULT ON NULL 7";
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, {definition})");
+            created.Add(table);
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT DATA_DEFAULT FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :name AND COLUMN_NAME = 'N'";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = table;
+                command.Parameters.Add(parameter);
+                var defaultSql = Convert.ToString(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture) ?? "";
+                Assert.DoesNotContain(onUpdate ? "ON UPDATE" : "ON NULL", defaultSql, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(onUpdate ? "ON UPDATE" : "DEFAULT ON NULL", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryPreservesFloatCatalogPrecisionOnRecreation()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_FS_{suffix}";
+        var target = $"EF10_FT_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT PRIMARY KEY, F7 FLOAT(7), F24 FLOAT(24), F25 FLOAT(25), F53 FLOAT(53))");
+            created.Add(source);
+            var factory = new DamengDatabaseModelFactory();
+            var table = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT COLUMN_NAME, DATA_PRECISION FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :name AND DATA_TYPE = 'FLOAT'";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = source;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var column = Assert.Single(table.Columns, item => item.Name == reader.GetString(0));
+                    Assert.Equal($"FLOAT({Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture)})", column.StoreType);
+                }
+            }
+
+            var definitions = string.Join(", ", table.Columns.Select(column => $"\"{column.Name}\" {column.StoreType}"));
+            await ExecuteAsync(connection, $"CREATE TABLE \"{target}\" ({definitions})");
+            created.Add(target);
+            var copy = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [target])).Tables);
+            Assert.Equal(table.Columns.Select(column => column.StoreType), copy.Columns.Select(column => column.StoreType));
+            Assert.Equal(await ReadNumericFacetsAsync(connection, source), await ReadNumericFacetsAsync(connection, target));
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    private static async Task<string[]> ReadNumericFacetsAsync(DbConnection connection, string table)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COLUMN_NAME, DATA_TYPE, DATA_PRECISION, DATA_SCALE FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :name ORDER BY COLUMN_ID";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "name";
+        parameter.Value = table;
+        command.Parameters.Add(parameter);
+        var rows = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(string.Join(":", Enumerable.Range(0, 4).Select(i => Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture))));
+        }
+
+        Assert.Equal(5, rows.Count);
+        return rows.ToArray();
+    }
+
+    [DamengFact]
+    public async Task FactoryLoadsSequencesWithUnquotedDollarAndHashNames()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var sequence = $"EF10_S$Q#_{suffix}";
+        var table = $"EF10_SQT_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var sequenceCreated = false;
+        var tableCreated = false;
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE {sequence} START WITH 41 INCREMENT BY 3 MAXVALUE 1000");
+            sequenceCreated = true;
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N INT DEFAULT {sequence}.NEXTVAL)");
+            tableCreated = true;
+            var model = new DamengDatabaseModelFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
+            var actual = Assert.Single(model.Sequences);
+            Assert.Equal(sequence, actual.Name);
+            Assert.Equal(41L, actual.StartValue);
+            Assert.Equal(3, actual.IncrementBy);
+            var column = Assert.Single(Assert.Single(model.Tables).Columns, column => column.Name == "N");
+            Assert.Equal(sequence, column[DamengAnnotationNames.SequenceName]);
+            Assert.Null(column.DefaultValueSql);
+        }
+        finally
+        {
+            if (tableCreated)
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+
+            if (sequenceCreated)
+            {
+                await ExecuteAsync(connection, $"DROP SEQUENCE {sequence}");
+            }
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task FactoryRejectsNonPrimaryClustering(bool uniqueConstraint)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();

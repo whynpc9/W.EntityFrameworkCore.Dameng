@@ -21,7 +21,7 @@ namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 {
     private static readonly Regex NextValDefaultPattern = new(
-        @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|\w+)\.)?(?<seq>""(?:[^""]|"""")*""|\w+)\.NEXTVAL\s*$",
+        @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|[\w$#]+)\.)?(?<seq>""(?:[^""]|"""")*""|[\w$#]+)\.NEXTVAL\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private sealed record PendingSequenceDefault(
@@ -537,8 +537,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
         }
 
-        // SYSCOLINFOS.INFO1 bit 0 is the documented virtual-column marker. ALL_TAB_COLUMNS
-        // alone does not expose enough information to treat these columns as writable.
+        // SYSCOLINFOS.INFO1 marks virtual columns (bit 0), DEFAULT ON NULL (bit 4) and
+        // ON UPDATE (bit 6). ALL_TAB_COLUMNS alone cannot preserve these generation rules.
         using var columns = CreateCommand(connection,
             "SELECT T.NAME, C.NAME, I.INFO1 FROM SYS.SYSCOLINFOS I "
             + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = I.ID "
@@ -549,18 +549,31 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var columnReader = columns.ExecuteReader();
         while (columnReader.Read())
         {
-            if (tables.ContainsKey(columnReader.GetString(0))
-                && IsVirtualColumnFlags(Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture)))
+            if (tables.ContainsKey(columnReader.GetString(0)))
             {
-                throw new NotSupportedException(
-                    $"Dameng table '{columnReader.GetString(0)}' contains virtual computed column '{columnReader.GetString(1)}'. "
-                    + "Reverse engineering cannot preserve its expression; exclude this table.");
+                ValidateColumnGenerationFlags(
+                    columnReader.GetString(0), columnReader.GetString(1),
+                    Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture));
             }
         }
     }
 
     internal static bool IsVirtualColumnFlags(long flags)
         => (flags & 1L) != 0;
+
+    internal static void ValidateColumnGenerationFlags(string table, string column, long flags)
+    {
+        var unsupported = IsVirtualColumnFlags(flags) ? "virtual computed column"
+            : (flags & 16L) != 0 ? "DEFAULT ON NULL"
+            : (flags & 64L) != 0 ? "ON UPDATE"
+            : null;
+        if (unsupported is not null)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' contains {unsupported} on column '{column}'. "
+                + "Reverse engineering cannot preserve this generation behavior; exclude this table.");
+        }
+    }
 
     private static void ValidateConstraintStates(
         DbConnection connection,
@@ -1056,6 +1069,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 return dataPrecision is null
                     ? normalizedType
                     : $"{normalizedType}({dataPrecision.Value.ToString(CultureInfo.InvariantCulture)},{(dataScale ?? 0L).ToString(CultureInfo.InvariantCulture)})";
+
+            case "FLOAT":
+                return dataPrecision is not null
+                    ? $"FLOAT({dataPrecision.Value.ToString(CultureInfo.InvariantCulture)})"
+                    : normalizedType;
 
             case "TIME":
             case "DATETIME":

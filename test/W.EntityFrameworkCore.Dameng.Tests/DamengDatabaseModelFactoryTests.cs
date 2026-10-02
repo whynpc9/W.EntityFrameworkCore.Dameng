@@ -9,6 +9,26 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(32)]
+    public void OrdinaryColumnFlagsDoNotBlockScaffolding(long flags)
+        => DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "C", flags);
+
+    [Theory]
+    [InlineData(1, "virtual computed column")]
+    [InlineData(16, "DEFAULT ON NULL")]
+    [InlineData(48, "DEFAULT ON NULL")]
+    [InlineData(64, "ON UPDATE")]
+    [InlineData(96, "ON UPDATE")]
+    public void UnsupportedColumnGenerationIsRejected(long flags, string expected)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "C", flags));
+        Assert.Contains(expected, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
     [InlineData(2, false)]
@@ -58,6 +78,10 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("DECIMAL", 22, 18, 3, 0, null, "DECIMAL(18,3)")]
     [InlineData("DECIMAL", 22, null, null, 0, null, "DECIMAL")]
     [InlineData("NUMERIC", 22, 9, 0, 0, null, "NUMERIC(9,0)")]
+    [InlineData("FLOAT", 8, 53, null, 0, null, "FLOAT(53)")]
+    [InlineData("FLOAT", 4, 24, null, 0, null, "FLOAT(24)")]
+    [InlineData("FLOAT", 8, 7, null, 0, null, "FLOAT(7)")]
+    [InlineData("FLOAT", 8, null, null, 0, null, "FLOAT")]
     // Temporal scale comes from DATA_SCALE; a declared (0) is preserved because the
     // unqualified type would fall back to the server's default precision.
     [InlineData("DATETIME", 8, null, 6, 0, null, "DATETIME(6)")]
@@ -115,6 +139,9 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("sales.OrderSeq.nextval", "ORDERSEQ", "SALES")]
     [InlineData("  \"OrderSeq\".NEXTVAL  ", "OrderSeq", null)]
     [InlineData("\"Quoted\"\"Seq\".NEXTVAL", "Quoted\"Seq", null)]
+    [InlineData("Order$Seq.NEXTVAL", "ORDER$SEQ", null)]
+    [InlineData("sales$.Order#Seq.nextval", "ORDER#SEQ", "SALES$")]
+    [InlineData("\"sales$\".order#seq.NEXTVAL", "ORDER#SEQ", "sales$")]
     public void TryParseSequenceDefaultMatchesNextvalDefaults(
         string defaultValueSql,
         string expectedName,
