@@ -819,13 +819,12 @@ public sealed class DamengMigrationsSqlGeneratorTests
     }
 
     [Fact]
-    public void IdempotentGenerationWrapsTheWholeCommandInEscapedDynamicSql()
+    public void IdempotentGenerationWrapsEachStatementInEscapedDynamicSql()
     {
         using var context = CreateContext();
         var generator = context.GetService<IMigrationsSqlGenerator>();
 
-        var command = Assert.Single(
-            generator.Generate(
+        var commands = generator.Generate(
                 [
                     new SqlOperation
                     {
@@ -836,15 +835,44 @@ public sealed class DamengMigrationsSqlGeneratorTests
                     }
                 ],
                 options: MigrationsSqlGenerationOptions.Script
-                    | MigrationsSqlGenerationOptions.Idempotent));
+                    | MigrationsSqlGenerationOptions.Idempotent);
 
-        Assert.Equal(
-            "EXECUTE IMMEDIATE 'UPDATE \"Statuses\" SET \"Name\" = ''O''''Brien'';"
-            + Environment.NewLine
-            + "INSERT INTO \"Statuses\" (\"Name\") VALUES (''新建'');';"
-            + Environment.NewLine,
-            command.CommandText);
-        Assert.True(command.TransactionSuppressed);
+        Assert.Equal(2, commands.Count);
+        Assert.Equal("EXECUTE IMMEDIATE 'UPDATE \"Statuses\" SET \"Name\" = ''O''''Brien'';';" + Environment.NewLine,
+            commands[0].CommandText);
+        Assert.Equal("EXECUTE IMMEDIATE 'INSERT INTO \"Statuses\" (\"Name\") VALUES (''新建'');';" + Environment.NewLine,
+            commands[1].CommandText);
+        Assert.All(commands, command => Assert.True(command.TransactionSuppressed));
+    }
+
+    [Fact]
+    public void IdempotentStatementBoundariesIgnoreQuotedAndCommentedSemicolons()
+    {
+        using var context = CreateContext();
+        var commands = context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = "/* ; */ UPDATE \"T;X\" SET \"N\" = 'O''Brien;'; -- ;\nINSERT INTO \"T;X\" VALUES ('尾;'); ; -- trailing" }],
+            options: MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Equal(2, commands.Count);
+        Assert.Contains("'O''''Brien;'", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.Contains("-- ;", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.Contains("(''尾;'')", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.All(commands, command => Assert.False(command.TransactionSuppressed));
+    }
+
+    [Theory]
+    [InlineData("UPDATE T SET N=1; BEGIN NULL; END;")]
+    [InlineData("UPDATE T SET N=1; DECLARE N INT; BEGIN NULL; END;")]
+    [InlineData("CREATE PROCEDURE P AS BEGIN NULL; END;")]
+    [InlineData("CREATE OR REPLACE FUNCTION F RETURN INT AS BEGIN RETURN 1; END;")]
+    [InlineData("CREATE TRIGGER TR BEFORE INSERT ON T BEGIN NULL; END;")]
+    [InlineData("CREATE PACKAGE P AS PROCEDURE F; END;")]
+    [InlineData("CREATE TYPE T AS OBJECT (N INT);")]
+    public void IdempotentGenerationRejectsUnsafeProceduralSplitting(string sql)
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = sql }], options: MigrationsSqlGenerationOptions.Idempotent));
+        Assert.Contains("cannot split", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

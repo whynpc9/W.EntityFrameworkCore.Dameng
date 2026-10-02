@@ -12,6 +12,72 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
 public sealed class DamengMigrationsFunctionalTests
 {
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IdempotentMultiStatementSqlOperationExecutesOnce(bool includesDdl)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_DYN_{suffix}";
+        var historyTable = $"EF10_DYH_{suffix}";
+        var migration = $"202610020001_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng(connectionString, options => options.MigrationsHistoryTable(historyTable)).Options);
+        var createSql = $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N VARCHAR(40), C INT);";
+        try
+        {
+            if (!includesDdl)
+            {
+                await using var create = connection.CreateCommand();
+                create.CommandText = createSql;
+                await create.ExecuteNonQueryAsync();
+            }
+
+            var operation = new SqlOperation
+            {
+                Sql = (includesDdl ? createSql + "\n" : "")
+                    + $"INSERT INTO \"{table}\" VALUES (1, 'initial', 0);\n"
+                    + $"/* separator ; inside comment */ UPDATE \"{table}\" SET N = 'O''Brien;尾', C = C + 1 WHERE ID = 1;\n"
+                    + $"-- separator ; inside comment\nINSERT INTO \"{table}\" VALUES (2, '新建', 0);",
+                SuppressTransaction = true
+            };
+            var commands = context.GetService<IMigrationsSqlGenerator>().Generate([operation],
+                options: MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent);
+            var history = context.GetService<IHistoryRepository>();
+            var script = history.GetCreateIfNotExistsScript() + "\n/\n"
+                + history.GetBeginIfNotExistsScript(migration) + "\n"
+                + string.Join("\n", commands.Select(command => command.CommandText))
+                + history.GetInsertScript(new HistoryRow(migration, "10.0.12"))
+                + history.GetEndIfScript();
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+
+            await using var readback = connection.CreateCommand();
+            readback.CommandText = $"SELECT ID, N, C FROM \"{table}\" ORDER BY ID";
+            await using (var reader = await readback.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(1, reader.GetInt32(0));
+                Assert.Equal("O'Brien;尾", reader.GetString(1));
+                Assert.Equal(1, reader.GetInt32(2));
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(2, reader.GetInt32(0));
+                Assert.Equal("新建", reader.GetString(1));
+                Assert.False(await reader.ReadAsync());
+            }
+
+            Assert.Equal(migration, Assert.Single(await history.GetAppliedMigrationsAsync()).MigrationId);
+        }
+        finally
+        {
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", table, $"DROP TABLE \"{table}\"");
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", historyTable, $"DROP TABLE \"{historyTable}\"");
+        }
+    }
+
     [DamengFact]
     public async Task CommentPrefixedInlineBlocksExecuteAsGeneratedCommands()
     {

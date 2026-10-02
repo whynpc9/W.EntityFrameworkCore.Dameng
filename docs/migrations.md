@@ -181,9 +181,13 @@ dotnet ef migrations script \
   --startup-project src/App/App.csproj
 ```
 
-非幂等脚本是以分号结束的达梦 DDL，并包含历史表插入。幂等脚本把每条迁移命令包进
-`EXECUTE IMMEDIATE` 和历史表条件，块以单独一行的 `/` 结束。
-转义后的动态命令字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。
+非幂等脚本是以分号结束的达梦 DDL，并包含历史表插入。幂等脚本把普通 SQL 按引号/注释
+之外的分号拆成独立的 `EXECUTE IMMEDIATE`，置于历史表条件中，块以单独一行的 `/` 结束。
+这样同一 `migrationBuilder.Sql` 中先建表、再写入时，后续语句在表创建后才绑定。
+匿名 `BEGIN`/`DECLARE` 块应单独放入一个 `SqlOperation`，保持完整并原样内嵌；
+普通 SQL 后混入匿名块，以及 `CREATE [OR REPLACE] PROCEDURE/FUNCTION/TRIGGER/PACKAGE/TYPE`
+存储定义会在幂等生成时明确拒绝拆分，存储定义应另行整体执行。
+转义后的单条动态语句字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。
 自定义 `SqlOperation` 里不能出现单独一行的 `/`。
 
 审查时对照[兼容性矩阵](compatibility.md)里的迁移行。第一次取 `NEXTVAL` 之前修改序列增量，

@@ -213,6 +213,8 @@ public sealed class DamengMigrationScriptFunctionalTests
             ("id", 20L)));
         Assert.Equal(1L, await CountHistoryAsync(connection, names.HistoryTable, "202609220001_CreateScriptObjects"));
         Assert.Equal(1L, await CountHistoryAsync(connection, names.HistoryTable, "202609220002_AlterScriptObjects"));
+        Assert.Equal(2L, await ScalarInt64Async(connection,
+            $"SELECT COUNT(*) FROM \"{names.Schema}\".\"{names.RenamedLookupTable}\" WHERE ID IN (8, 9)"));
     }
 
     [DamengFact]
@@ -869,6 +871,10 @@ public sealed class AlterScriptObjectsMigration : Migration
             "\n  begin\n"
             + "    INSERT INTO \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\" (\"ID\") VALUES (7);\n"
             + "  end;",
+            suppressTransaction: true);
+        migrationBuilder.Sql(
+            $"INSERT INTO \"{names.Schema}\".\"{names.RenamedLookupTable}\" (ID) VALUES (8);\n"
+            + $"INSERT INTO \"{names.Schema}\".\"{names.RenamedLookupTable}\" (ID) VALUES (9);",
             suppressTransaction: true);
     }
 

@@ -58,7 +58,7 @@ metadata:
 
 1. `CREATE TABLE IF NOT EXISTS` 创建历史表。
 2. 每个命令外面包一层 `BEGIN ... IF NOT EXISTS ... THEN ... END IF; END;`。
-3. DDL 和种子放在 `EXECUTE IMMEDIATE '...'` 里。历史插入留在块内，不再套一层动态 SQL。
+3. 普通 SQL 按引号/注释外的分号拆成独立 `EXECUTE IMMEDIATE '...'`，DDL 和种子各自动态执行，避免 CREATE 后续 DML 提前绑定。历史插入留在块内，不再套一层动态 SQL。
 4. 例外：`EnsureSchema` 生成自带 `SYS.SYSOBJECTS`（`TYPE$ = 'SCH'`）存在性守卫的匿名块。服务器不接受把块再包进 `EXECUTE IMMEDIATE`，所以该命令以原样的内嵌 `BEGIN ... END;` 出现在历史守卫内（块可以嵌套）。
 5. 每个块后面有单独一行 `/`。这是 disql 批次分隔符，不是 SQL。
 
@@ -70,6 +70,9 @@ disql 可以直接跑带 `/` 的文件。ADO.NET 不能把 `/` 放进 `CommandTe
 4. 从 `BEGIN` 或 `DECLARE` 到配平的 `END;` 作为一条命令执行，连同紧邻的前导注释一起保留。按引号/注释外的词法 token 识别，不能要求关键字独占一行；区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束。块内允许再嵌套 `BEGIN ... END;`。
 
 本仓库测试执行器支持匿名块的变量声明、局部过程/函数声明及其嵌套体，但不是完整 DMSQL 脚本解析器。`CREATE PROCEDURE/FUNCTION/TRIGGER/PACKAGE` 定义明确拒绝拆批；这类定义应作为完整命令交给相应执行器，不按内部的分号拆开。
+
+幂等生成拒绝拆分 `CREATE [OR REPLACE] PROCEDURE/FUNCTION/TRIGGER/PACKAGE/TYPE` 存储定义，
+以及普通 SQL 后混入的 `BEGIN`/`DECLARE`；匿名块应单独作为一个 `SqlOperation`，存储定义另行整体执行。
 
 同一脚本执行第二遍应保持种子一行、每个 `MigrationId` 一行。单条动态 SQL 转义后的 UTF-8 超过 32767 字节时，生成阶段会抛 `NotSupportedException`，把 migration 拆小。自定义 `migrationBuilder.Sql(...)` 里不能出现单独一行 `/`。
 

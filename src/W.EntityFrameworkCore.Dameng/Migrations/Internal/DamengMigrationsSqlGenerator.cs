@@ -51,23 +51,77 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
                 continue;
             }
 
-            var commandLiteral = stringTypeMapping.GenerateSqlLiteral(commandText);
-            if (Encoding.UTF8.GetByteCount(commandLiteral) > MaxDynamicSqlLiteralUtf8Length)
+            foreach (var statement in SplitDynamicSqlStatements(commandText))
             {
-                throw new NotSupportedException(
-                    "A Dameng idempotent migration command exceeds the conservative 32767-byte "
-                    + "dynamic SQL literal limit after escaping. Split the migration operation "
-                    + "into smaller commands.");
-            }
+                var commandLiteral = stringTypeMapping.GenerateSqlLiteral(statement);
+                if (Encoding.UTF8.GetByteCount(commandLiteral) > MaxDynamicSqlLiteralUtf8Length)
+                {
+                    throw new NotSupportedException(
+                        "A Dameng idempotent migration statement exceeds the conservative 32767-byte "
+                        + "dynamic SQL literal limit after escaping. Split the migration operation "
+                        + "into smaller commands.");
+                }
 
-            builder
-                .Append("EXECUTE IMMEDIATE ")
-                .Append(commandLiteral)
-                .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator)
-                .EndCommand(command.TransactionSuppressed);
+                builder
+                    .Append("EXECUTE IMMEDIATE ")
+                    .Append(commandLiteral)
+                    .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator)
+                    .EndCommand(command.TransactionSuppressed);
+            }
         }
 
         return builder.GetCommandList();
+    }
+
+    private static IEnumerable<string> SplitDynamicSqlStatements(string sql)
+    {
+        var start = 0;
+        var statementTokens = new List<string>();
+        foreach (var token in DamengSqlLexer.Read(sql))
+        {
+            if (token.Text == ";")
+            {
+                if (statementTokens.Count > 0)
+                {
+                    ValidateDynamicStatement(statementTokens);
+                    yield return sql[start..token.End].Trim();
+                    statementTokens.Clear();
+                }
+
+                start = token.End;
+            }
+            else
+            {
+                // Only the first four tokens are needed to recognize CREATE [OR REPLACE]
+                // procedural definitions. Quotes/comments are opaque to the shared lexer.
+                if (statementTokens.Count < 4)
+                {
+                    statementTokens.Add(token.Text);
+                }
+            }
+        }
+
+        if (statementTokens.Count > 0)
+        {
+            ValidateDynamicStatement(statementTokens);
+            yield return sql[start..].Trim();
+        }
+    }
+
+    private static void ValidateDynamicStatement(List<string> tokens)
+    {
+        var first = tokens[0].ToUpperInvariant();
+        var objectTypeIndex = tokens.Count >= 3
+            && string.Equals(tokens[1], "OR", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(tokens[2], "REPLACE", StringComparison.OrdinalIgnoreCase) ? 3 : 1;
+        var definesRoutine = first == "CREATE" && tokens.Count > objectTypeIndex
+            && tokens[objectTypeIndex].ToUpperInvariant() is "PROCEDURE" or "FUNCTION" or "TRIGGER" or "PACKAGE" or "TYPE";
+        if (first is "BEGIN" or "DECLARE" || definesRoutine)
+        {
+            throw new NotSupportedException(
+                "Dameng idempotent SQL cannot split stored object definitions or anonymous blocks mixed with other statements. "
+                + "Pass an anonymous BEGIN/DECLARE block as its own SqlOperation; execute stored object definitions separately.");
+        }
     }
 
     // The first SQL token ignores leading whitespace/comments but preserves quoted text.
