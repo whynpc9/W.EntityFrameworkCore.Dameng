@@ -22,6 +22,64 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengFact]
+    public async Task FactoryRejectsLongRowStorageWithoutBlockingOrdinaryTableFilters()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var wide = $"EF10_LONGROW_{suffix}";
+        var ordinary = $"EF10_NOLONG_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT PAGE() FROM dual";
+        var pageSize = Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        var width = Math.Min(8188, pageSize / 2 - 200);
+        Assert.True(3 * width > pageSize / 2);
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{wide}\" (A VARCHAR({width}), B VARCHAR({width}), C VARCHAR({width})) STORAGE(CLUSTERBTR, USING LONG ROW)");
+            cleanup.Add(wide);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT) STORAGE(CLUSTERBTR, DISABLE USING LONG ROW)");
+            cleanup.Add(ordinary);
+            await using (var insert = connection.CreateCommand())
+            {
+                insert.CommandText = $"INSERT INTO \"{wide}\" VALUES (:a, :b, :c)";
+                foreach (var name in new[] { "a", "b", "c" })
+                {
+                    var parameter = insert.CreateParameter();
+                    parameter.ParameterName = name;
+                    parameter.Value = new string('x', width);
+                    insert.Parameters.Add(parameter);
+                }
+
+                Assert.Equal(1, await insert.ExecuteNonQueryAsync());
+            }
+
+            query.CommandText = $"SELECT LENGTHB(A) + LENGTHB(B) + LENGTHB(C) FROM \"{wide}\"";
+            Assert.Equal(3L * width, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT INFO3 FROM SYS.SYSOBJECTS WHERE SCHID=CURRENT_SCHID() AND NAME=:name AND TYPE$='SCHOBJ' AND SUBTYPE$='UTAB'";
+            var tableParameter = query.CreateParameter();
+            tableParameter.ParameterName = "name";
+            tableParameter.Value = wide;
+            query.Parameters.Add(tableParameter);
+            var flags = Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            Assert.Equal(0L, flags & 0x3FL);
+            Assert.NotEqual(0L, flags & (1L << 50));
+            tableParameter.Value = ordinary;
+            Assert.Equal(0L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture) & (1L << 50));
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [wide])));
+            Assert.Contains(wide, error.Message, StringComparison.Ordinal);
+            Assert.Contains("LONG ROW", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+        }
+    }
+
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]

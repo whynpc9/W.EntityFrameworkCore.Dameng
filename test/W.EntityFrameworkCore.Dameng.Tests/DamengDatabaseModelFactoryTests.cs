@@ -15,6 +15,16 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(1125899906842624L)]
+    [InlineData(1125899906842880L)]
+    public void LongRowFlagIsRejectedEvenForOrdinaryNativeTableKind(long info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateNativeTableKind("WideTable", info3));
+        Assert.Contains("WideTable", error.Message, StringComparison.Ordinal);
+        Assert.Contains("LONG ROW", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("Seq.NEXTVAL + 1")]
     [InlineData("(Seq.NEXTVAL)")]
     [InlineData("COALESCE(APP.Seq.NEXTVAL, 1)")]
