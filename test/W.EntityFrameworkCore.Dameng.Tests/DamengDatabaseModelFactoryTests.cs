@@ -15,6 +15,24 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(5L, 4L)]
+    [InlineData(null, 4L)]
+    [InlineData(4L, null)]
+    [InlineData(null, null)]
+    public void NonDefaultOrUnknownTablespacePlacementIsRejected(long? tablespaceId, long? ownerInfo3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableTablespace("PlacedTable", tablespaceId, ownerInfo3));
+        Assert.Contains("PlacedTable", error.Message, StringComparison.Ordinal);
+        Assert.Contains("tablespace", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(4L, 4L)]
+    [InlineData(4L, 589828L)]
+    public void SchemaOwnerDefaultDataTablespaceIgnoresDefaultIndexTablespace(long tablespaceId, long ownerInfo3)
+        => DamengDatabaseModelFactory.ValidateTableTablespace("T", tablespaceId, ownerInfo3);
+
+    [Theory]
     [InlineData(1125899906842624L)]
     [InlineData(1125899906842880L)]
     public void LongRowFlagIsRejectedEvenForOrdinaryNativeTableKind(long info3)

@@ -48,6 +48,8 @@ CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设�
 
 反向工程的 B 树表保留 Dameng:IsClusterBtree 注解并生成 STORAGE(CLUSTERBTR)，
 堆表/未知存储拒绝，存储变更须重建；未设置注解的手写模型保持原行为。
+B 树表的实际存储表空间须匹配模式所属用户的默认数据表空间；非默认或未知放置明确拒绝。
+默认空间从原生用户 INFO3 低 16 位读取，实际空间从聚集存储索引 GROUPID 读取，不要求 DBA_USERS 权限。
 选中外键若跨模式、主体未选中/不可读或列无法解析，明确拒绝从表，不省略关系。
 
 ## 账户

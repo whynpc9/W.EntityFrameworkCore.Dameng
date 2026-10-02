@@ -207,6 +207,20 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         return tables;
     }
 
+    internal static void ValidateTableTablespace(string table, long? tablespaceId, long? ownerInfo3)
+    {
+        // SYSOBJECTS user INFO3 bytes 0-1 contain the default data tablespace ID.
+        // Resolve the schema's parent user, which need not have the schema's name.
+        var defaultTablespaceId = ownerInfo3 & 0xFFFFL;
+        if (tablespaceId is null || defaultTablespaceId is null || tablespaceId != defaultTablespaceId)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' uses tablespace ID '{tablespaceId?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}', "
+                + $"but its schema owner's default tablespace ID is '{defaultTablespaceId?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve non-default or unknown tablespace placement; exclude this table.");
+        }
+    }
+
     internal static void ValidateTableKind(string table, string? temporary, string? partitioned)
     {
         if (!string.Equals(temporary, "N", StringComparison.Ordinal))
@@ -1008,11 +1022,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         var skippedIndexNames = new HashSet<string>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,
-            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$ "
+            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3 "
             + "FROM ALL_INDEXES I "
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME "
             + "AND O.TYPE$ = 'TABOBJ' AND O.SUBTYPE$ = 'INDEX' "
+            + "LEFT JOIN SYS.SYSINDEXES X ON X.ID = O.ID "
+            + "LEFT JOIN SYS.SYSOBJECTS U ON U.ID = S.PID AND U.TYPE$ = 'UR' AND U.SUBTYPE$ = 'USER' "
             + "LEFT JOIN SYS.SYSCONS K ON K.INDEXID = O.ID AND K.TABLEID = O.PID AND K.TYPE$ IN ('P', 'U', 'F') "
             + "WHERE I.OWNER = :schema"))
         {
@@ -1034,6 +1050,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     table, name, GetNullableString(reader, 2), GetNullableString(reader, 3));
                 if (GetNullableString(reader, 2) == "CLUSTER")
                 {
+                    ValidateTableTablespace(table, GetNullableInt64(reader, 4), GetNullableInt64(reader, 5));
                     tables[table][DamengAnnotationNames.IsClusterBtree] = true;
                 }
                 if (!readColumns)

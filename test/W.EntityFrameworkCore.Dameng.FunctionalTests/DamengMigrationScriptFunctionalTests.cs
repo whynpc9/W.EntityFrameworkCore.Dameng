@@ -31,6 +31,62 @@ public sealed class DamengMigrationScriptFunctionalTests
     }
 
     [DamengFact]
+    public async Task ScaffoldingRejectsNonDefaultTablespacesAndUsesSchemaOwnerDefault()
+    {
+        var alternate = new DamengScriptTestDatabase();
+        await alternate.InitializeAsync();
+        try
+        {
+            var schema = NewPrefix() + "_SCH";
+            await using var connection = await _database.OpenAsync();
+            await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+            try
+            {
+                await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+                await ExecuteAsync(connection, $"CREATE TABLE PLACED (ID INT) STORAGE(ON \"{alternate.TablespaceName}\", CLUSTERBTR)");
+                await ExecuteAsync(connection, "CREATE TABLE ORDINARY (ID INT) STORAGE(CLUSTERBTR)");
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT T.TABLE_NAME, T.TABLESPACE_NAME, U.NAME, U.INFO3 "
+                    + "FROM ALL_TABLES T JOIN SYS.SYSOBJECTS S ON S.NAME=T.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' WHERE T.OWNER=:schema ORDER BY T.TABLE_NAME";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "schema";
+                parameter.Value = schema;
+                command.Parameters.Add(parameter);
+                await using (var reader = await command.ExecuteReaderAsync())
+                {
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal("ORDINARY", reader.GetString(0));
+                    Assert.Equal(_database.TablespaceName, reader.GetString(1));
+                    Assert.Equal(_database.UserName, reader.GetString(2));
+                    Assert.False(reader.IsDBNull(3));
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal("PLACED", reader.GetString(0));
+                    Assert.Equal(alternate.TablespaceName, reader.GetString(1));
+                    Assert.False(reader.IsDBNull(3));
+                    Assert.False(await reader.ReadAsync());
+                }
+
+                using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+                var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["PLACED"])));
+                Assert.Contains("PLACED", error.Message, StringComparison.Ordinal);
+                Assert.Contains("tablespace ID", error.Message, StringComparison.Ordinal);
+                Assert.Equal("ORDINARY", Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["ORDINARY"])).Tables).Name);
+            }
+            finally
+            {
+                await ExecuteAsync(connection, $"SET SCHEMA \"{_database.UserName}\"");
+                await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            }
+        }
+        finally
+        {
+            await alternate.DisposeAsync();
+        }
+    }
+
+    [DamengFact]
     public async Task ScaffoldedMigrationRejectsHugeTableInsteadOfCreatingAnOrdinaryTable()
     {
         await _database.EnableHugeStorageAsync();
