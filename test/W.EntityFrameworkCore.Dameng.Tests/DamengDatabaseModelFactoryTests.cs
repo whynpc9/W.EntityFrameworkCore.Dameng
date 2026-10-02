@@ -469,6 +469,18 @@ public sealed class DamengDatabaseModelFactoryTests
     }
 
     [Theory]
+    [InlineData("seq . nextval", "SEQ", null)]
+    [InlineData(" app . seq . NEXTVAL ", "SEQ", "APP")]
+    [InlineData("\"App.Schema\"\t.\t\"Seq Name\"\n . NEXTVAL", "Seq Name", "App.Schema")]
+    [InlineData("\"a\"\"b\" . \"s\"\"q\" . NEXTVAL", "s\"q", "a\"b")]
+    public void NextValQualifierWhitespacePreservesIdentifierSemantics(string sql, string name, string? schema)
+    {
+        Assert.True(DamengDatabaseModelFactory.TryParseSequenceDefault(sql, out var actualName, out var actualSchema));
+        Assert.Equal(name, actualName);
+        Assert.Equal(schema, actualSchema);
+    }
+
+    [Theory]
     [InlineData("DEFERRABLE", "IMMEDIATE", "VALIDATED")]
     [InlineData("NOT DEFERRABLE", "DEFERRED", "VALIDATED")]
     [InlineData("NOT DEFERRABLE", "IMMEDIATE", "NOT VALIDATED")]

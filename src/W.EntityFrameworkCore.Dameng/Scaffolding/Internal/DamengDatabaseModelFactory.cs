@@ -30,7 +30,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     }
 
     private static readonly Regex NextValDefaultPattern = new(
-        @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|[\w$#]+)\.)?(?<seq>""(?:[^""]|"""")*""|[\w$#]+)\.NEXTVAL\s*$",
+        @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|[\w$#]+)\s*\.\s*)?(?<seq>""(?:[^""]|"""")*""|[\w$#]+)\s*\.\s*NEXTVAL\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private sealed record PendingSequenceDefault(

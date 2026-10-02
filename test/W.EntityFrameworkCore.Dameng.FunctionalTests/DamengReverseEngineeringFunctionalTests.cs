@@ -22,6 +22,66 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SpacedNextValDefaultsKeepTheirLocalSequenceDefinition(bool qualified)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_WSQT_{suffix}";
+        var copy = $"EF10_WSQTC_{suffix}";
+        var sequence = $"EF10_WSQ_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var schema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        var helper = context.GetService<ISqlGenerationHelper>();
+        var sequenceSql = (qualified ? helper.DelimitIdentifier(schema) + " \n . \t " : "")
+            + helper.DelimitIdentifier(sequence) + " \t . \n NEXTVAL";
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3");
+            var dropSequence = $"DROP SEQUENCE \"{sequence}\"";
+            cleanup.Add(dropSequence);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID BIGINT DEFAULT {sequenceSql}, N INT)");
+            var dropSource = $"DROP TABLE \"{source}\"";
+            cleanup.Add(dropSource);
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [source]));
+            var item = Assert.Single(model.Sequences);
+            var column = Assert.Single(model.Tables).Columns[0];
+            Assert.Equal(sequence, item.Name);
+            Assert.Equal(schema, column[DamengAnnotationNames.SequenceSchema]);
+            Assert.Equal(DamengValueGenerationStrategy.Sequence, column[DamengAnnotationNames.ValueGenerationStrategy]);
+            await ExecuteAsync(connection, dropSource);
+            cleanup.Remove(dropSource);
+            await ExecuteAsync(connection, dropSequence);
+            cleanup.Remove(dropSequence);
+            var generator = context.GetService<IMigrationsSqlGenerator>();
+            foreach (var command in generator.Generate([new CreateSequenceOperation
+                { Name = item.Name, Schema = item.Schema, ClrType = typeof(long), StartValue = item.StartValue!.Value,
+                    IncrementBy = item.IncrementBy!.Value, MinValue = item.MinValue, MaxValue = item.MaxValue, IsCyclic = item.IsCyclic!.Value }]))
+                await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add(dropSequence);
+            var table = new CreateTableOperation { Name = copy };
+            var id = new AddColumnOperation { Table = copy, Name = "ID", ClrType = typeof(long), ColumnType = "BIGINT" };
+            foreach (var annotation in column.GetAnnotations()) id[annotation.Name] = annotation.Value;
+            table.Columns.Add(id);
+            table.Columns.Add(new AddColumnOperation { Table = copy, Name = "N", ClrType = typeof(int), ColumnType = "INT" });
+            foreach (var command in generator.Generate([table])) await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add($"DROP TABLE \"{copy}\"");
+            await ExecuteAsync(connection, $"INSERT INTO \"{copy}\" (N) VALUES (1)");
+            query.CommandText = $"SELECT ID FROM \"{copy}\"";
+            Assert.Equal(41L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
     [DamengFact]
     public async Task ClusterBtreeStorageSurvivesRecreationAndHeapTablesAreRejected()
     {
