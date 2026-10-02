@@ -23,6 +23,79 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData("VARCHAR")]
+    [InlineData("VARCHAR2")]
+    [InlineData("CHAR")]
+    public async Task ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(string type)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_BSRC_{suffix}";
+        var copy = $"EF10_BCOPY_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (N {type}(9 BYTE), C {type}(9 CHAR))");
+            cleanup.Add(source);
+            var table = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
+            Assert.Equal($"{type}(9 BYTE)", table.Columns[0].StoreType);
+            Assert.Equal($"{type}(9 CHAR)", table.Columns[1].StoreType);
+            using var context = new DbContext(new DbContextOptionsBuilder()
+                .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var operation = new CreateTableOperation { Name = copy };
+            foreach (var column in table.Columns)
+            {
+                operation.Columns.Add(new AddColumnOperation
+                {
+                    Table = copy,
+                    Name = column.Name,
+                    ClrType = typeof(string),
+                    ColumnType = column.StoreType,
+                    IsNullable = true
+                });
+            }
+
+            var commands = context.GetService<IMigrationsSqlGenerator>().Generate([operation]);
+            Assert.Equal(2, commands.Count);
+            Assert.Contains("SF_GET_LENGTH_IN_CHAR()", commands[0].CommandText, StringComparison.Ordinal);
+            // Exercise the rejection branch without changing any instance/session setting.
+            var guardError = await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection,
+                commands[0].CommandText.Replace("SF_GET_LENGTH_IN_CHAR()", "1", StringComparison.Ordinal)));
+            Assert.Contains("BYTE columns require LENGTH_IN_CHAR=0", guardError.Message, StringComparison.Ordinal);
+            foreach (var command in commands) await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add(copy);
+            foreach (var name in new[] { source, copy })
+            {
+                await using (var query = connection.CreateCommand())
+                {
+                    query.CommandText = "SELECT DATA_LENGTH, CHAR_LENGTH, CHAR_USED FROM USER_TAB_COLUMNS "
+                        + "WHERE TABLE_NAME = :name ORDER BY COLUMN_ID";
+                    var parameter = query.CreateParameter();
+                    parameter.ParameterName = "name";
+                    parameter.Value = name;
+                    query.Parameters.Add(parameter);
+                    await using var reader = await query.ExecuteReaderAsync();
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal(9L, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+                    Assert.Equal("B", reader.GetString(2));
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal(9L, Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture));
+                    Assert.Equal("C", reader.GetString(2));
+                }
+
+                await ExecuteAsync(connection, $"INSERT INTO \"{name}\" VALUES ('中文文', '中文文中文文中文文')");
+                await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection,
+                    $"INSERT INTO \"{name}\" (N) VALUES ('中文文中文文中文文')"));
+            }
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
     [InlineData("", true)]
     [InlineData("NOCACHE NOORDER", true)]
     [InlineData("CACHE 2", false)]
@@ -1138,7 +1211,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal(ValueGenerated.OnAdd, id.ValueGenerated);
             Assert.Null(id.DefaultValueSql);
 
-            Assert.Equal("VARCHAR(30)", table.Columns[1].StoreType);
+            Assert.Equal("VARCHAR(30 BYTE)", table.Columns[1].StoreType);
 
             var name = table.Columns[2];
             Assert.Equal("NVARCHAR2(50)", name.StoreType);
@@ -1180,7 +1253,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 candidate => candidate.Name == sequenceName);
             Assert.Equal(44L, consumedSequence.StartValue);
 
-            Assert.Equal("VARCHAR(8)", table.Columns[4].StoreType);
+            Assert.Equal("VARCHAR(8 BYTE)", table.Columns[4].StoreType);
             Assert.Equal("'NEW'", table.Columns[4].DefaultValueSql?.Trim());
             Assert.Equal("INTERVAL DAY(4) TO SECOND(3)", table.Columns[5].StoreType);
             Assert.Equal("DECIMAL(18,3)", table.Columns[6].StoreType);

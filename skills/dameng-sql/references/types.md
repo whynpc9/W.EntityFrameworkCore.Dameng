@@ -14,6 +14,11 @@
 - `LENGTH_IN_CHAR=0`：按字节。UTF-8 下一个汉字约 3 字节，GBK/GB18030 约 2 字节。
 - `LENGTH_IN_CHAR=1`：`CHAR(1)` 可存一个字符。
 
+本仓库参考实例（LENGTH_IN_CHAR=0）已实测 `CHAR/VARCHAR/VARCHAR2(n BYTE)`，
+目录 CHAR_USED=B、DATA_LENGTH=n；反向工程保留该显式限定，提供程序生成的相关 DDL
+带目标模式检查，非 0 或未知模式拒绝。NVARCHAR2/NCHAR 不扩展 BYTE 映射；
+未验证模式 1 实例，不因语法在模式 0 被接受就推断所有模式都保持相同容量。
+
 ```sql
 CREATE TABLE dmhr.char_test (name VARCHAR(3));
 INSERT INTO dmhr.char_test VALUES ('测');     -- UTF-8 且 LENGTH_IN_CHAR=0 时可能已占满

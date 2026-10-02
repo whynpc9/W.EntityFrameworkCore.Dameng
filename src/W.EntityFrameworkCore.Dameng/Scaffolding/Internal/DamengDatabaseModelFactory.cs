@@ -1223,10 +1223,17 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 // Character-declared lengths must keep the CHAR qualifier; otherwise a byte-sized
                 // instance truncates multi-byte text. NVARCHAR2/NCHAR are always character-based.
                 var isCharacterDeclared = string.Equals(charUsed, "C", StringComparison.Ordinal);
-                return isCharacterDeclared
-                    && normalizedType is "CHAR" or "VARCHAR" or "VARCHAR2"
-                        ? $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)} CHAR)"
-                        : $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)})";
+                if (normalizedType is "CHAR" or "VARCHAR" or "VARCHAR2")
+                {
+                    if (charUsed is not ("B" or "C"))
+                    {
+                        throw new NotSupportedException($"Dameng character type '{normalizedType}' has an unknown CHAR_USED facet.");
+                    }
+
+                    return $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)} {(isCharacterDeclared ? "CHAR" : "BYTE")})";
+                }
+
+                return $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)})";
 
             case "DECIMAL":
             case "DEC":

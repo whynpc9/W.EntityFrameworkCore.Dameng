@@ -34,6 +34,10 @@ metadata:
 反向工程本地序列仅接受 CACHE_SIZE=0、ORDER_FLAG=N；缓存序列与 ORDER 序列明确拒绝。
 CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设置。
 
+反向工程按目录保留显式 CHAR/BYTE 单位。BYTE 仅支持 CHAR/VARCHAR/VARCHAR2，
+提供程序生成的建表/加列/改列 DDL 先检查 SF_GET_LENGTH_IN_CHAR()=0，否则拒绝；
+不要把模式 0 真库中的守卫分支测试描述为模式 1 实例验证。
+
 ## 账户
 
 连接到已经存在的实例和用户。提供程序不创建、不删除物理数据库。

@@ -170,6 +170,33 @@ public sealed class DamengTypeMappingTests
         Assert.Equal("NVARCHAR2(20)", unicode.StoreType);
     }
 
+    [Theory]
+    [InlineData("VARCHAR(9 BYTE)")]
+    [InlineData("VARCHAR2(9 BYTE)")]
+    [InlineData("CHAR(9 BYTE)")]
+    [InlineData("varchar( 9 byte )")]
+    public void ByteQualifiedStoreTypesKeepTheirUnitAndLength(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(9, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+        Assert.True(DamengTypeMappingSource.RequiresByteLengthSemantics(storeType));
+        Assert.False(DamengTypeMappingSource.RequiresByteLengthSemantics("VARCHAR(9 CHAR)"));
+    }
+
+    [Theory]
+    [InlineData("NVARCHAR2(9 BYTE)")]
+    [InlineData("NCHAR(9 BYTE)")]
+    [InlineData("INT(9 BYTE)")]
+    public void ByteQualifierSupportDoesNotExpandToOtherStoreTypes(string storeType)
+    {
+        using var context = CreateContext();
+        Assert.Null(GetMappingSource(context).FindMapping(storeType));
+    }
+
     [Fact]
     public void BinaryFacetsSwitchToBlobOnlyAboveTheInlineLimit()
     {

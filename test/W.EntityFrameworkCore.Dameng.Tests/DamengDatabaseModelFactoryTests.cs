@@ -231,7 +231,9 @@ public sealed class DamengDatabaseModelFactoryTests
 
     [Theory]
     // Character types keep their declared length semantics.
-    [InlineData("VARCHAR", 30, null, null, 30, "B", "VARCHAR(30)")]
+    [InlineData("VARCHAR", 30, null, null, 30, "B", "VARCHAR(30 BYTE)")]
+    [InlineData("CHAR", 9, null, null, 9, "B", "CHAR(9 BYTE)")]
+    [InlineData("VARCHAR2", 9, null, null, 9, "B", "VARCHAR2(9 BYTE)")]
     [InlineData("VARCHAR", 80, null, null, 20, "C", "VARCHAR(20 CHAR)")]
     [InlineData("VARCHAR2", 80, null, null, 20, "C", "VARCHAR2(20 CHAR)")]
     [InlineData("CHAR", 12, null, null, 3, "C", "CHAR(3 CHAR)")]

@@ -10,6 +10,29 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengMigrationsSqlGeneratorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ByteColumnDdlHasAnExplicitTargetSemanticsGuard(bool idempotent)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+        var operations = new MigrationOperation[]
+        {
+            new AddColumnOperation { Table = "T", Name = "N", ClrType = typeof(string), ColumnType = "VARCHAR(9 BYTE)" },
+            new AlterColumnOperation { Table = "T", Name = "M", ClrType = typeof(string), ColumnType = "CHAR(9 BYTE)",
+                OldColumn = new AddColumnOperation { ClrType = typeof(string), ColumnType = "CHAR(6 BYTE)" } }
+        };
+        var commands = generator.Generate(operations, options: idempotent
+            ? MigrationsSqlGenerationOptions.Idempotent : MigrationsSqlGenerationOptions.Default);
+        Assert.Contains("SF_GET_LENGTH_IN_CHAR()", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.Contains("RAISE_APPLICATION_ERROR", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.StartsWith("BEGIN", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.True(commands[0].TransactionSuppressed);
+        Assert.Contains("VARCHAR(9 BYTE)", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.Contains("CHAR(9 BYTE)", commands[2].CommandText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void InvalidPrimaryKeyClusteringAnnotationIsRejected()
     {

@@ -28,6 +28,24 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
     {
         var commands = base.Generate(operations, model, options);
 
+        if (operations.Any(operation => operation switch
+            {
+                CreateTableOperation create => create.Columns.Any(column => RequiresByteLengthGuard(column, model)),
+                AddColumnOperation add => RequiresByteLengthGuard(add, model),
+                AlterColumnOperation alter => RequiresByteLengthGuard(alter, model),
+                _ => false
+            }))
+        {
+            var guard = new MigrationCommandListBuilder(Dependencies);
+            guard.AppendLine("BEGIN")
+                .AppendLine("    IF NVL(SF_GET_LENGTH_IN_CHAR(), -1) <> 0 THEN")
+                .AppendLine("        RAISE_APPLICATION_ERROR(-20001, 'Dameng BYTE columns require LENGTH_IN_CHAR=0.');")
+                .AppendLine("    END IF;")
+                .AppendLine("END;")
+                .EndCommand(suppressTransaction: true);
+            commands = guard.GetCommandList().Concat(commands).ToList();
+        }
+
         if (!options.HasFlag(MigrationsSqlGenerationOptions.Idempotent))
         {
             return commands;
@@ -79,6 +97,11 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         return builder.GetCommandList();
     }
+
+    private bool RequiresByteLengthGuard(ColumnOperation column, IModel? model)
+        => column.ComputedColumnSql is null
+            && DamengTypeMappingSource.RequiresByteLengthSemantics(column.ColumnType
+                ?? GetColumnType(column.Schema, column.Table, column.Name, column, model));
 
     private static IEnumerable<string> SplitDynamicSqlStatements(string sql)
     {

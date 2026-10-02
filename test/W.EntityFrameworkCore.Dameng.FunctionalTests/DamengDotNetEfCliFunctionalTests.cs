@@ -200,11 +200,14 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 "Scaffolded context must keep the descending index.");
 
             Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
                 ["build", "--no-restore", "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false", "--disable-build-servers"]);
             await RunDotNetEfAsync(dotnetEf, projectDirectory, connectionString,
                 ["dbcontext", "script", "--context", "ScaffoldedCliContext", "--no-build", "--output", "scaffolded-create.sql"]);
             Assert.Contains("NOT CLUSTER PRIMARY KEY", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            Assert.Contains("VARCHAR2(40 BYTE)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            Assert.Contains("SF_GET_LENGTH_IN_CHAR()", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
 
             var scaffoldedEntity = File.ReadAllText(
                 Assert.Single(
@@ -305,7 +308,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                             .UseDamengSequence("{{sequenceName}}");
                         entity.Property(item => item.Note)
                             .HasColumnName("NOTE")
-                            .HasMaxLength(40);
+                            .HasColumnType("VARCHAR2(40 BYTE)");
                         entity.HasIndex(item => item.Code)
                             .HasDatabaseName("IDX_CLI_{{suffix}}")
                             .IsDescending();

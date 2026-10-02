@@ -191,6 +191,11 @@ dotnet ef migrations script \
 转义后的单条动态语句字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。
 自定义 `SqlOperation` 里不能出现单独一行的 `/`。
 
+反向工程的字节长度列显式保留 `CHAR/VARCHAR/VARCHAR2(n BYTE)`。提供程序生成的
+建表、加列或修改列 DDL 会先检查 `SF_GET_LENGTH_IN_CHAR()`，仅在 0 时执行；
+其他或未知模式明确报错，避免把原字节容量按字符解释。该守卫不修改实例配置；
+当前真实验证环境为模式 0，未将模拟拒绝分支当作模式 1 实例验证。
+
 审查时对照[兼容性矩阵](compatibility.md)里的迁移行。第一次取 `NEXTVAL` 之前修改序列增量，
 达梦可能不从原来的起点继续计。
 

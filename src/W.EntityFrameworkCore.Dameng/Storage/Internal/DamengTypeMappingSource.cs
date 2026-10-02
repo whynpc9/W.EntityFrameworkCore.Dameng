@@ -18,8 +18,8 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     // declaration success alone is not evidence that the declared length can be filled.
     internal const int MaxCharSemanticsBytes = 8188;
 
-    private static readonly Regex CharSemanticsStoreTypePattern = new(
-        @"^(?<name>.+?)\(\s*(?<size>\d+)\s+CHAR\s*\)$",
+    private static readonly Regex LengthSemanticsStoreTypePattern = new(
+        @"^(?<name>.+?)\(\s*(?<size>\d+)\s+(?<unit>CHAR|BYTE)\s*\)$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly RelationalTypeMapping Bool = new BoolTypeMapping("BIT", DbType.Boolean);
@@ -205,9 +205,15 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             return ParseQualifiedTemporalStoreType(trimmedStoreType, ref precision, ref scale);
         }
 
-        var charSemanticsMatch = CharSemanticsStoreTypePattern.Match(trimmedStoreType);
+        var charSemanticsMatch = LengthSemanticsStoreTypePattern.Match(trimmedStoreType);
         if (charSemanticsMatch.Success)
         {
+            if (charSemanticsMatch.Groups["unit"].Value.Equals("BYTE", StringComparison.OrdinalIgnoreCase)
+                && !RequiresByteLengthSemantics(trimmedStoreType))
+            {
+                return trimmedStoreType;
+            }
+
             size = int.Parse(
                 charSemanticsMatch.Groups["size"].Value,
                 CultureInfo.InvariantCulture);
@@ -215,6 +221,14 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         }
 
         return base.ParseStoreTypeName(trimmedStoreType, ref unicode, ref size, ref precision, ref scale);
+    }
+
+    internal static bool RequiresByteLengthSemantics(string storeType)
+    {
+        var match = LengthSemanticsStoreTypePattern.Match(storeType.Trim());
+        return match.Success
+            && match.Groups["name"].Value.Trim().ToUpperInvariant() is "CHAR" or "VARCHAR" or "VARCHAR2"
+            && match.Groups["unit"].Value.Equals("BYTE", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSimpleTemporalPrecisionStoreType(string storeType)
