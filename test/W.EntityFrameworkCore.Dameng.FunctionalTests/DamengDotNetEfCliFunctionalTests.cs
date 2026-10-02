@@ -186,7 +186,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 "Scaffolded context must use the public identity API with catalog facets.");
             Assert.True(
                 scaffoldedContext.Contains(
-                    $"UseDamengSequence(\"{sequenceName}\")",
+                    $"UseDamengSequence(\"{sequenceName}\",",
                     StringComparison.Ordinal),
                 "Scaffolded context must use the public sequence API.");
             Assert.True(
@@ -215,6 +215,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     path => !path.EndsWith("ScaffoldedCliContext.cs", StringComparison.Ordinal)));
             Assert.Contains("public long Id", scaffoldedEntity, StringComparison.Ordinal);
             Assert.Contains("public string Code", scaffoldedEntity, StringComparison.Ordinal);
+            Assert.Contains("public decimal Amount", scaffoldedEntity, StringComparison.Ordinal);
+            Assert.Contains("HasDefaultValueSql(", scaffoldedContext, StringComparison.Ordinal);
         }
         finally
         {
@@ -278,6 +280,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
                 public long Number { get; set; }
 
+                public decimal Amount { get; set; }
+
                 public string? Note { get; set; }
             }
 
@@ -306,6 +310,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                         entity.Property(item => item.Number)
                             .HasColumnName("NUMBER")
                             .UseDamengSequence("{{sequenceName}}");
+                        entity.Property(item => item.Amount)
+                            .HasColumnType("DECIMAL(18,2)")
+                            .HasDefaultValueSql("\"{{sequenceName}}\".NEXTVAL");
                         entity.Property(item => item.Note)
                             .HasColumnName("NOTE")
                             .HasColumnType("VARCHAR2(40 BYTE)");

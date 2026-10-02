@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Metadata.Internal;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
 
@@ -11,6 +14,43 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData("INT", true)]
+    [InlineData("BIGINT", true)]
+    [InlineData("DECIMAL(18,2)", false)]
+    [InlineData("NUMBER(18,0)", false)]
+    public void LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(string storeType, bool usesStrategy)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var column = new DatabaseColumn { Name = "C", StoreType = storeType };
+        factory.ApplyLocalSequenceDefault(column, new DatabaseSequence { Name = "Seq\"X", Schema = "Other.Schema" });
+        if (usesStrategy)
+        {
+            Assert.Equal(DamengValueGenerationStrategy.Sequence, column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal("Other.Schema", column[DamengAnnotationNames.SequenceSchema]);
+            Assert.Null(column.DefaultValueSql);
+        }
+        else
+        {
+            Assert.Null(column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal("\"Other.Schema\".\"Seq\"\"X\".NEXTVAL", column.DefaultValueSql);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("UNKNOWN")]
+    public void UnknownCharacterUnitIdentifiesTheObjectColumnAndCatalogValue(string? unit)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.BuildStoreType(
+            "VARCHAR", 9, null, null, 9, unit, "Target.View", "ProblemColumn"));
+        Assert.Contains("Target.View", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ProblemColumn", error.Message, StringComparison.Ordinal);
+        Assert.Contains(unit ?? "NULL", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("BFILE")]
     [InlineData("TIME WITH TIME ZONE")]
@@ -22,7 +62,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
         var error = Assert.Throws<NotSupportedException>(() => factory.ValidateColumnType("T", "C", storeType));
         Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
         Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
@@ -41,7 +81,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
         factory.ValidateColumnType("T", "C", storeType);
     }
 

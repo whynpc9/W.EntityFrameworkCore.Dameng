@@ -21,10 +21,12 @@ namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 {
     private readonly IRelationalTypeMappingSource _typeMappingSource;
+    private readonly ISqlGenerationHelper _sqlGenerationHelper;
 
-    public DamengDatabaseModelFactory(IRelationalTypeMappingSource typeMappingSource)
+    public DamengDatabaseModelFactory(IRelationalTypeMappingSource typeMappingSource, ISqlGenerationHelper sqlGenerationHelper)
     {
         _typeMappingSource = typeMappingSource;
+        _sqlGenerationHelper = sqlGenerationHelper;
     }
 
     private static readonly Regex NextValDefaultPattern = new(
@@ -296,7 +298,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var defaultValue = GetNullableString(reader, 9);
 
             var columnName = reader.GetString(1);
-            var storeType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed);
+            var storeType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed, tableName, columnName);
             ValidateColumnType(tableName, columnName, storeType);
             var column = new DatabaseColumn
             {
@@ -339,7 +341,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     // from the catalog with its real facets; otherwise the model would scaffold an EF sequence
     // with invented default facets and recreate a different sequence on migration. Cross-schema
     // or unreadable references remain explicit external dependencies via their raw SQL.
-    private static void ResolveSequenceDefaults(
+    private void ResolveSequenceDefaults(
         DbConnection connection,
         string schema,
         DatabaseModel databaseModel,
@@ -375,17 +377,32 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
-            entry.Column[DamengAnnotationNames.ValueGenerationStrategy]
-                = DamengValueGenerationStrategy.Sequence;
-            entry.Column[DamengAnnotationNames.SequenceName] = entry.SequenceName;
-            entry.Column[DamengAnnotationNames.SequenceSchema] = entry.SequenceSchema;
-            entry.Column.ValueGenerated = ValueGenerated.OnAdd;
+            ApplyLocalSequenceDefault(entry.Column, sequence);
 
             if (addedToModel.Add(sequence.Name))
             {
                 databaseModel.Sequences.Add(sequence);
             }
         }
+    }
+
+    internal void ApplyLocalSequenceDefault(DatabaseColumn column, DatabaseSequence sequence)
+    {
+        var clrType = _typeMappingSource.FindMapping(column.StoreType!)?.ClrType;
+        if (clrType is not null && DamengPropertyExtensions.IsCompatibleWithDatabaseGeneratedInteger(clrType))
+        {
+            column[DamengAnnotationNames.ValueGenerationStrategy] = DamengValueGenerationStrategy.Sequence;
+            column[DamengAnnotationNames.SequenceName] = sequence.Name;
+            column[DamengAnnotationNames.SequenceSchema] = sequence.Schema;
+        }
+        else
+        {
+            // Decimal and other mapped non-integral columns can use a NEXTVAL default,
+            // but cannot carry the provider's integer-only sequence strategy annotation.
+            column.DefaultValueSql = _sqlGenerationHelper.DelimitIdentifier(sequence.Name, sequence.Schema) + ".NEXTVAL";
+        }
+
+        column.ValueGenerated = ValueGenerated.OnAdd;
     }
 
     private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(
@@ -1201,7 +1218,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         long? dataPrecision,
         long? dataScale,
         long? charLength,
-        string? charUsed)
+        string? charUsed,
+        string? table = null,
+        string? column = null)
     {
         var normalizedType = dataType.Trim().ToUpperInvariant();
         switch (normalizedType)
@@ -1227,7 +1246,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 {
                     if (charUsed is not ("B" or "C"))
                     {
-                        throw new NotSupportedException($"Dameng character type '{normalizedType}' has an unknown CHAR_USED facet.");
+                        throw new NotSupportedException(
+                            $"Dameng table or view '{table ?? "<unknown>"}' column '{column ?? "<unknown>"}' "
+                            + $"of type '{normalizedType}' has unsupported CHAR_USED '{charUsed ?? "NULL"}'. "
+                            + "Exclude this table or view from reverse engineering.");
                     }
 
                     return $"{normalizedType}({textLength.Value.ToString(CultureInfo.InvariantCulture)} {(isCharacterDeclared ? "CHAR" : "BYTE")})";

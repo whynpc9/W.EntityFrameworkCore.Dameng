@@ -269,6 +269,21 @@ public sealed class DamengTypeMappingTests
             mapping.GenerateSqlLiteral(value));
     }
 
+    [Fact]
+    public void DecimalScaffoldingCanProbeScaleWithoutPrecision()
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+        var probe = source.FindMapping(typeof(decimal), storeTypeName: null, precision: null, scale: 2);
+        Assert.NotNull(probe);
+        Assert.Equal("DECIMAL", probe.StoreType);
+        Assert.Null(probe.Precision);
+        Assert.Null(probe.Scale);
+        var explicitMapping = source.FindMapping(typeof(decimal), storeTypeName: null, precision: 18, scale: 2);
+        Assert.NotNull(explicitMapping);
+        Assert.Equal("DECIMAL(18,2)", explicitMapping.StoreType);
+    }
+
     [Theory]
     [InlineData(39, null)]
     [InlineData(10, 11)]

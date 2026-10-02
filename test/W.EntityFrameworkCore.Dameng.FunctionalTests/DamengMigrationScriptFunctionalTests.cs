@@ -64,7 +64,7 @@ public sealed class DamengMigrationScriptFunctionalTests
             }
 
             using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
-            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [huge])));
             Assert.Contains(huge, error.Message, StringComparison.Ordinal);

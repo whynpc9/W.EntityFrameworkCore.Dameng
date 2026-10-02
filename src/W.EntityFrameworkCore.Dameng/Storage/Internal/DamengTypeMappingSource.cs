@@ -268,7 +268,10 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ValidateFractionalSecondPrecision(configuredIntervalScale, "INTERVAL");
         }
 
-        if (clrType == typeof(decimal))
+        // Scaffolding removes precision while retaining scale to probe whether precision
+        // needs a fluent call. That CLR-only probe must resolve to the unbounded default.
+        if (clrType == typeof(decimal)
+            && (mappingInfo.Precision is not null || mappingInfo.StoreTypeName is not null))
         {
             ValidateDecimalFacets(mappingInfo.Precision, mappingInfo.Scale);
         }

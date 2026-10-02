@@ -23,6 +23,104 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData("DECIMAL(18,2)")]
+    [InlineData("NUMBER(18,0)")]
+    public async Task DecimalSequenceDefaultsKeepTheirSqlAndSequenceDefinition(string type)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_DSEQ_T_{suffix}";
+        var sequence = $"EF10_DSEQ_S_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3");
+            cleanup.Add($"DROP SEQUENCE \"{sequence}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID {type} DEFAULT \"{sequence}\".NEXTVAL, N INT)");
+            cleanup.Add($"DROP TABLE \"{table}\"");
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
+            Assert.Equal(sequence, Assert.Single(model.Sequences).Name);
+            var column = Assert.Single(model.Tables).Columns[0];
+            Assert.Null(column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal($"\"{model.DefaultSchema}\".\"{sequence}\".NEXTVAL", column.DefaultValueSql);
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" (N) VALUES (1)");
+            await using var query = connection.CreateCommand();
+            query.CommandText = $"SELECT ID FROM \"{table}\"";
+            Assert.Equal(41m, Convert.ToDecimal(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
+    [DamengFact]
+    public async Task LocalSequenceAfterSetSchemaRecreatesAgainstTheCatalogSchema()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var schema = $"EF10_SQS_{suffix}";
+        var sequence = $"EF10_SQ_{suffix}";
+        var source = $"EF10_SQT_{suffix}";
+        var target = $"EF10_SQC_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var loginSchema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 100");
+            cleanup.Add($"DROP SEQUENCE \"{loginSchema}\".\"{sequence}\"");
+            await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+            cleanup.Add($"DROP SCHEMA \"{schema}\"");
+            await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3");
+            var dropSequence = $"DROP SEQUENCE \"{schema}\".\"{sequence}\"";
+            cleanup.Add(dropSequence);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID BIGINT DEFAULT \"{sequence}\".NEXTVAL, N INT)");
+            var dropSource = $"DROP TABLE \"{schema}\".\"{source}\"";
+            cleanup.Add(dropSource);
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [source]));
+            var column = Assert.Single(model.Tables).Columns[0];
+            var item = Assert.Single(model.Sequences);
+            Assert.Equal(schema, column[DamengAnnotationNames.SequenceSchema]);
+            Assert.Equal(schema, item.Schema);
+            await ExecuteAsync(connection, $"SET SCHEMA \"{loginSchema}\"");
+            await ExecuteAsync(connection, dropSource);
+            cleanup.Remove(dropSource);
+            await ExecuteAsync(connection, dropSequence);
+            cleanup.Remove(dropSequence);
+            using var context = new DbContext(new DbContextOptionsBuilder()
+                .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var generator = context.GetService<IMigrationsSqlGenerator>();
+            foreach (var command in generator.Generate([new CreateSequenceOperation
+                { Name = item.Name, Schema = item.Schema, ClrType = typeof(long), StartValue = item.StartValue!.Value,
+                    IncrementBy = item.IncrementBy!.Value, MinValue = item.MinValue, MaxValue = item.MaxValue, IsCyclic = item.IsCyclic!.Value }]))
+                await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add(dropSequence);
+            var create = new CreateTableOperation { Name = target, Schema = schema };
+            var id = new AddColumnOperation { Name = "ID", Table = target, Schema = schema, ClrType = typeof(long), ColumnType = "BIGINT" };
+            foreach (var annotation in column.GetAnnotations()) id[annotation.Name] = annotation.Value;
+            create.Columns.Add(id);
+            create.Columns.Add(new AddColumnOperation { Name = "N", Table = target, Schema = schema, ClrType = typeof(int), ColumnType = "INT" });
+            foreach (var command in generator.Generate([create])) await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add($"DROP TABLE \"{schema}\".\"{target}\"");
+            await ExecuteAsync(connection, $"INSERT INTO \"{schema}\".\"{target}\" (N) VALUES (1)");
+            query.CommandText = $"SELECT ID FROM \"{schema}\".\"{target}\"";
+            Assert.Equal(41L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = $"SELECT \"{sequence}\".NEXTVAL FROM dual";
+            Assert.Equal(100L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{loginSchema}\"");
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
+    [DamengTheory]
     [InlineData("VARCHAR")]
     [InlineData("VARCHAR2")]
     [InlineData("CHAR")]
@@ -1223,7 +1321,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 DamengValueGenerationStrategy.Sequence,
                 sequenceColumn[DamengAnnotationNames.ValueGenerationStrategy]);
             Assert.Equal(sequenceName, sequenceColumn[DamengAnnotationNames.SequenceName]);
-            Assert.Null(sequenceColumn[DamengAnnotationNames.SequenceSchema]);
+            Assert.Equal(model.DefaultSchema, sequenceColumn[DamengAnnotationNames.SequenceSchema]);
             Assert.Null(sequenceColumn.DefaultValueSql);
             Assert.Equal(ValueGenerated.OnAdd, sequenceColumn.ValueGenerated);
 
@@ -1880,7 +1978,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
-        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
     }
 
     private static async Task ExecuteAsync(DbConnection connection, string sql)
