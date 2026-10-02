@@ -1,7 +1,6 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
 using Dm;
 using Microsoft.EntityFrameworkCore;
@@ -84,12 +83,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             var pendingSequenceDefaults = new List<PendingSequenceDefault>();
             LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults);
+            var columnLookup = tables.ToDictionary(
+                table => table,
+                table => table.Columns.ToDictionary(column => column.Name, StringComparer.Ordinal));
             ResolveSequenceDefaults(connection, currentSchema, databaseModel, pendingSequenceDefaults);
-            LoadIdentityAnnotations(connection, currentSchema, tableLookup);
-            LoadConstraints(connection, currentSchema, tableLookup);
-            LoadIndexes(connection, currentSchema, tableLookup);
-            LoadForeignKeys(connection, currentSchema, tableLookup);
-            LoadComments(connection, currentSchema, tableLookup);
+            LoadIdentityAnnotations(connection, currentSchema, tableLookup, columnLookup);
+            LoadConstraints(connection, currentSchema, tableLookup, columnLookup);
+            LoadIndexes(connection, currentSchema, tableLookup, columnLookup);
+            LoadForeignKeys(connection, currentSchema, tableLookup, columnLookup);
+            LoadComments(connection, currentSchema, tableLookup, columnLookup);
 
             foreach (var table in tables)
             {
@@ -277,7 +279,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     // A NEXTVAL default becomes a sequence strategy only when the referenced sequence is read
     // from the catalog with its real facets; otherwise the model would scaffold an EF sequence
     // with invented default facets and recreate a different sequence on migration. Cross-schema
-    // or unreadable references keep the raw default SQL instead.
+    // or unreadable references remain explicit external dependencies via their raw SQL.
     private static void ResolveSequenceDefaults(
         DbConnection connection,
         string schema,
@@ -296,9 +298,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 .Where(
                     entry => entry.SequenceSchema is null
                         || string.Equals(entry.SequenceSchema, schema, StringComparison.Ordinal))
-                .Select(entry => entry.SequenceName)
-                .Distinct(StringComparer.Ordinal)
-                .ToList());
+                .Select(entry => entry.SequenceName));
 
         var addedToModel = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in pending)
@@ -332,91 +332,113 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(
         DbConnection connection,
         string schema,
-        List<string> sequenceNames)
+        IEnumerable<string> sequenceNames)
     {
         var facets = new Dictionary<string, DatabaseSequence>(StringComparer.Ordinal);
-        if (sequenceNames.Count == 0)
+        foreach (var command in CreateSequenceCatalogCommands(connection, schema, sequenceNames))
         {
-            return facets;
-        }
-
-        // LAST_NUMBER is the next value the sequence will issue (an unused sequence reports its
-        // START WITH), so recreating from it continues without reusing generated values.
-        var nameParameters = new StringBuilder();
-        for (var index = 0; index < sequenceNames.Count; index++)
-        {
-            if (index > 0)
+            using (command)
+            using (var reader = command.ExecuteReader())
             {
-                nameParameters.Append(", ");
+                while (reader.Read())
+                {
+                    var sequence = ReadSequenceRecord(reader, schema);
+                    facets.Add(sequence.Name, sequence);
+                }
             }
-
-            nameParameters.Append(":seq").Append(index);
-        }
-
-        using var command = CreateCommand(
-            connection,
-            "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER"
-            + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema"
-            + $" AND SEQUENCE_NAME IN ({nameParameters})");
-        AddParameter(command, "schema", schema);
-        for (var index = 0; index < sequenceNames.Count; index++)
-        {
-            AddParameter(command, $"seq{index}", sequenceNames[index]);
-        }
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            // Any facet that cannot be represented exactly (INCREMENT_BY beyond int, bounds or
-            // next value beyond long) skips the catalog facets; the column keeps its raw
-            // default instead of scaffolding invented ones.
-            if (!TryReadInt64Facet(reader, 1, out var increment)
-                || increment is < int.MinValue or > int.MaxValue
-                || !TryReadInt64Facet(reader, 2, out var minValue)
-                || !TryReadInt64Facet(reader, 3, out var maxValue)
-                || !TryReadInt64Facet(reader, 5, out var startValue))
-            {
-                continue;
-            }
-
-            var name = reader.GetString(0);
-            facets[name] = new DatabaseSequence
-            {
-                Name = name,
-                Schema = schema,
-                IncrementBy = (int)increment,
-                MinValue = minValue,
-                MaxValue = maxValue,
-                IsCyclic = string.Equals(reader.GetString(4), "Y", StringComparison.Ordinal),
-                StartValue = startValue
-            };
         }
 
         return facets;
     }
 
+    // Keep both the IN list and the total bind count bounded (500 names plus schema).
+    // A command is created lazily; the consumer owns and disposes each yielded command.
+    internal static IEnumerable<DbCommand> CreateSequenceCatalogCommands(
+        DbConnection connection,
+        string schema,
+        IEnumerable<string> sequenceNames)
+    {
+        foreach (var names in sequenceNames.Distinct(StringComparer.Ordinal).Chunk(500))
+        {
+            var placeholders = string.Join(", ", Enumerable.Range(0, names.Length).Select(index => $":seq{index}"));
+            var command = CreateCommand(
+                connection,
+                "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER"
+                + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema"
+                + $" AND SEQUENCE_NAME IN ({placeholders})");
+            AddParameter(command, "schema", schema);
+            for (var index = 0; index < names.Length; index++)
+            {
+                AddParameter(command, $"seq{index}", names[index]);
+            }
+
+            yield return command;
+        }
+    }
+
+    internal static DatabaseSequence ReadSequenceRecord(DbDataReader reader, string schema)
+    {
+        var name = reader.GetString(0);
+        // LAST_NUMBER is the catalog continuation point. Never replace an unrepresentable
+        // local sequence with a raw NEXTVAL default: that would omit its CREATE SEQUENCE.
+        if (!TryReadInt64Facet(reader, 1, out var increment)
+            || increment is < int.MinValue or > int.MaxValue or 0
+            || !TryReadInt64Facet(reader, 2, out var minValue)
+            || !TryReadInt64Facet(reader, 3, out var maxValue)
+            || !TryReadInt64Facet(reader, 5, out var startValue))
+        {
+            throw new NotSupportedException(
+                $"Dameng local sequence '{name}' has facets that EF cannot represent exactly "
+                + "(nonzero Int32 increment and Int64 bounds/start required). Exclude the referencing table.");
+        }
+
+        var cyclic = reader.GetValue(4) as string;
+        if (cyclic is not ("Y" or "N"))
+        {
+            throw new NotSupportedException($"Dameng local sequence '{name}' has an unknown cycle flag.");
+        }
+
+        return new DatabaseSequence
+        {
+            Name = name,
+            Schema = schema,
+            IncrementBy = (int)increment,
+            MinValue = minValue,
+            MaxValue = maxValue,
+            IsCyclic = cyclic == "Y",
+            StartValue = startValue
+        };
+    }
+
     private static bool TryReadInt64Facet(DbDataReader reader, int ordinal, out long value)
     {
-        if (reader.GetValue(ordinal) is decimal decimalValue)
+        value = 0L;
+        try
         {
-            if (decimalValue < long.MinValue || decimalValue > long.MaxValue)
+            var raw = reader.GetValue(ordinal);
+            if (raw is decimal decimalValue)
             {
-                value = 0L;
+                if (decimalValue < long.MinValue || decimalValue > long.MaxValue
+                    || decimal.Truncate(decimalValue) != decimalValue)
+                {
+                    return false;
+                }
+
+                value = (long)decimalValue;
+                return true;
+            }
+
+            // Approximate floating-point values cannot prove exact integer catalog facets.
+            if (raw is null or DBNull or float or double or bool or char)
+            {
                 return false;
             }
 
-            value = (long)decimalValue;
+            value = Convert.ToInt64(raw, CultureInfo.InvariantCulture);
             return true;
         }
-
-        try
+        catch (Exception error) when (error is OverflowException or FormatException or InvalidCastException)
         {
-            value = Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture);
-            return true;
-        }
-        catch (OverflowException)
-        {
-            value = 0L;
             return false;
         }
     }
@@ -424,7 +446,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadIdentityAnnotations(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
         var identityColumns = new List<(string Table, string Column)>();
         using (var command = CreateCommand(
@@ -456,9 +479,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
-            var column = table.Columns.FirstOrDefault(
-                candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
-            if (column is null)
+            if (!columnLookup[table].TryGetValue(columnName, out var column))
             {
                 continue;
             }
@@ -610,7 +631,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadConstraints(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
         using var command = CreateCommand(
             connection,
@@ -676,7 +698,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     Name = name
                 };
                 primaryKey[DamengAnnotationNames.IsClustered] = ReadPrimaryKeyClustering(indexType);
-                AddColumnsByName(table, columns, primaryKey.Columns);
+                AddColumnsByName(columnLookup[table], columns, primaryKey.Columns);
                 table.PrimaryKey = primaryKey;
             }
             else
@@ -693,7 +715,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     Table = table,
                     Name = name
                 };
-                AddColumnsByName(table, columns, uniqueConstraint.Columns);
+                AddColumnsByName(columnLookup[table], columns, uniqueConstraint.Columns);
                 table.UniqueConstraints.Add(uniqueConstraint);
             }
         }
@@ -709,15 +731,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         };
 
     private static void AddColumnsByName(
-        DatabaseTable table,
+        Dictionary<string, DatabaseColumn> columns,
         IEnumerable<string> columnNames,
         IList<DatabaseColumn> target)
     {
         foreach (var columnName in columnNames)
         {
-            var column = table.Columns.FirstOrDefault(
-                candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
-            if (column is not null)
+            if (columns.TryGetValue(columnName, out var column))
             {
                 target.Add(column);
             }
@@ -727,7 +747,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadIndexes(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
         // An implicit row-storage index is a system index (FLAG bit 0). An explicit
         // clustered index outside the PK would otherwise disappear from the model.
@@ -852,7 +873,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 Name = name,
                 IsUnique = isUnique
             };
-            AddColumnsByName(table, columns, databaseIndex.Columns);
+            AddColumnsByName(columnLookup[table], columns, databaseIndex.Columns);
             if (databaseIndex.Columns.Count != columns.Count)
             {
                 continue;
@@ -870,7 +891,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadForeignKeys(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
         using var command = CreateCommand(
             connection,
@@ -946,8 +968,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 Name = name,
                 OnDelete = onDelete
             };
-            AddColumnsByName(table, columns, databaseForeignKey.Columns);
-            AddColumnsByName(principalTable, principalColumns, databaseForeignKey.PrincipalColumns);
+            AddColumnsByName(columnLookup[table], columns, databaseForeignKey.Columns);
+            AddColumnsByName(columnLookup[principalTable], principalColumns, databaseForeignKey.PrincipalColumns);
 
             // A partially resolved key would pair remaining columns by position and point the
             // relationship at the wrong columns; drop it instead.
@@ -974,7 +996,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     private static void LoadComments(
         DbConnection connection,
         string schema,
-        Dictionary<string, DatabaseTable> tables)
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
         using (var command = CreateCommand(
             connection,
@@ -1019,9 +1042,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     continue;
                 }
 
-                var column = table.Columns.FirstOrDefault(
-                    candidate => string.Equals(candidate.Name, columnName, StringComparison.Ordinal));
-                if (column is not null)
+                if (columnLookup[table].TryGetValue(columnName, out var column))
                 {
                     column.Comment = comment;
                 }

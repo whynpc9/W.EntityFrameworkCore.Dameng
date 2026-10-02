@@ -20,6 +20,98 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengFact]
+    public async Task FactoryRejectsUnrepresentableLocalSequenceWithoutBlockingOtherTables()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var sequence = $"EF10_BIGSEQ_{suffix}";
+        var table = $"EF10_BIGST_{suffix}";
+        var safe = $"EF10_BIGSAFE_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        var sequenceCreated = false;
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 1 INCREMENT BY 2147483648 MAXVALUE 9223372036854775807");
+            sequenceCreated = true;
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N BIGINT DEFAULT \"{sequence}\".NEXTVAL)");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
+            created.Add(safe);
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
+            Assert.Contains("cannot represent exactly", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+
+            if (sequenceCreated)
+            {
+                await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task SequenceCatalogQueriesCrossBatchBoundariesWithoutLosingNames()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var names = Enumerable.Range(0, 1001).Select(index => $"EF10_BATCH_{suffix}_{index}").ToArray();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            foreach (var index in new[] { 0, 499, 500, 1000 })
+            {
+                await ExecuteAsync(connection, $"CREATE SEQUENCE \"{names[index]}\" START WITH 41 INCREMENT BY 3 MAXVALUE 1000");
+                created.Add(names[index]);
+            }
+
+            await using var schemaCommand = connection.CreateCommand();
+            schemaCommand.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+            var schema = Convert.ToString(await schemaCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+            var found = new List<string>();
+            var batches = 0;
+            foreach (var command in DamengDatabaseModelFactory.CreateSequenceCatalogCommands(connection, schema, names.Concat(names.Take(10))))
+            {
+                using (command)
+                {
+                    batches++;
+                    Assert.InRange(command.Parameters.Count, 2, 501);
+                    await using var reader = await command.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        var sequence = DamengDatabaseModelFactory.ReadSequenceRecord(reader, schema);
+                        found.Add(sequence.Name);
+                        Assert.Equal(41L, sequence.StartValue);
+                        Assert.Equal(3, sequence.IncrementBy);
+                    }
+                }
+            }
+
+            Assert.Equal(3, batches);
+            Assert.Equal(created.Order(StringComparer.Ordinal), found.Order(StringComparer.Ordinal));
+        }
+        finally
+        {
+            foreach (var sequence in created)
+            {
+                await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+            }
+        }
+    }
+
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
