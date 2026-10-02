@@ -185,6 +185,7 @@ dotnet ef migrations script \
 之外的分号拆成独立的 `EXECUTE IMMEDIATE`，置于历史表条件中，块以单独一行的 `/` 结束。
 这样同一 `migrationBuilder.Sql` 中先建表、再写入时，后续语句在表创建后才绑定。
 匿名 `BEGIN`/`DECLARE` 块应单独放入一个 `SqlOperation`，保持完整并原样内嵌；
+生成器会核对外层 `END;` 边界，其后追加的 SQL 必须移到另一个操作。
 普通 SQL 后混入匿名块，以及 `CREATE [OR REPLACE] PROCEDURE/FUNCTION/TRIGGER/PACKAGE/TYPE`
 存储定义会在幂等生成时明确拒绝拆分，存储定义应另行整体执行。
 转义后的单条动态语句字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。

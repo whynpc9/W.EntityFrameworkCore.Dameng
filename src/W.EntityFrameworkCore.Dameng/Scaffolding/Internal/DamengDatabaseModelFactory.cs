@@ -422,7 +422,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var placeholders = string.Join(", ", Enumerable.Range(0, names.Length).Select(index => $":seq{index}"));
             var command = CreateCommand(
                 connection,
-                "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER"
+                "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER, CACHE_SIZE, ORDER_FLAG"
                 + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema"
                 + $" AND SEQUENCE_NAME IN ({placeholders})");
             AddParameter(command, "schema", schema);
@@ -455,6 +455,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         if (cyclic is not ("Y" or "N"))
         {
             throw new NotSupportedException($"Dameng local sequence '{name}' has an unknown cycle flag.");
+        }
+
+        if (!TryReadInt64Facet(reader, 6, out var cacheSize) || cacheSize != 0
+            || reader.GetValue(7) as string != "N")
+        {
+            throw new NotSupportedException(
+                $"Dameng local sequence '{name}' has unsupported CACHE_SIZE or ORDER_FLAG. "
+                + "Reverse engineering supports only NOCACHE NOORDER sequences; exclude the referencing table.");
         }
 
         return new DatabaseSequence
@@ -700,7 +708,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT TABLE_NAME, CONSTRAINT_NAME, STATUS FROM ALL_CONSTRAINTS "
+            "SELECT TABLE_NAME, CONSTRAINT_NAME, STATUS, DEFERRABLE, DEFERRED, VALIDATED FROM ALL_CONSTRAINTS "
             + "WHERE OWNER = :schema AND CONSTRAINT_TYPE IN ('P', 'U', 'R')");
         AddParameter(command, "schema", schema);
         using var reader = command.ExecuteReader();
@@ -709,12 +717,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var table = reader.GetString(0);
             if (tables.ContainsKey(table))
             {
-                ValidateConstraintState(table, reader.GetString(1), GetNullableString(reader, 2));
+                ValidateConstraintState(table, reader.GetString(1), GetNullableString(reader, 2),
+                    GetNullableString(reader, 3), GetNullableString(reader, 4), GetNullableString(reader, 5));
             }
         }
     }
 
-    internal static void ValidateConstraintState(string table, string constraint, string? status)
+    internal static void ValidateConstraintState(
+        string table, string constraint, string? status, string? deferrable, string? deferred, string? validated)
     {
         if (!string.Equals(status, "ENABLED", StringComparison.Ordinal))
         {
@@ -722,6 +732,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 $"Dameng constraint '{constraint}' on table '{table}' has unsupported state '{status ?? "NULL"}'. "
                 + "Reverse engineering cannot preserve disabled or unknown constraint states. "
                 + "Exclude this table or explicitly enable the constraint before scaffolding.");
+        }
+
+        if (deferrable != "NOT DEFERRABLE" || deferred != "IMMEDIATE" || validated != "VALIDATED")
+        {
+            throw new NotSupportedException(
+                $"Dameng constraint '{constraint}' on table '{table}' has unsupported deferral or validation state "
+                + $"('{deferrable ?? "NULL"}', '{deferred ?? "NULL"}', '{validated ?? "NULL"}'). "
+                + "Reverse engineering requires NOT DEFERRABLE, IMMEDIATE and VALIDATED constraints; exclude this table.");
         }
     }
 

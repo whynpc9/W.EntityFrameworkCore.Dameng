@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -21,6 +22,122 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData("", true)]
+    [InlineData("NOCACHE NOORDER", true)]
+    [InlineData("CACHE 2", false)]
+    [InlineData("CACHE 50", false)]
+    [InlineData("ORDER", false)]
+    public async Task FactoryRequiresUncachedUnorderedSequences(string options, bool supported)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var sequence = $"EF10_SC_{suffix}";
+        var copy = $"EF10_SCC_{suffix}";
+        var table = $"EF10_SCT_{suffix}";
+        var ordinary = $"EF10_SCO_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" {options}");
+            cleanup.Add($"DROP SEQUENCE \"{sequence}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID BIGINT DEFAULT \"{sequence}\".NEXTVAL)");
+            cleanup.Add($"DROP TABLE \"{table}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT)");
+            cleanup.Add($"DROP TABLE \"{ordinary}\"");
+            var factory = CreateFactory();
+            if (!supported)
+            {
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                    new DatabaseModelFactoryOptions(tables: [table])));
+                Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
+                Assert.Contains("NOCACHE NOORDER", error.Message, StringComparison.Ordinal);
+                Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                    new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+            }
+            else
+            {
+                var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
+                var item = Assert.Single(model.Sequences);
+                using var context = new DbContext(new DbContextOptionsBuilder()
+                    .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+                var command = Assert.Single(context.GetService<IMigrationsSqlGenerator>().Generate(
+                    [new CreateSequenceOperation { Name = copy, ClrType = typeof(long), StartValue = item.StartValue!.Value,
+                        IncrementBy = item.IncrementBy!.Value, MinValue = item.MinValue, MaxValue = item.MaxValue, IsCyclic = item.IsCyclic!.Value }]));
+                Assert.Contains("NOCACHE NOORDER", command.CommandText, StringComparison.Ordinal);
+                await ExecuteAsync(connection, command.CommandText);
+                cleanup.Add($"DROP SEQUENCE \"{copy}\"");
+                foreach (var name in new[] { sequence, copy })
+                {
+                    await using var query = connection.CreateCommand();
+                    query.CommandText = "SELECT CACHE_SIZE, ORDER_FLAG FROM USER_SEQUENCES WHERE SEQUENCE_NAME = :name";
+                    var parameter = query.CreateParameter();
+                    parameter.ParameterName = "name";
+                    parameter.Value = name;
+                    query.Parameters.Add(parameter);
+                    await using var reader = await query.ExecuteReaderAsync();
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal(0L, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+                    Assert.Equal("N", reader.GetString(1));
+                }
+            }
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FactoryRejectsUnvalidatedConstraints(bool foreignKey)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = $"EF10_VP_{suffix}";
+        var table = $"EF10_VT_{suffix}";
+        var constraint = $"EF10_VC_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT PRIMARY KEY)");
+            cleanup.Add($"DROP TABLE \"{parent}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT, N INT)");
+            cleanup.Add($"DROP TABLE \"{table}\"");
+            var clause = foreignKey ? $"FOREIGN KEY(N) REFERENCES \"{parent}\"(ID)" : "UNIQUE(N)";
+            await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" ADD CONSTRAINT \"{constraint}\" {clause} ENABLE NOVALIDATE");
+            await using (var query = connection.CreateCommand())
+            {
+                query.CommandText = "SELECT STATUS, DEFERRABLE, DEFERRED, VALIDATED FROM USER_CONSTRAINTS WHERE CONSTRAINT_NAME = :name";
+                var parameter = query.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = constraint;
+                query.Parameters.Add(parameter);
+                await using var reader = await query.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("ENABLED", reader.GetString(0));
+                Assert.Equal("NOT DEFERRABLE", reader.GetString(1));
+                Assert.Equal("IMMEDIATE", reader.GetString(2));
+                Assert.Equal("NOT VALIDATED", reader.GetString(3));
+            }
+
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(constraint, error.Message, StringComparison.Ordinal);
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Equal(parent, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [parent])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
     [DamengTheory]
     [InlineData(false, false)]
     [InlineData(true, false)]

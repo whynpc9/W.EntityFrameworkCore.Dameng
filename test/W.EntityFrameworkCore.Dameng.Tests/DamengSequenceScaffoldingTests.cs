@@ -92,7 +92,15 @@ public sealed class DamengSequenceScaffoldingTests
         { 5, (decimal)long.MaxValue + 1 },
         { 5, "9223372036854775808" },
         { 5, 41.5m },
-        { 4, "UNKNOWN" }
+        { 4, "UNKNOWN" },
+        { 6, 2L },
+        { 6, 50L },
+        { 6, -1L },
+        { 6, 0.5m },
+        { 6, DBNull.Value },
+        { 7, "Y" },
+        { 7, "UNKNOWN" },
+        { 7, DBNull.Value }
     };
 
     [Theory]
@@ -110,12 +118,12 @@ public sealed class DamengSequenceScaffoldingTests
     private static DataTable CreateRow(object increment, object min, object max, object cycle, object start)
     {
         var table = new DataTable();
-        foreach (var column in new[] { "Name", "Increment", "Min", "Max", "Cycle", "Start" })
+        foreach (var column in new[] { "Name", "Increment", "Min", "Max", "Cycle", "Start", "Cache", "Order" })
         {
             table.Columns.Add(column, typeof(object));
         }
 
-        table.Rows.Add("Seq", increment, min, max, cycle, start);
+        table.Rows.Add("Seq", increment, min, max, cycle, start, 0L, "N");
         return table;
     }
 }

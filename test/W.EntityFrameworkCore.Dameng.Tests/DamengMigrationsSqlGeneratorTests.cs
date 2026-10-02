@@ -326,7 +326,7 @@ public sealed class DamengMigrationsSqlGeneratorTests
             StringComparison.Ordinal);
         Assert.Contains(
             "CREATE SEQUENCE \"app\".\"OrderSequence\" START WITH 10 "
-            + "INCREMENT BY 5 MINVALUE 10 MAXVALUE 100 CYCLE;\n",
+            + "INCREMENT BY 5 MINVALUE 10 MAXVALUE 100 CYCLE NOCACHE NOORDER;\n",
             sql,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -675,6 +675,9 @@ public sealed class DamengMigrationsSqlGeneratorTests
     [InlineData("-- ensure lookup\nbegin null; end;")]
     [InlineData("/* BEGIN ' */ /* second */ DECLARE v INT; BEGIN v := 1; END;")]
     [InlineData("-- comment\rBEGIN NULL; END;")]
+    [InlineData("DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END; -- trailing comment")]
+    [InlineData("BEGIN BEGIN NULL; END; IF 1=1 THEN NULL; END IF; END; /* trailing ; */")]
+    [InlineData("DECLARE FUNCTION f RETURN INT IS BEGIN RETURN CASE WHEN 1=1 THEN 1 ELSE 2 END; END; BEGIN NULL; END;")]
     public void IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(string blockSql)
     {
         using var context = CreateContext();
@@ -687,6 +690,19 @@ public sealed class DamengMigrationsSqlGeneratorTests
                     | MigrationsSqlGenerationOptions.Idempotent));
 
         Assert.Equal(blockSql.TrimEnd(), command.CommandText);
+    }
+
+    [Theory]
+    [InlineData("BEGIN NULL; END; CREATE TABLE T (ID INT);")]
+    [InlineData("-- lead\nBEGIN NULL; END; INSERT INTO T VALUES (1);")]
+    [InlineData("DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END; SELECT 1 FROM dual;")]
+    [InlineData("BEGIN NULL; END; BEGIN NULL; END;")]
+    public void IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(string sql)
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = sql }], options: MigrationsSqlGenerationOptions.Idempotent));
+        Assert.Contains("standalone anonymous block", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]

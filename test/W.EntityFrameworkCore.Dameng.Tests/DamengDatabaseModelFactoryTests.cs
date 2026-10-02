@@ -215,7 +215,7 @@ public sealed class DamengDatabaseModelFactoryTests
 
     [Fact]
     public void EnabledConstraintStateCanBeScaffolded()
-        => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", "ENABLED");
+        => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", "ENABLED", "NOT DEFERRABLE", "IMMEDIATE", "VALIDATED");
 
     [Theory]
     [InlineData("DISABLED")]
@@ -224,7 +224,7 @@ public sealed class DamengDatabaseModelFactoryTests
     public void UnsupportedConstraintStateFailsExplicitly(string? status)
     {
         var error = Assert.Throws<NotSupportedException>(
-            () => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", status));
+            () => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", status, "NOT DEFERRABLE", "IMMEDIATE", "VALIDATED"));
         Assert.Contains("PK_T", error.Message, StringComparison.Ordinal);
         Assert.Contains("Exclude this table", error.Message, StringComparison.Ordinal);
     }
@@ -335,6 +335,21 @@ public sealed class DamengDatabaseModelFactoryTests
             out _);
 
         Assert.False(matched);
+    }
+
+    [Theory]
+    [InlineData("DEFERRABLE", "IMMEDIATE", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "DEFERRED", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "IMMEDIATE", "NOT VALIDATED")]
+    [InlineData(null, "IMMEDIATE", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", null, "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "IMMEDIATE", null)]
+    public void UnsupportedConstraintFacetsAreRejected(string? deferrable, string? deferred, string? validated)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateConstraintState(
+            "T", "C", "ENABLED", deferrable, deferred, validated));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]

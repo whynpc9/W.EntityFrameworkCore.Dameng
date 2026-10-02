@@ -43,6 +43,13 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             var commandText = command.CommandText.TrimEnd();
             if (IsAnonymousBlock(commandText))
             {
+                if (DamengSqlBatchParser.SplitStatements(commandText).Count != 1)
+                {
+                    throw new NotSupportedException(
+                        "A Dameng idempotent SqlOperation must contain one standalone anonymous block. "
+                        + "Move statements following its outer END into separate SqlOperations.");
+                }
+
                 // Anonymous DMSQL blocks carry their own guards and cannot be wrapped:
                 // the server rejects EXECUTE IMMEDIATE when the literal contains a block.
                 builder
@@ -595,6 +602,12 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         }
 
         builder.Append(operation.IsCyclic ? " CYCLE" : " NOCYCLE");
+        if (!forAlter)
+        {
+            // These are the sequence facets supported by reverse engineering. Be explicit
+            // so a recreated sequence never inherits different server cache/order defaults.
+            builder.Append(" NOCACHE NOORDER");
+        }
     }
 
     protected override void ColumnDefinition(

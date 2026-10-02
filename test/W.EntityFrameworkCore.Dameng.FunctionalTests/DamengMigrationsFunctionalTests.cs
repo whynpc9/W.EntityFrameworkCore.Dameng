@@ -12,6 +12,39 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
 public sealed class DamengMigrationsFunctionalTests
 {
+    [DamengFact]
+    public async Task AnonymousBlockAndFollowingDdlRequireSeparateOperations()
+    {
+        var table = $"EF10_BLOCKDDL_{Guid.NewGuid():N}".ToUpperInvariant();
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+        var block = "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END;";
+        var ddl = $"CREATE TABLE \"{table}\" (ID INT);";
+        var options = MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent;
+        Assert.Throws<NotSupportedException>(() => generator.Generate(
+            [new SqlOperation { Sql = block + ddl }], options: options));
+        var commands = generator.Generate(
+            [new SqlOperation { Sql = block }, new SqlOperation { Sql = ddl, SuppressTransaction = true },
+                new SqlOperation { Sql = $"INSERT INTO \"{table}\" VALUES (1);" }], options: options);
+        var script = $"BEGIN IF NOT EXISTS (SELECT 1 FROM USER_TABLES WHERE TABLE_NAME = '{table}') THEN\n"
+            + string.Join("\n", commands.Select(command => command.CommandText)) + "\nEND IF; END;\n/";
+        try
+        {
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await using var count = connection.CreateCommand();
+            count.CommandText = $"SELECT COUNT(*) FROM \"{table}\" WHERE ID = 1";
+            Assert.Equal(1L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", table, $"DROP TABLE \"{table}\"");
+        }
+    }
+
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
