@@ -125,7 +125,6 @@ public sealed class DamengDatabaseModelFactoryTests
     [Theory]
     [InlineData("NORMAL", true)]
     [InlineData("CLUSTER", false)]
-    [InlineData("FUNCTION-BASED NORMAL", false)]
     public void OnlyNormalStandaloneIndexesAreReadAsColumnIndexes(string type, bool expected)
         => Assert.Equal(expected, DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
 
@@ -146,6 +145,7 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("VIRTUAL")]
     [InlineData("BITMAP")]
     [InlineData("FUNCTION-BASED BITMAP")]
+    [InlineData("FUNCTION-BASED NORMAL")]
     [InlineData("UNKNOWN")]
     [InlineData(null)]
     public void SpecializedOrUnknownIndexTypeIsRejected(string? type)
@@ -153,6 +153,22 @@ public sealed class DamengDatabaseModelFactoryTests
         var error = Assert.Throws<NotSupportedException>(
             () => DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
         Assert.Contains("IX_T", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OrdinaryIndexColumnPositionCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateIndexColumnPosition("T", "IX_T", 1);
+
+    [Theory]
+    [InlineData(-1L)]
+    [InlineData(0L)]
+    [InlineData(null)]
+    public void ExpressionOrUnknownIndexColumnPositionIsRejected(long? position)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateIndexColumnPosition("T", "IX_T", position));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]

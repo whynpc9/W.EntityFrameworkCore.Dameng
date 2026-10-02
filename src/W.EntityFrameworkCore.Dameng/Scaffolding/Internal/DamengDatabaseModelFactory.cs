@@ -614,6 +614,25 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         string schema,
         Dictionary<string, DatabaseTable> tables)
     {
+        // Filter by the target object's owner, not the trigger's owner: a trigger can
+        // belong to another schema. Disabled triggers still have semantics to preserve.
+        using (var command = CreateCommand(connection,
+            "SELECT TABLE_NAME, TRIGGER_NAME FROM ALL_TRIGGERS "
+            + "WHERE TABLE_OWNER = :schema AND TABLE_NAME IS NOT NULL"))
+        {
+            AddParameter(command, "schema", schema);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (tables.ContainsKey(reader.GetString(0)))
+                {
+                    throw new NotSupportedException(
+                        $"Dameng table or view '{reader.GetString(0)}' has trigger '{reader.GetString(1)}'. "
+                        + "Reverse engineering cannot preserve trigger definitions or state; exclude this object.");
+                }
+            }
+        }
+
         // Native SYSCONS excludes NOT NULL constraints. This avoids mistaking a user CHECK
         // (including an explicit CHECK (... IS NOT NULL)) for column nullability metadata.
         using (var command = CreateCommand(connection,
@@ -908,8 +927,6 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             bool IsUnique,
             List<string> Columns,
             List<bool> Descending)>();
-        var expressionIndexNames = new HashSet<string>(StringComparer.Ordinal);
-
         using var indexReader = indexCommand.ExecuteReader();
         while (indexReader.Read())
         {
@@ -931,14 +948,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             // Expression/function-based index rows report the base column name with
             // COLUMN_POSITION -1 (the real expression lives in ALL_IND_EXPRESSIONS) and an
             // unreliable DESCEND flag, so they cannot be scaffolded as a column index.
-            var isExpressionRow = indexReader.GetInt64(4) <= 0;
+            ValidateIndexColumnPosition(tableName, indexName, GetNullableInt64(indexReader, 4));
             var descending = string.Equals(indexReader.GetString(5), "DESC", StringComparison.Ordinal);
-
-            if (isExpressionRow)
-            {
-                expressionIndexNames.Add(indexName);
-                continue;
-            }
 
             var index = indexes.LastOrDefault()
                 is { } last
@@ -958,14 +969,6 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
         foreach (var (name, table, isUnique, columns, descending) in indexes)
         {
-            // Indexes with expression parts or columns that never resolve to a table column
-            // are dropped whole: a partially resolved index would pair sort directions with
-            // the wrong columns (same rule as foreign keys).
-            if (expressionIndexNames.Contains(name))
-            {
-                continue;
-            }
-
             var databaseIndex = new DatabaseIndex
             {
                 Table = table,
@@ -994,12 +997,23 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             // Dameng represents a foreign key without a physical backing index as VIRTUAL.
             // A physical NORMAL FK index retains its own definition; a VIRTUAL one does not.
             "VIRTUAL" when constraintType == "F" => false,
-            // Clustering is validated separately; expression indexes are explicitly omitted.
-            "CLUSTER" or "FUNCTION-BASED NORMAL" => false,
+            // Clustering is validated separately. Expression and specialized indexes cannot
+            // be represented and must reject the selected table, never silently disappear.
+            "CLUSTER" => false,
             _ => throw new NotSupportedException(
                 $"Dameng table '{table}' has index '{index}' with unsupported type '{type ?? "NULL"}'. "
                 + "Reverse engineering only models NORMAL standalone indexes; exclude this table.")
         };
+
+    internal static void ValidateIndexColumnPosition(string table, string index, long? position)
+    {
+        if (position is null or <= 0)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' has expression index '{index}' or an unknown index column position. "
+                + "Reverse engineering cannot preserve this index definition; exclude this table.");
+        }
+    }
 
     private static void LoadForeignKeys(
         DbConnection connection,

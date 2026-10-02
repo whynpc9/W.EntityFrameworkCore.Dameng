@@ -22,6 +22,74 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task FactoryRejectsTriggersWithoutBlockingOrdinaryTableFilters(bool disabled, bool useView)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_TRSRC_{suffix}";
+        var ordinary = $"EF10_TRSAFE_{suffix}";
+        var view = $"EF10_TRVIEW_{suffix}";
+        var trigger = $"EF10_TRIGGER_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            foreach (var table in new[] { source, ordinary })
+            {
+                await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY)");
+                cleanup.Add($"DROP TABLE \"{table}\"");
+            }
+
+            if (useView)
+            {
+                await ExecuteAsync(connection, $"CREATE VIEW \"{view}\" AS SELECT ID FROM \"{source}\"");
+                cleanup.Add($"DROP VIEW \"{view}\"");
+            }
+
+            var selected = useView ? view : source;
+            var timing = useView ? "INSTEAD OF" : "AFTER";
+            await ExecuteAsync(connection, $"CREATE TRIGGER \"{trigger}\" {timing} INSERT ON \"{selected}\" FOR EACH ROW BEGIN NULL; END;");
+            cleanup.Add($"DROP TRIGGER \"{trigger}\"");
+            if (disabled)
+            {
+                await ExecuteAsync(connection, $"ALTER TRIGGER \"{trigger}\" DISABLE");
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT TABLE_NAME, STATUS FROM ALL_TRIGGERS "
+                    + "WHERE TABLE_OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TRIGGER_NAME = :name";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = trigger;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(selected, reader.GetString(0));
+                Assert.Equal(disabled ? "N" : "Y", reader.GetString(1));
+            }
+
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [selected])));
+            Assert.Contains(selected, error.Message, StringComparison.Ordinal);
+            Assert.Contains(trigger, error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup))
+            {
+                await ExecuteAsync(connection, sql);
+            }
+        }
+    }
+
+    [DamengTheory]
     [InlineData("BFILE", false)]
     [InlineData("TIME WITH TIME ZONE", false)]
     [InlineData("INTERVAL HOUR TO MINUTE", false)]
@@ -1573,52 +1641,47 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
     }
 
-    [DamengFact]
-    public async Task FactoryDropsExpressionIndexesWhole()
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FactoryRejectsExpressionIndexesAndPreservesFilteredOrdinaryIndexes(bool unique)
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
         var tableName = $"EF10_REI_{suffix}";
+        var ordinary = $"EF10_REO_{suffix}";
         var plainIndexName = $"IDX_REIP_{suffix}";
         var expressionIndexName = $"IDX_REIE_{suffix}";
-        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
-
-        await using var setup = new DmConnection(connectionString);
-        await setup.OpenAsync();
-        var created = false;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
         try
         {
-            await ExecuteAsync(
-                setup,
-                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"NAME\" VARCHAR(30))");
-            created = true;
-            await ExecuteAsync(
-                setup,
-                $"CREATE INDEX \"{plainIndexName}\" ON \"{tableName}\" (\"NAME\" DESC)");
-            await ExecuteAsync(
-                setup,
-                $"CREATE INDEX \"{expressionIndexName}\" ON \"{tableName}\" (UPPER(\"NAME\"))");
-
-            var factory = CreateFactory();
-            DatabaseModel model;
-            await using (var connection = new DmConnection(connectionString))
+            foreach (var table in new[] { tableName, ordinary })
             {
-                model = factory.Create(connection, new DatabaseModelFactoryOptions());
+                await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, NAME VARCHAR(30))");
+                created.Add(table);
             }
 
-            // The catalog reports the expression index row with the base column name and
-            // COLUMN_POSITION -1 (plus an unreliable DESCEND), so the index is dropped whole
-            // instead of scaffolding a bogus descending column index.
-            var table = Assert.Single(model.Tables, candidate => candidate.Name == tableName);
-            var index = Assert.Single(table.Indexes);
+            await ExecuteAsync(connection, $"CREATE INDEX \"{plainIndexName}\" ON \"{ordinary}\" (NAME DESC)");
+            var uniqueSql = unique ? "UNIQUE " : "";
+            await ExecuteAsync(connection, $"CREATE {uniqueSql}INDEX \"{expressionIndexName}\" ON \"{tableName}\" (UPPER(NAME))");
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [tableName])));
+            Assert.Contains(tableName, error.Message, StringComparison.Ordinal);
+            Assert.Contains(expressionIndexName, error.Message, StringComparison.Ordinal);
+            var tableModel = Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables);
+            var index = Assert.Single(tableModel.Indexes);
             Assert.Equal(plainIndexName, index.Name);
             Assert.Equal(["NAME"], index.Columns.Select(column => column.Name).ToArray());
             Assert.Equal([true], index.IsDescending.ToArray());
         }
         finally
         {
-            if (created)
+            foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
