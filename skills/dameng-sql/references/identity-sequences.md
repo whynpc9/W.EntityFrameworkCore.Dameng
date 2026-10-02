@@ -4,6 +4,11 @@
 
 ## IDENTITY
 
+[当前表管理文档](https://eco.dameng.com/document/dm/zh-cn/pm/management-table.html)列出
+INT、BIGINT、DEC(n,0) 三种 IDENTITY 类型；参考实例已接受 DEC(18,0) IDENTITY，
+SMALLINT/TINYINT 则在建表时被服务器拒绝。EF 提供程序的标识策略只支持 int/long，
+所以 DEC(n,0) IDENTITY 在反向工程时明确拒绝，不能把服务器能力等同于提供程序支持。
+
 ```sql
 CREATE TABLE app_user.orders (
   id   INT IDENTITY(1, 1) NOT NULL,

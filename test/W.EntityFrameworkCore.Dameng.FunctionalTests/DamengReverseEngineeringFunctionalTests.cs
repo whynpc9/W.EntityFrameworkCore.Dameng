@@ -23,6 +23,71 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengFact]
+    public async Task FactoryRejectsDecimalIdentityBeforeAddingAnUnsupportedStrategy()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_DECID_{suffix}";
+        var ordinary = $"EF10_DECIDSAFE_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID DEC(18,0) IDENTITY(3,2) PRIMARY KEY)");
+            cleanup.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT PRIMARY KEY)");
+            cleanup.Add(ordinary);
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains("'ID'", error.Message, StringComparison.Ordinal);
+            Assert.Contains("DEC", error.Message, StringComparison.Ordinal);
+            Assert.Contains("supported int or long", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData("SMALLINT", "INT")]
+    [InlineData("TINYINT", "BIGINT")]
+    public async Task ServerRejectsSmallIdentityTypesAndFactoryKeepsSupportedIdentity(string type, string supportedType)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var unsupported = $"EF10_SID_{suffix}";
+        var supported = $"EF10_IID_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            var serverError = await Assert.ThrowsAsync<DmException>(async () =>
+            {
+                await ExecuteAsync(connection, $"CREATE TABLE \"{unsupported}\" (ID {type} IDENTITY(3,2) PRIMARY KEY)");
+                cleanup.Add(unsupported);
+            });
+            Assert.Contains("IDENTITY", serverError.Message, StringComparison.Ordinal);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{supported}\" (ID {supportedType} IDENTITY(7,3) PRIMARY KEY)");
+            cleanup.Add(supported);
+            var factory = CreateFactory();
+            var column = Assert.Single(Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [supported])).Tables).Columns);
+            Assert.Equal(DamengValueGenerationStrategy.IdentityColumn, column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(7L, column[DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(3, column[DamengAnnotationNames.IdentityIncrement]);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+        }
+    }
+
+    [DamengFact]
     public async Task FactoryRejectsGeneratedAlternateKeysOnlyWhenReferencedBySelectedForeignKeys()
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();

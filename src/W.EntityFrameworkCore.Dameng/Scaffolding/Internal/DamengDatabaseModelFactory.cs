@@ -563,7 +563,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
-    private static void LoadIdentityAnnotations(
+    private void LoadIdentityAnnotations(
         DbConnection connection,
         string schema,
         Dictionary<string, DatabaseTable> tables,
@@ -610,6 +610,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
+            ValidateIdentityColumn(column);
+
             if (!seedIncrementByTable.TryGetValue(tableName, out var seedIncrement))
             {
                 seedIncrement = GetIdentitySeedIncrement(connection, schema, tableName);
@@ -621,6 +623,17 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             column[DamengAnnotationNames.IdentitySeed] = seedIncrement.Seed;
             column[DamengAnnotationNames.IdentityIncrement] = seedIncrement.Increment;
             column.ValueGenerated = ValueGenerated.OnAdd;
+        }
+    }
+
+    internal void ValidateIdentityColumn(DatabaseColumn column)
+    {
+        var clrType = _typeMappingSource.FindMapping(column.StoreType!)?.ClrType;
+        if (clrType is null || !DamengPropertyExtensions.IsCompatibleWithIdentity(clrType))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{column.Table.Name}' IDENTITY column '{column.Name}' of store type '{column.StoreType}' "
+                + "does not map to a supported int or long identity property; exclude this table from reverse engineering.");
         }
     }
 

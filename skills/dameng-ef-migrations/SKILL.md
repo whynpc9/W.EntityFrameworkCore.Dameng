@@ -33,6 +33,9 @@ metadata:
 
 本地 NEXTVAL 用目录模式限定；只有兼容的整数 CLR 类型使用序列策略，非整数列保留限定默认 SQL，序列定义仍保留；默认 SQL 列若参与主键或被选中外键引用成候选键，且无支持的键生成策略，则反向工程明确拒绝，普通非键列继续支持。
 
+IDENTITY 反向工程只接受映射为 int/long 的列。达梦服务器可有 DEC(n,0) IDENTITY，
+但当前提供程序不支持该 CLR decimal 标识策略，因此明确拒绝。
+
 反向工程本地序列仅接受 CACHE_SIZE=0、ORDER_FLAG=N；缓存序列与 ORDER 序列明确拒绝。
 CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设置。
 

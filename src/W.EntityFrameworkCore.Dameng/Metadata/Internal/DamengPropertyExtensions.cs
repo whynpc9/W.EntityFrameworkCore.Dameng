@@ -171,9 +171,10 @@ public static class DamengPropertyExtensions
     }
 
     internal static bool IsCompatibleWithIdentity(IReadOnlyProperty property)
-    {
-        var type = GetProviderClrType(property);
+        => IsCompatibleWithIdentity(GetProviderClrType(property));
 
+    internal static bool IsCompatibleWithIdentity(Type type)
+    {
         return type == typeof(int)
             || type == typeof(long);
     }

@@ -14,6 +14,32 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData("SMALLINT", false)]
+    [InlineData("TINYINT", false)]
+    [InlineData("DECIMAL(18,0)", false)]
+    [InlineData("INT", true)]
+    [InlineData("INTEGER", true)]
+    [InlineData("BIGINT", true)]
+    public void IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(string storeType, bool supported)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var column = new DatabaseColumn { Table = new DatabaseTable { Name = "T" }, Name = "ID", StoreType = storeType };
+        if (supported)
+        {
+            factory.ValidateIdentityColumn(column);
+        }
+        else
+        {
+            var error = Assert.Throws<NotSupportedException>(() => factory.ValidateIdentityColumn(column));
+            Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+            Assert.Contains("'ID'", error.Message, StringComparison.Ordinal);
+            Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void ReferencedUniqueColumnsHaveTheSameGeneratedKeyRestriction()
     {
