@@ -1,4 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
 
@@ -8,6 +11,40 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData("BFILE")]
+    [InlineData("TIME WITH TIME ZONE")]
+    [InlineData("TIME(3) WITH TIME ZONE")]
+    [InlineData("INTERVAL HOUR TO MINUTE")]
+    [InlineData("INTERVAL YEAR(4) TO MONTH")]
+    [InlineData("UNKNOWN_TYPE")]
+    public void UnmappedColumnTypesAreExplicitlyRejected(string storeType)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+        var error = Assert.Throws<NotSupportedException>(() => factory.ValidateColumnType("T", "C", storeType));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+        Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("INT")]
+    [InlineData("BLOB")]
+    [InlineData("VARCHAR(20 CHAR)")]
+    [InlineData("DECIMAL(10,2)")]
+    [InlineData("TIMESTAMP(0)")]
+    [InlineData("TIMESTAMP(3) WITH TIME ZONE")]
+    [InlineData("INTERVAL DAY(4) TO SECOND(3)")]
+    public void MappedColumnTypesKeepTheProviderMappingContract(string storeType)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
+        factory.ValidateColumnType("T", "C", storeType);
+    }
+
     [Fact]
     public void NativeIdentityTypeIsAcceptedWithoutReadingOtherInfo6Facets()
     {

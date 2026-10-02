@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Xunit;
 using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 
 #pragma warning disable EF1001 // Tests intentionally inspect provider design-time contracts.
@@ -62,7 +63,8 @@ public sealed class DamengMigrationScriptFunctionalTests
                 Assert.InRange(Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture) & 0x3FL, 0x21L, 0x27L);
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [huge])));
             Assert.Contains(huge, error.Message, StringComparison.Ordinal);

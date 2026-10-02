@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
 
 namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
@@ -19,6 +20,13 @@ namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 /// </summary>
 internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 {
+    private readonly IRelationalTypeMappingSource _typeMappingSource;
+
+    public DamengDatabaseModelFactory(IRelationalTypeMappingSource typeMappingSource)
+    {
+        _typeMappingSource = typeMappingSource;
+    }
+
     private static readonly Regex NextValDefaultPattern = new(
         @"^\s*(?:(?<schema>""(?:[^""]|"""")*""|[\w$#]+)\.)?(?<seq>""(?:[^""]|"""")*""|[\w$#]+)\.NEXTVAL\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -252,7 +260,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         return views;
     }
 
-    private static void LoadColumns(
+    private void LoadColumns(
         DbConnection connection,
         string schema,
         Dictionary<string, DatabaseTable> tables,
@@ -287,11 +295,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var charUsed = GetNullableString(reader, 8);
             var defaultValue = GetNullableString(reader, 9);
 
+            var columnName = reader.GetString(1);
+            var storeType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed);
+            ValidateColumnType(tableName, columnName, storeType);
             var column = new DatabaseColumn
             {
                 Table = table,
-                Name = reader.GetString(1),
-                StoreType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed),
+                Name = columnName,
+                StoreType = storeType,
                 IsNullable = nullable
             };
 
@@ -309,6 +320,18 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             table.Columns.Add(column);
+        }
+    }
+
+    internal void ValidateColumnType(string table, string column, string storeType)
+    {
+        // EF's scaffolding pipeline otherwise warns and silently drops unmapped columns.
+        // Resolve by store type, just as scaffolding does, using the registered provider source.
+        if (_typeMappingSource.FindMapping(storeType) is null)
+        {
+            throw new NotSupportedException(
+                $"Dameng table or view '{table}' column '{column}' has unsupported store type '{storeType}'. "
+                + "Reverse engineering cannot preserve this column; exclude the table or view.");
         }
     }
 

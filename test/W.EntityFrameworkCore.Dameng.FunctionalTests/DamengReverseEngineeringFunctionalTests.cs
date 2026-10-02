@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
@@ -20,6 +21,53 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData("BFILE", false)]
+    [InlineData("TIME WITH TIME ZONE", false)]
+    [InlineData("INTERVAL HOUR TO MINUTE", false)]
+    [InlineData("BFILE", true)]
+    public async Task FactoryRejectsUnmappedColumnsWithoutBlockingSupportedTableFilters(string storeType, bool useView)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var unsupported = $"EF10_UNMAP_{suffix}";
+        var ordinary = $"EF10_MAP_{suffix}";
+        var view = $"EF10_UNVIEW_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{unsupported}\" (ID INT, N {storeType})");
+            cleanup.Add($"DROP TABLE \"{unsupported}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT PRIMARY KEY, N VARCHAR(20))");
+            cleanup.Add($"DROP TABLE \"{ordinary}\"");
+            if (useView)
+            {
+                await ExecuteAsync(connection, $"CREATE VIEW \"{view}\" AS SELECT ID, N FROM \"{unsupported}\"");
+                cleanup.Add($"DROP VIEW \"{view}\"");
+            }
+
+            var selected = useView ? view : unsupported;
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [selected])));
+            Assert.Contains(selected, error.Message, StringComparison.Ordinal);
+            Assert.Contains("'N'", error.Message, StringComparison.Ordinal);
+            Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+            var supported = Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables);
+            Assert.Equal(ordinary, supported.Name);
+            Assert.Equal(["ID", "N"], supported.Columns.Select(column => column.Name).ToArray());
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup))
+            {
+                await ExecuteAsync(connection, sql);
+            }
+        }
+    }
+
     [DamengTheory]
     [InlineData("Chinese_PRC_CS_AS_KS_WS")]
     [InlineData("utf8mb4_bin")]
@@ -76,7 +124,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal(["李", "张"], await ReadAsync(
                 $"SELECT N FROM \"{tableName}\" WHERE ID >= 2 ORDER BY N COLLATE Chinese_PRC_CS_AS_KS_WS"));
 
-            var table = Assert.Single(new DamengDatabaseModelFactory().Create(connection,
+            var table = Assert.Single(CreateFactory().Create(connection,
                 new DatabaseModelFactoryOptions(tables: [tableName])).Tables);
             Assert.Equal(3, table.Columns.Count);
             Assert.All(table.Columns, column => Assert.Null(column.Collation));
@@ -125,7 +173,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 Assert.Equal(0, info6[25]);
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [automatic])));
             Assert.Contains(automatic, error.Message, StringComparison.Ordinal);
@@ -179,7 +227,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 Assert.Equal("YES", reader.GetString(1));
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [partitioned])));
             Assert.Contains(partitioned, error.Message, StringComparison.Ordinal);
@@ -238,7 +286,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             }
 
             Assert.Single(backingIndexes);
-            var model = new DamengDatabaseModelFactory().Create(connection,
+            var model = CreateFactory().Create(connection,
                 new DatabaseModelFactoryOptions(tables: [parent, child]));
             var table = Assert.Single(model.Tables, table => table.Name == child);
             Assert.Equal(foreignKey, Assert.Single(table.ForeignKeys).Name);
@@ -278,7 +326,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             created.Add(temporary);
             await ExecuteAsync(connection, $"CREATE TABLE \"{permanent}\" (ID INT PRIMARY KEY)");
             created.Add(permanent);
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [temporary])));
             Assert.Contains(temporary, error.Message, StringComparison.Ordinal);
@@ -316,7 +364,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
 
             await ExecuteAsync(connection, $"CREATE BITMAP INDEX \"{bitmap}\" ON \"{specialized}\"(N)");
             await ExecuteAsync(connection, $"CREATE INDEX \"{normal}\" ON \"{ordinary}\"(N DESC)");
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [specialized])));
             Assert.Contains(bitmap, error.Message, StringComparison.Ordinal);
@@ -356,7 +404,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
             created.Add(safe);
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [table])));
             Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
@@ -457,7 +505,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 Assert.DoesNotContain(onUpdate ? "ON UPDATE" : "ON NULL", defaultSql, StringComparison.OrdinalIgnoreCase);
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [table])));
             Assert.Contains(onUpdate ? "ON UPDATE" : "DEFAULT ON NULL", error.Message, StringComparison.Ordinal);
@@ -486,7 +534,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT PRIMARY KEY, F7 FLOAT(7), F24 FLOAT(24), F25 FLOAT(25), F53 FLOAT(53))");
             created.Add(source);
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var table = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
             await using (var command = connection.CreateCommand())
             {
@@ -554,7 +602,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             sequenceCreated = true;
             await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N INT DEFAULT {sequence}.NEXTVAL)");
             tableCreated = true;
-            var model = new DamengDatabaseModelFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
             var actual = Assert.Single(model.Sequences);
             Assert.Equal(sequence, actual.Name);
             Assert.Equal(41L, actual.StartValue);
@@ -598,7 +646,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 await ExecuteAsync(connection, $"CREATE CLUSTER INDEX \"{index}\" ON \"{table}\"(N)");
             }
 
-            var error = Assert.Throws<NotSupportedException>(() => new DamengDatabaseModelFactory().Create(
+            var error = Assert.Throws<NotSupportedException>(() => CreateFactory().Create(
                 connection, new DatabaseModelFactoryOptions(tables: [table])));
             Assert.Contains(index, error.Message, StringComparison.Ordinal);
         }
@@ -642,7 +690,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DISABLE CONSTRAINT \"{constraint}\"");
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(
                 connection, new DatabaseModelFactoryOptions(tables: [table])));
             Assert.Contains(kind == "virtual" ? "virtual computed column" : "CHECK constraint", error.Message, StringComparison.Ordinal);
@@ -677,7 +725,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT NOT NULL{lob}, {clause}(ID))");
             created.Add(source);
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             var table = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
             var actual = Assert.IsType<bool>(table.PrimaryKey![DamengAnnotationNames.IsClustered]);
             Assert.Equal(clustered, actual);
@@ -758,7 +806,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             };
             await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT NOT NULL, CONSTRAINT \"{constraint}\" {definition})");
             created.Add(table);
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
             await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DISABLE CONSTRAINT \"{constraint}\"");
 
@@ -803,7 +851,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
             var schema = Convert.ToString(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             foreach (var filter in new[] { unquoted, schema.ToLowerInvariant() + "." + unquoted, $"\"{schema}\".{unquoted}" })
             {
                 var model = factory.Create(connection, new DatabaseModelFactoryOptions(
@@ -876,7 +924,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE TABLE \"{lowerTableName}\" (\"id\" INT IDENTITY(7, 4) NOT NULL, CONSTRAINT \"pk_{lowerTableName}\" PRIMARY KEY (\"id\"))");
             lowerTableCreated = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1058,7 +1106,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE VIEW \"{viewName}\" AS SELECT \"ID\", \"NAME\" FROM \"{parentTable}\"");
             viewCreated = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1179,7 +1227,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE TABLE \"{selfTable}\" (\"ID\" INT PRIMARY KEY, \"PARENT_ID\" INT REFERENCES \"{selfTable}\" (\"ID\"))");
             selfCreated = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1252,7 +1300,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE TABLE \"{secondSchema}\".\"{tableName}\" (\"ID\" INT IDENTITY(3, 2) NOT NULL PRIMARY KEY)");
             sessionTableCreated = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
 
             DatabaseModel loginModel;
             await using (var connection = new DmConnection(connectionString))
@@ -1318,7 +1366,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE TABLE \"{tableName}\" (\"ID\" INT IDENTITY(9, 7) NOT NULL PRIMARY KEY)");
             created = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1372,7 +1420,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 """);
             created = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1430,7 +1478,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 currentSchema = Convert.ToString(await schemaCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
             }
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
 
             // A qualified filter whose table component is delimited and contains a dot.
             await using (var connection = new DmConnection(connectionString))
@@ -1487,7 +1535,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"N\" INT DEFAULT \"{otherSchema}\".\"{sequenceName}\".NEXTVAL)");
             tableCreated = true;
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1550,7 +1598,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 setup,
                 $"CREATE INDEX \"{expressionIndexName}\" ON \"{tableName}\" (UPPER(\"NAME\"))");
 
-            var factory = new DamengDatabaseModelFactory();
+            var factory = CreateFactory();
             DatabaseModel model;
             await using (var connection = new DmConnection(connectionString))
             {
@@ -1573,6 +1621,13 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
         }
+    }
+
+    private static DamengDatabaseModelFactory CreateFactory()
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>());
     }
 
     private static async Task ExecuteAsync(DbConnection connection, string sql)

@@ -46,6 +46,8 @@ public sealed class DamengDesignTimeTests
             services,
             descriptor => descriptor.ServiceType == typeof(IDatabaseModelFactory)
                 && descriptor.ImplementationType == typeof(DamengDatabaseModelFactory));
+        using var provider = services.BuildServiceProvider();
+        Assert.IsType<DamengDatabaseModelFactory>(provider.GetRequiredService<IDatabaseModelFactory>());
     }
 
     [Fact]

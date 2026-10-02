@@ -29,7 +29,7 @@ metadata:
 
 三条脚本都不会让 DDL 变成事务。`CREATE` / `ALTER` / `DROP` 会隐式提交。失败后按对象名清理，不要指望 `ROLLBACK` 收回已执行的 DDL。
 
-`dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。HUGE 等非普通原生表类型、全局临时表、分区表与选中表上的位图等专用索引、用户 CHECK、AUTO_INCREMENT、虚拟计算列、DEFAULT ON NULL、ON UPDATE、禁用主键/唯一/外键、独立用户聚集索引和聚集唯一约束在反向工程时明确拒绝；这不影响显式模型生成 CHECK 或虚拟列迁移 DDL。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
+`dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。选中表/视图的列必须可由注册的提供程序类型映射源按存储类型映射，否则点名对象、列和类型并明确拒绝，避免脚手架静默丢列。HUGE 等非普通原生表类型、全局临时表、分区表与选中表上的位图等专用索引、用户 CHECK、AUTO_INCREMENT、虚拟计算列、DEFAULT ON NULL、ON UPDATE、禁用主键/唯一/外键、独立用户聚集索引和聚集唯一约束在反向工程时明确拒绝；这不影响显式模型生成 CHECK 或虚拟列迁移 DDL。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
 
 ## 账户
 
