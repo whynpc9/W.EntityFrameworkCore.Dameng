@@ -21,6 +21,132 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData("Chinese_PRC_CS_AS_KS_WS")]
+    [InlineData("utf8mb4_bin")]
+    [InlineData("utf8mb4_general_ci")]
+    [InlineData("EF10_NONEXISTENT_COLLATION")]
+    public async Task ColumnCollateSyntaxDoesNotPersistAColumnFacetOnReferenceServer(string collation)
+    {
+        var tableName = $"EF10_CDEF_{Guid.NewGuid():N}".ToUpperInvariant();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = false;
+        try
+        {
+            // The reference server accepts even an unknown column COLLATE name, but
+            // does not persist or apply it. ORDER BY COLLATE is a separate SQL feature.
+            await ExecuteAsync(connection, $"CREATE TABLE \"{tableName}\" (ID INT, N VARCHAR(20) COLLATE {collation}, M VARCHAR(20))");
+            created = true;
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT TABLEDEF(SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()), :name) FROM dual";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = tableName;
+                command.Parameters.Add(parameter);
+                var definition = Assert.IsType<string>(await command.ExecuteScalarAsync());
+                Assert.Contains("VARCHAR(20)", definition, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("COLLATE", definition, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var values = new[] { "a", "A", "张", "李" };
+            for (var index = 0; index < values.Length; index++)
+            {
+                await ExecuteAsync(connection, $"INSERT INTO \"{tableName}\" VALUES ({index}, '{values[index]}', '{values[index]}')");
+            }
+
+            async Task<string[]> ReadAsync(string sql)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                await using var reader = await command.ExecuteReaderAsync();
+                var rows = new List<string>();
+                while (await reader.ReadAsync())
+                {
+                    rows.Add(Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!);
+                }
+
+                return rows.ToArray();
+            }
+
+            Assert.Equal(await ReadAsync($"SELECT COUNT(*) FROM \"{tableName}\" WHERE M = 'a'"),
+                await ReadAsync($"SELECT COUNT(*) FROM \"{tableName}\" WHERE N = 'a'"));
+            Assert.Equal(await ReadAsync($"SELECT M FROM \"{tableName}\" ORDER BY M, ID"),
+                await ReadAsync($"SELECT N FROM \"{tableName}\" ORDER BY N, ID"));
+            Assert.Equal(["李", "张"], await ReadAsync(
+                $"SELECT N FROM \"{tableName}\" WHERE ID >= 2 ORDER BY N COLLATE Chinese_PRC_CS_AS_KS_WS"));
+
+            var table = Assert.Single(new DamengDatabaseModelFactory().Create(connection,
+                new DatabaseModelFactoryOptions(tables: [tableName])).Tables);
+            Assert.Equal(3, table.Columns.Count);
+            Assert.All(table.Columns, column => Assert.Null(column.Collation));
+            Assert.Equal(table.Columns[2].StoreType, table.Columns[1].StoreType);
+        }
+        finally
+        {
+            if (created)
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{tableName}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryRejectsAutoIncrementWithoutChangingIdentityOrTableFilters()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var automatic = $"EF10_AUTO_{suffix}";
+        var identity = $"EF10_IDENT_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{automatic}\" (ID INT PRIMARY KEY AUTO_INCREMENT, N INT) AUTO_INCREMENT = 20");
+            created.Add(automatic);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{identity}\" (ID INT IDENTITY(7, 3) PRIMARY KEY, N INT)");
+            created.Add(identity);
+            foreach (var (name, kind) in new[] { (automatic, (byte)2), (identity, (byte)1) })
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT C.INFO2, O.INFO6 FROM SYS.SYSCOLUMNS C "
+                    + "JOIN SYS.SYSOBJECTS O ON O.ID = C.ID "
+                    + "WHERE O.SCHID = CURRENT_SCHID() AND O.NAME = :name AND C.NAME = 'ID'";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = name;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(1L, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture) & 1L);
+                var info6 = Assert.IsType<byte[]>(reader.GetValue(1));
+                Assert.True(info6.Length >= 26);
+                Assert.Equal(kind, info6[24]);
+                Assert.Equal(0, info6[25]);
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [automatic])));
+            Assert.Contains(automatic, error.Message, StringComparison.Ordinal);
+            Assert.Contains("AUTO_INCREMENT", error.Message, StringComparison.Ordinal);
+            var table = Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [identity])).Tables);
+            var column = Assert.Single(table.Columns, c => c.Name == "ID");
+            Assert.Equal(DamengValueGenerationStrategy.IdentityColumn, column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal(7L, column[DamengAnnotationNames.IdentitySeed]);
+            Assert.Equal(3, column[DamengAnnotationNames.IdentityIncrement]);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
+    [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FactoryRejectsPartitionedTablesWithoutBlockingOrdinaryTableFilters(bool hash)

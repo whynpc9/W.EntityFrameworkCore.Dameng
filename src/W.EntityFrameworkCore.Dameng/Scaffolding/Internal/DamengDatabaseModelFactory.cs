@@ -489,21 +489,27 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using (var command = CreateCommand(
             connection,
             """
-            SELECT O.NAME AS TABLE_NAME, C.NAME AS COLUMN_NAME
+            SELECT O.NAME AS TABLE_NAME, C.NAME AS COLUMN_NAME, O.INFO6
             FROM SYS.SYSCOLUMNS C
             INNER JOIN SYS.SYSOBJECTS O ON C.ID = O.ID
             INNER JOIN SYS.SYSOBJECTS S ON O.SCHID = S.ID
             WHERE S.NAME = :schema
               AND O.TYPE$ = 'SCHOBJ'
               AND O.SUBTYPE$ = 'UTAB'
-              AND C.INFO2 = 1
+              AND (C.INFO2 & 1) = 1
             """))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                identityColumns.Add((reader.GetString(0), reader.GetString(1)));
+                var table = reader.GetString(0);
+                if (tables.ContainsKey(table))
+                {
+                    var column = reader.GetString(1);
+                    ValidateIdentityType(table, column, reader.GetValue(2) as byte[]);
+                    identityColumns.Add((table, column));
+                }
             }
         }
 
@@ -531,6 +537,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             column[DamengAnnotationNames.IdentitySeed] = seedIncrement.Seed;
             column[DamengAnnotationNames.IdentityIncrement] = seedIncrement.Increment;
             column.ValueGenerated = ValueGenerated.OnAdd;
+        }
+    }
+
+    internal static void ValidateIdentityType(string table, string column, byte[]? info6)
+    {
+        // SYSOBJECTS.INFO6 bytes 25-26 distinguish IDENTITY (1) from AUTO_INCREMENT (2).
+        // SYSCOLUMNS.INFO2 bit 0 marks both, so it cannot determine the generation strategy.
+        // Only the complete native IDENTITY marker is supported; never guess on short data.
+        if (info6 is not { Length: >= 26 } || info6[24] != 1 || info6[25] != 0)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' column '{column}' has AUTO_INCREMENT or an unknown automatic-generation type. "
+                + "Reverse engineering supports only native IDENTITY; exclude this table.");
         }
     }
 

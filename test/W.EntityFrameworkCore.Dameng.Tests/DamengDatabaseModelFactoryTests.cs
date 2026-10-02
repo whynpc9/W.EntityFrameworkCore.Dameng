@@ -8,6 +8,40 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void NativeIdentityTypeIsAcceptedWithoutReadingOtherInfo6Facets()
+    {
+        var info6 = Enumerable.Repeat((byte)255, 32).ToArray();
+        info6[24] = 1;
+        info6[25] = 0;
+        DamengDatabaseModelFactory.ValidateIdentityType("T", "C", info6);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(2, 0)]
+    [InlineData(3, 0)]
+    [InlineData(1, 1)]
+    public void AutoIncrementAndUnknownTypesCannotBecomeIdentity(byte low, byte high)
+    {
+        var info6 = new byte[26];
+        info6[24] = low;
+        info6[25] = high;
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIdentityType("T", "C", info6));
+        Assert.Contains("AUTO_INCREMENT", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(24)]
+    [InlineData(25)]
+    public void IncompleteIdentityTypeIsRejected(int? length)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIdentityType(
+            "T", "C", length is null ? null : new byte[length.Value]));
+
     [Theory]
     [InlineData(0L)]
     [InlineData(256L)]

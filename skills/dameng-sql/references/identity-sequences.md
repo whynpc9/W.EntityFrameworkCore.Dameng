@@ -76,6 +76,11 @@ SELECT LAST_INSERT_ID();
 
 同一张表不能同时指定 `IDENTITY` 和 `AUTO_INCREMENT`。
 
+目录识别不能仅看 `SYSCOLUMNS.INFO2` 位 0：它同时标记两类自增。普通表的
+`SYSOBJECTS.INFO6` 第 25–26 字节区分 1（IDENTITY）与 2（AUTO_INCREMENT），见
+[官方目录说明](https://eco.dameng.com/document/dm/zh-cn/pm/dm8-admin-manual-appendix1.html)。
+当前 EF 提供程序反向工程仅接受完整的 IDENTITY 类型标记，对 AUTO_INCREMENT 明确拒绝。
+
 从 IDENTITY 迁到 AUTO_INCREMENT 的典型步骤：备份表 → `ALTER TABLE ... DROP IDENTITY` → 保证唯一约束 → `ALTER TABLE ... ADD id AUTO_INCREMENT`。改之前确认 `AUTO_INCREMENT_INCREMENT` 仍是预期值。
 
 ## 序列
