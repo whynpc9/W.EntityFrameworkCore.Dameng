@@ -8,6 +8,50 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void PermanentTableKindCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateTableKind("T", "N");
+
+    [Theory]
+    [InlineData("Y")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void TemporaryOrUnknownTableKindIsRejected(string? marker)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableKind("T", marker));
+
+    [Theory]
+    [InlineData("NORMAL", true)]
+    [InlineData("CLUSTER", false)]
+    [InlineData("FUNCTION-BASED NORMAL", false)]
+    public void OnlyNormalStandaloneIndexesAreReadAsColumnIndexes(string type, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
+
+    [Theory]
+    [InlineData("NORMAL", "P", false)]
+    [InlineData("NORMAL", "U", false)]
+    [InlineData("NORMAL", "F", true)]
+    [InlineData("VIRTUAL", "F", false)]
+    public void ConstraintIndexesKeepTheirCatalogRole(string type, string constraintType, bool readColumns)
+        => Assert.Equal(readColumns, DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type, constraintType));
+
+    [Fact]
+    public void ConstraintAssociationDoesNotMakeBitmapIndexesSupported()
+        => Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", "BITMAP", constraintType: "F"));
+
+    [Theory]
+    [InlineData("VIRTUAL")]
+    [InlineData("BITMAP")]
+    [InlineData("FUNCTION-BASED BITMAP")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void SpecializedOrUnknownIndexTypeIsRejected(string? type)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
+        Assert.Contains("IX_T", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(2)]

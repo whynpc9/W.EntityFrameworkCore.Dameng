@@ -20,6 +20,146 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ForeignKeyBackingIndexesKeepTheirCatalogRole(bool physical)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = $"EF10_VIP_{suffix}";
+        var child = $"EF10_VIC_{suffix}";
+        var foreignKey = $"EF10_VIFK_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT PRIMARY KEY)");
+            created.Add(parent);
+            var indexClause = physical ? " WITH INDEX" : "";
+            await ExecuteAsync(connection, $"CREATE TABLE \"{child}\" (ID INT PRIMARY KEY, PID INT, CONSTRAINT \"{foreignKey}\" FOREIGN KEY(PID) REFERENCES \"{parent}\"(ID){indexClause})");
+            created.Add(child);
+            var backingIndexes = new List<string>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT I.INDEX_NAME, C.NAME, I.INDEX_TYPE FROM ALL_INDEXES I "
+                    + "INNER JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
+                    + "INNER JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME AND O.TYPE$ = 'TABOBJ' AND O.SUBTYPE$ = 'INDEX' "
+                    + "LEFT JOIN SYS.SYSCONS K ON K.INDEXID = O.ID AND K.TABLEID = O.PID AND K.TYPE$ = 'F' "
+                    + "LEFT JOIN SYS.SYSOBJECTS C ON C.ID = K.ID "
+                    + "WHERE I.OWNER = SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND I.TABLE_NAME = :name AND K.ID IS NOT NULL";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = child;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    backingIndexes.Add(reader.GetString(0));
+                    Assert.Equal(physical ? "NORMAL" : "VIRTUAL", reader.GetString(2));
+                    Assert.Equal(foreignKey, reader.IsDBNull(1) ? null : reader.GetString(1));
+                }
+            }
+
+            Assert.Single(backingIndexes);
+            var model = new DamengDatabaseModelFactory().Create(connection,
+                new DatabaseModelFactoryOptions(tables: [parent, child]));
+            var table = Assert.Single(model.Tables, table => table.Name == child);
+            Assert.Equal(foreignKey, Assert.Single(table.ForeignKeys).Name);
+            if (physical)
+            {
+                var index = Assert.Single(table.Indexes, index => backingIndexes.Contains(index.Name!));
+                Assert.Equal("PID", Assert.Single(index.Columns).Name);
+            }
+            else
+            {
+                Assert.DoesNotContain(table.Indexes, index => backingIndexes.Contains(index.Name!));
+            }
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
+    [DamengTheory]
+    [InlineData("DELETE")]
+    [InlineData("PRESERVE")]
+    public async Task FactoryRejectsTemporaryTablesWithoutBlockingPermanentTableFilters(string duration)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var temporary = $"EF10_TMP_{suffix}";
+        var permanent = $"EF10_PERM_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE GLOBAL TEMPORARY TABLE \"{temporary}\" (ID INT) ON COMMIT {duration} ROWS");
+            created.Add(temporary);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{permanent}\" (ID INT PRIMARY KEY)");
+            created.Add(permanent);
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [temporary])));
+            Assert.Contains(temporary, error.Message, StringComparison.Ordinal);
+            Assert.Contains("temporary-table lifetime", error.Message, StringComparison.Ordinal);
+            Assert.Equal(permanent, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [permanent])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    [DamengFact]
+    public async Task FactoryRejectsBitmapIndexesAndStillReadsNormalIndexes()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var specialized = $"EF10_BMT_{suffix}";
+        var ordinary = $"EF10_NMT_{suffix}";
+        var bitmap = $"EF10_BMI_{suffix}";
+        var normal = $"EF10_NMI_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            foreach (var table in new[] { specialized, ordinary })
+            {
+                await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N INT)");
+                created.Add(table);
+            }
+
+            await ExecuteAsync(connection, $"CREATE BITMAP INDEX \"{bitmap}\" ON \"{specialized}\"(N)");
+            await ExecuteAsync(connection, $"CREATE INDEX \"{normal}\" ON \"{ordinary}\"(N DESC)");
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [specialized])));
+            Assert.Contains(bitmap, error.Message, StringComparison.Ordinal);
+            Assert.Contains("BITMAP", error.Message, StringComparison.Ordinal);
+            var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: [ordinary]));
+            var index = Assert.Single(Assert.Single(model.Tables).Indexes);
+            Assert.Equal(normal, index.Name);
+            Assert.Equal("N", Assert.Single(index.Columns).Name);
+            Assert.True(Assert.Single(index.IsDescending));
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
     [DamengFact]
     public async Task FactoryRejectsUnrepresentableLocalSequenceWithoutBlockingOtherTables()
     {

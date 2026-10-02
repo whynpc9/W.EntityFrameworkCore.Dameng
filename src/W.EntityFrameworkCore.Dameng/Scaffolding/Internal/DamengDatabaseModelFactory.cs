@@ -161,7 +161,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
+            "SELECT TABLE_NAME, TEMPORARY FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var tables = new List<DatabaseTable>();
@@ -174,6 +174,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
+            ValidateTableKind(name, GetNullableString(reader, 1));
             tables.Add(
                 new DatabaseTable
                 {
@@ -183,6 +184,16 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
 
         return tables;
+    }
+
+    internal static void ValidateTableKind(string table, string? temporary)
+    {
+        if (!string.Equals(temporary, "N", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' has unsupported TEMPORARY marker '{temporary ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve temporary-table lifetime; exclude this table.");
+        }
     }
 
     private static List<DatabaseTable> GetViews(
@@ -775,16 +786,37 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
         }
 
-        var constraintIndexNames = new HashSet<string>(StringComparer.Ordinal);
+        var skippedIndexNames = new HashSet<string>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,
-            "SELECT INDEX_NAME FROM ALL_CONSTRAINTS WHERE OWNER = :schema AND INDEX_NAME IS NOT NULL"))
+            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$ "
+            + "FROM ALL_INDEXES I "
+            + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
+            + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME "
+            + "AND O.TYPE$ = 'TABOBJ' AND O.SUBTYPE$ = 'INDEX' "
+            + "LEFT JOIN SYS.SYSCONS K ON K.INDEXID = O.ID AND K.TABLEID = O.PID AND K.TYPE$ IN ('P', 'U', 'F') "
+            + "WHERE I.OWNER = :schema"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                constraintIndexNames.Add(reader.GetString(0));
+                var name = reader.GetString(0);
+                var table = reader.GetString(1);
+                if (!tables.ContainsKey(table))
+                {
+                    continue;
+                }
+
+                // Inspect headers before joining columns: specialized indexes with no
+                // ALL_IND_COLUMNS rows must not disappear silently either. Native SYSCONS
+                // supplies FK index ownership that ALL_CONSTRAINTS.INDEX_NAME omits.
+                var readColumns = ShouldReadIndexColumns(
+                    table, name, GetNullableString(reader, 2), GetNullableString(reader, 3));
+                if (!readColumns)
+                {
+                    skippedIndexNames.Add(name);
+                }
             }
         }
 
@@ -815,7 +847,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         while (indexReader.Read())
         {
             var indexName = indexReader.GetString(0);
-            if (constraintIndexNames.Contains(indexName))
+            if (skippedIndexNames.Contains(indexName))
             {
                 continue;
             }
@@ -887,6 +919,20 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             table.Indexes.Add(databaseIndex);
         }
     }
+
+    internal static bool ShouldReadIndexColumns(string table, string index, string? type, string? constraintType = null)
+        => type switch
+        {
+            "NORMAL" => constraintType is not ("P" or "U"),
+            // Dameng represents a foreign key without a physical backing index as VIRTUAL.
+            // A physical NORMAL FK index retains its own definition; a VIRTUAL one does not.
+            "VIRTUAL" when constraintType == "F" => false,
+            // Clustering is validated separately; expression indexes are explicitly omitted.
+            "CLUSTER" or "FUNCTION-BASED NORMAL" => false,
+            _ => throw new NotSupportedException(
+                $"Dameng table '{table}' has index '{index}' with unsupported type '{type ?? "NULL"}'. "
+                + "Reverse engineering only models NORMAL standalone indexes; exclude this table.")
+        };
 
     private static void LoadForeignKeys(
         DbConnection connection,
