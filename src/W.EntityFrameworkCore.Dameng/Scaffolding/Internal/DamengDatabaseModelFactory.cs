@@ -60,7 +60,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var currentSchema = GetCurrentSchema(connection);
             databaseModel.DefaultSchema = currentSchema;
 
-            var schemaFilter = options.Schemas.ToList();
+            var schemaFilter = options.Schemas.Select(NormalizeIdentifier).ToList();
             if (schemaFilter.Any(entry => !string.Equals(entry, currentSchema, StringComparison.Ordinal)))
             {
                 throw new NotSupportedException(
@@ -985,9 +985,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             return false;
         }
 
-        sequenceName = UnquoteIdentifier(match.Groups["seq"].Value);
+        sequenceName = NormalizeIdentifier(match.Groups["seq"].Value);
         sequenceSchema = match.Groups["schema"].Success
-            ? UnquoteIdentifier(match.Groups["schema"].Value)
+            ? NormalizeIdentifier(match.Groups["schema"].Value)
             : null;
         return true;
     }
@@ -1014,18 +1014,21 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             else if (current == '.' && !inQuotes)
             {
                 return (
-                    UnquoteIdentifier(entry[..index]),
-                    UnquoteIdentifier(entry[(index + 1)..]));
+                    NormalizeIdentifier(entry[..index]),
+                    NormalizeIdentifier(entry[(index + 1)..]));
             }
         }
 
-        return (null, UnquoteIdentifier(entry));
+        return (null, NormalizeIdentifier(entry));
     }
 
-    private static string UnquoteIdentifier(string value)
-        => value.Length >= 2 && value[0] == '"' && value[^1] == '"'
+    internal static string NormalizeIdentifier(string value)
+    {
+        value = value.Trim();
+        return value.Length >= 2 && value[0] == '"' && value[^1] == '"'
             ? value[1..^1].Replace("\"\"", "\"", StringComparison.Ordinal)
-            : value;
+            : value.ToUpperInvariant();
+    }
 
     private static DbCommand CreateCommand(DbConnection connection, string commandText)
     {

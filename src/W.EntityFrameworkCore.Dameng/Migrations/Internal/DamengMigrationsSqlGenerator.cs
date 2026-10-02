@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Storage.Internal;
 
 namespace W.EntityFrameworkCore.Dameng.Migrations.Internal;
 
@@ -69,29 +70,13 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         return builder.GetCommandList();
     }
 
-    // Block detection ignores leading whitespace and keyword casing; both BEGIN and DECLARE
-    // open an anonymous DMSQL block. A trailing keyword boundary keeps words like
-    // "BEGINNING" from being misread as a block.
+    // The first SQL token ignores leading whitespace/comments but preserves quoted text.
     private static bool IsAnonymousBlock(string commandText)
     {
-        var trimmed = commandText.TrimStart();
-        return StartsWithKeyword(trimmed, "BEGIN")
-            || StartsWithKeyword(trimmed, "DECLARE");
+        var first = DamengSqlLexer.Read(commandText).FirstOrDefault().Text;
+        return string.Equals(first, "BEGIN", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(first, "DECLARE", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static bool StartsWithKeyword(string text, string keyword)
-    {
-        if (!text.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return text.Length == keyword.Length
-            || !IsIdentifierCharacter(text[keyword.Length]);
-    }
-
-    private static bool IsIdentifierCharacter(char value)
-        => char.IsLetterOrDigit(value) || value is '_' or '$' or '#';
 
     protected override void Generate(
         MigrationOperation operation,

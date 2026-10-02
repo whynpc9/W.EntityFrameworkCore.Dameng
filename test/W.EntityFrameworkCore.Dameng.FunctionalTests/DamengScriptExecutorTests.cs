@@ -7,6 +7,40 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengScriptExecutorTests
 {
+    [Theory]
+    [InlineData("BEGIN NULL; END;")]
+    [InlineData("-- lead\nBEGIN -- body\n NULL; END; -- tail")]
+    [InlineData("/* lead ' BEGIN */ DECLARE v INT; BEGIN v := 1; END;")]
+    [InlineData("BEGIN BEGIN NULL; END; IF 1=1 THEN NULL; END IF; END;")]
+    [InlineData("BEGIN DECLARE v INT; BEGIN v := CASE WHEN 1=1 THEN 2 ELSE 3 END; END; END;")]
+    [InlineData("BEGIN CASE WHEN 1=1 THEN NULL; END CASE; END;")]
+    [InlineData("BEGIN /* block\n/\nEND; ' */ NULL; END;")]
+    [InlineData("BEGIN -- quote ' in comment\n NULL; END;")]
+    public void SplitRecognizesTokensAndPreservesBlockComments(string block)
+    {
+        foreach (var idempotent in new[] { false, true })
+        {
+            var script = "SELECT 1 FROM dual;\n" + block + (idempotent ? "\n/\n" : "\n") + "SELECT 2 FROM dual;";
+            var batches = idempotent
+                ? DamengScriptExecutor.SplitIdempotent(script)
+                : DamengScriptExecutor.SplitStatements(script);
+            Assert.Equal(3, batches.Count);
+            Assert.Equal("SELECT 1 FROM dual", batches[0]);
+            Assert.Contains("END;", batches[1]);
+            Assert.StartsWith(block.Split("END;")[0], batches[1], StringComparison.Ordinal);
+            Assert.Contains("SELECT 2 FROM dual", batches[2]);
+        }
+    }
+
+    [Theory]
+    [InlineData("BEGIN NULL;")]
+    [InlineData("DECLARE v INT;")]
+    [InlineData("BEGIN NULL; END")]
+    [InlineData("/* unterminated")]
+    [InlineData("SELECT 'unterminated")]
+    public void SplitRejectsIncompleteCommands(string script)
+        => Assert.Throws<InvalidOperationException>(() => DamengScriptExecutor.SplitStatements(script));
+
     [Fact]
     public void IdempotentSplitKeepsNestedGuardBlocksAsSingleBatches()
     {

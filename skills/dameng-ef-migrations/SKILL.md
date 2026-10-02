@@ -46,7 +46,7 @@ metadata:
 
 ## 非幂等脚本
 
-`GenerateCreateScript()` 和 `GenerateScript()` 都不加 `Idempotent`。语句以 `;` 结束，标识符使用双引号，不生成 `@name`。`EnsureSchema` 是例外：它生成自带存在性守卫的匿名 `BEGIN ... END;` 块，作为一条命令执行，不按分号切开。
+`GenerateCreateScript()` 和 `GenerateScript()` 都不加 `Idempotent`。语句以 `;` 结束，标识符使用双引号，不生成 `@name`。`EnsureSchema` 和自定义匿名块是例外：`EnsureSchema` 生成自带存在性守卫的匿名 `BEGIN ... END;` 块；`BEGIN` 或 `DECLARE` 打开的自定义块也必须作为一条命令执行，不按内部的分号切开。
 
 执行时按分号切开。分号出现在单引号字符串、双引号标识符或注释里时不要切开。`''` 和 `""` 是转义。空语句丢掉。每条剩下的文本单独 `ExecuteNonQuery`。`COMMIT;` 可以单独执行。
 
@@ -67,7 +67,7 @@ disql 可以直接跑带 `/` 的文件。ADO.NET 不能把 `/` 放进 `CommandTe
 1. 按不在字符串内、且 trim 后恰好是 `/` 的行切开。
 2. `/` 行本身不执行。
 3. 每个片段里，`BEGIN` 之前的语句按分号执行。
-4. 从 `BEGIN` 到配平的 `END;` 作为一条命令执行；块内允许再嵌套 `BEGIN ... END;`，按深度配对。
+4. 从 `BEGIN` 或 `DECLARE` 到配平的 `END;` 作为一条命令执行，连同紧邻的前导注释一起保留。按引号/注释外的词法 token 识别，不能要求关键字独占一行；区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束。块内允许再嵌套 `BEGIN ... END;`。
 
 同一脚本执行第二遍应保持种子一行、每个 `MigrationId` 一行。单条动态 SQL 转义后的 UTF-8 超过 32767 字节时，生成阶段会抛 `NotSupportedException`，把 migration 拆小。自定义 `migrationBuilder.Sql(...)` 里不能出现单独一行 `/`。
 

@@ -203,7 +203,7 @@ SQL> START /path/migrate.sql
 幂等脚本必须交给 DIsql。`/` 是客户端批次结束符，不是服务器 SQL。
 不要把整个文件交给 ADO.NET、`ExecuteSqlRaw` 或其他按分号拆批的执行器。
 应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送；
-块可以嵌套（历史记录守卫内的 `EnsureSchema` 守卫块），按 `BEGIN`/`END;` 深度配对，不要在内层 `END;` 处提前截断。
+块可以嵌套（历史记录守卫内的 `EnsureSchema` 守卫块）。解析时忽略引号/注释中的关键字，按词法 token 配对，保留 `DECLARE` 声明和前导注释；同一行可以有多个关键字。区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束，不要在内层 `END;` 处提前截断。
 
 脚本正文里如果出现 `&`，DIsql 会把它当成替换变量。执行前在会话里运行 `SET DEFINE OFF`。
 

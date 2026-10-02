@@ -19,6 +19,51 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengFact]
+    public async Task FactoryNormalizesUnquotedFiltersAndPreservesQuotedCase()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var upper = $"EF10_FILTER_{suffix.ToUpperInvariant()}";
+        var lower = $"ef10_quoted_{suffix}";
+        var unquoted = upper.ToLowerInvariant();
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            foreach (var name in new[] { upper, lower })
+            {
+                await ExecuteAsync(connection, $"CREATE TABLE \"{name}\" (ID INT PRIMARY KEY)");
+                created.Add(name);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+            var schema = Convert.ToString(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+            var factory = new DamengDatabaseModelFactory();
+            foreach (var filter in new[] { unquoted, schema.ToLowerInvariant() + "." + unquoted, $"\"{schema}\".{unquoted}" })
+            {
+                var model = factory.Create(connection, new DatabaseModelFactoryOptions(
+                    tables: [filter], schemas: [schema.ToLowerInvariant()]));
+                Assert.Equal(upper, Assert.Single(model.Tables).Name);
+            }
+
+            var quoted = factory.Create(connection, new DatabaseModelFactoryOptions(
+                tables: [$"\"{lower}\""], schemas: [$"\"{schema}\""]));
+            Assert.Equal(lower, Assert.Single(quoted.Tables).Name);
+            Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(schemas: [$"\"{schema.ToLowerInvariant()}\""])));
+        }
+        finally
+        {
+            foreach (var name in created)
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    [DamengFact]
     public async Task FactoryReadsTablesColumnsConstraintsIndexesCommentsAndValueGeneration()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();

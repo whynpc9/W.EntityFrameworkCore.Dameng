@@ -72,9 +72,9 @@ public sealed class DamengDatabaseModelFactoryTests
 
     [Theory]
     [InlineData("\"OrderSeq\".NEXTVAL", "OrderSeq", null)]
-    [InlineData("OrderSeq.NEXTVAL", "OrderSeq", null)]
+    [InlineData("OrderSeq.NEXTVAL", "ORDERSEQ", null)]
     [InlineData("\"sales\".\"Order Seq\".NEXTVAL", "Order Seq", "sales")]
-    [InlineData("sales.OrderSeq.nextval", "OrderSeq", "sales")]
+    [InlineData("sales.OrderSeq.nextval", "ORDERSEQ", "SALES")]
     [InlineData("  \"OrderSeq\".NEXTVAL  ", "OrderSeq", null)]
     [InlineData("\"Quoted\"\"Seq\".NEXTVAL", "Quoted\"Seq", null)]
     public void TryParseSequenceDefaultMatchesNextvalDefaults(
@@ -110,6 +110,13 @@ public sealed class DamengDatabaseModelFactoryTests
     }
 
     [Theory]
+    [InlineData("app", "APP")]
+    [InlineData(" \"app\" ", "app")]
+    [InlineData("\"a\"\"b\"", "a\"b")]
+    public void NormalizeSchemaIdentifierPreservesDelimitedNames(string input, string expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.NormalizeIdentifier(input));
+
+    [Theory]
     [InlineData("USERS", null, "USERS")]
     [InlineData("APP.USERS", "APP", "USERS")]
     [InlineData("\"A.B\"", null, "A.B")]
@@ -117,7 +124,10 @@ public sealed class DamengDatabaseModelFactoryTests
     [InlineData("\"MY.SCHEMA\".T", "MY.SCHEMA", "T")]
     [InlineData("\"MY.SCHEMA\".\"T.U\"", "MY.SCHEMA", "T.U")]
     [InlineData("\"WEIRD\"\"NAME\".T", "WEIRD\"NAME", "T")]
-    [InlineData("app.\"Quoted\"", "app", "Quoted")]
+    [InlineData("app.\"Quoted\"", "APP", "Quoted")]
+    [InlineData("app.users", "APP", "USERS")]
+    [InlineData("users", null, "USERS")]
+    [InlineData(" \"app\" . users ", "app", "USERS")]
     public void SplitQualifiedNameParsesIdentifierComponents(
         string entry,
         string? expectedSchema,

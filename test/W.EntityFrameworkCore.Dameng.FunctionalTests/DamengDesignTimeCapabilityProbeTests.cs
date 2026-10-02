@@ -688,8 +688,8 @@ public sealed class DamengDesignTimeCapabilityProbeTests(ITestOutputHelper outpu
         await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
         await connection.OpenAsync();
 
-        // The generation budget n x 4 <= 32767 is the 32K-page boundary; which lengths the
-        // server actually accepts inline depends on the instance page size.
+        // The provider generation budget is n x 4 <= 8188. These larger declarations
+        // are exploratory only: logged SQL failures do not count as capacity assertions.
         await ExecuteCaseAsync(connection, new ProbeCase("CHR.page_size", "SELECT PAGE() FROM DUAL"));
         await ProbeDdlStepAsync(
             connection,

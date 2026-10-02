@@ -647,6 +647,9 @@ public sealed class DamengMigrationsSqlGeneratorTests
     // DECLARE opens the block form with declarations.
     [InlineData("DECLARE\n    v INT;\nBEGIN\n    v := 1;\nEND;")]
     [InlineData("declare v int;\nbegin\n    null;\nend;")]
+    [InlineData("-- ensure lookup\nbegin null; end;")]
+    [InlineData("/* BEGIN ' */ /* second */ DECLARE v INT; BEGIN v := 1; END;")]
+    [InlineData("-- comment\rBEGIN NULL; END;")]
     public void IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(string blockSql)
     {
         using var context = CreateContext();
@@ -664,6 +667,8 @@ public sealed class DamengMigrationsSqlGeneratorTests
     [Theory]
     [InlineData("BEGINNING")]
     [InlineData("DECLARES")]
+    [InlineData("/* BEGIN */ SELECT 1 FROM dual")]
+    [InlineData("-- DECLARE\nSELECT 1 FROM dual")]
     public void IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(string sql)
     {
         using var context = CreateContext();

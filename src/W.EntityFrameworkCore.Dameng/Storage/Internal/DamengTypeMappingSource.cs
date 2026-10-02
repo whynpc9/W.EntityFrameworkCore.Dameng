@@ -13,11 +13,9 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 {
     internal const int MaxInlineLength = 32767;
 
-    // Documented per-column inline limit for character data on 32 KB pages (4 KB: 1900,
-    // 8 KB: 3900, 16 KB: 8000); a row filled past it fails with "record too long" even when
-    // the page-derived DDL declaration limit (up to 32767 bytes on 32 KB pages) accepted the
-    // column. Verified on the reference instance by filling VARCHAR(n CHAR) with n three-byte
-    // characters: 2729 (8187 bytes) stores, 8191 (24573 bytes) is rejected.
+    // Conservative character-column generation budget from the documented 32 KB-page
+    // reference. Actual capacity also depends on the target page size and total row size;
+    // declaration success alone is not evidence that the declared length can be filled.
     internal const int MaxCharSemanticsBytes = 8188;
 
     private static readonly Regex CharSemanticsStoreTypePattern = new(

@@ -13,6 +13,55 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengMigrationsFunctionalTests
 {
     [DamengFact]
+    public async Task CommentPrefixedInlineBlocksExecuteAsGeneratedCommands()
+    {
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        var name = "EF10_BLK_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        var created = false;
+        try
+        {
+            await using var create = connection.CreateCommand();
+            create.CommandText = $"CREATE TABLE \"{name}\" (ID INT)";
+            await create.ExecuteNonQueryAsync();
+            created = true;
+            var generator = context.GetService<IMigrationsSqlGenerator>();
+            foreach (var idempotent in new[] { false, true })
+            {
+                var operations = new MigrationOperation[]
+                {
+                    new SqlOperation { Sql = $"-- leading ' comment\nBEGIN -- inline\n INSERT INTO \"{name}\" VALUES (1); END;", SuppressTransaction = true },
+                    new SqlOperation { Sql = $"/* leading block comment */ DECLARE v INT; BEGIN v := 2; INSERT INTO \"{name}\" VALUES (v); END;", SuppressTransaction = true }
+                };
+                var commands = generator.Generate(operations, options: MigrationsSqlGenerationOptions.Script
+                    | (idempotent ? MigrationsSqlGenerationOptions.Idempotent : MigrationsSqlGenerationOptions.Default));
+                var script = string.Join("\n", commands.Select(command => command.CommandText));
+                if (idempotent)
+                {
+                    script = "BEGIN IF 1=1 THEN\n" + script + "\nEND IF; END;\n/";
+                }
+
+                await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent, text => text.Replace(connectionString, "[redacted]", StringComparison.Ordinal));
+            }
+
+            await using var count = connection.CreateCommand();
+            count.CommandText = $"SELECT COUNT(*) FROM \"{name}\"";
+            Assert.Equal(4L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            if (created)
+            {
+                await using var drop = connection.CreateCommand();
+                drop.CommandText = $"DROP TABLE \"{name}\"";
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [DamengFact]
     public async Task GeneratedDdlAndHistoryRepositoryExecuteAgainstDameng()
     {
         var suffix = Guid.NewGuid()
