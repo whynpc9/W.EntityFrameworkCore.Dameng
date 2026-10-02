@@ -101,6 +101,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             LoadConstraints(connection, currentSchema, tableLookup, columnLookup);
             LoadIndexes(connection, currentSchema, tableLookup, columnLookup);
             LoadForeignKeys(connection, currentSchema, tableLookup, columnLookup);
+            foreach (var table in tables)
+            {
+                ValidateKeyGeneration(table);
+            }
+
             LoadComments(connection, currentSchema, tableLookup, columnLookup);
 
             foreach (var table in tables)
@@ -403,6 +408,37 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
 
         column.ValueGenerated = ValueGenerated.OnAdd;
+    }
+
+    internal static void ValidateKeyGeneration(DatabaseTable table)
+    {
+        if (table.PrimaryKey is not null)
+        {
+            ValidateGeneratedKeyColumns(table, table.PrimaryKey.Columns);
+        }
+
+        // EF creates alternate keys for principal columns used by selected foreign keys.
+        // Unreferenced unique indexes do not have that key readback requirement.
+        foreach (var foreignKey in table.ForeignKeys)
+        {
+            ValidateGeneratedKeyColumns(foreignKey.PrincipalTable, foreignKey.PrincipalColumns);
+        }
+    }
+
+    private static void ValidateGeneratedKeyColumns(DatabaseTable table, IEnumerable<DatabaseColumn> columns)
+    {
+        foreach (var column in columns)
+        {
+            if (column.DefaultValueSql is not null
+                && column[DamengAnnotationNames.ValueGenerationStrategy]
+                    is not (DamengValueGenerationStrategy.IdentityColumn or DamengValueGenerationStrategy.Sequence))
+            {
+                throw new NotSupportedException(
+                    $"Dameng table '{table.Name}' key column '{column.Name}' of store type '{column.StoreType}' "
+                    + "has default SQL without a supported key-generation strategy. The provider cannot read back "
+                    + "this generated key; exclude this table from reverse engineering.");
+            }
+        }
     }
 
     private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(

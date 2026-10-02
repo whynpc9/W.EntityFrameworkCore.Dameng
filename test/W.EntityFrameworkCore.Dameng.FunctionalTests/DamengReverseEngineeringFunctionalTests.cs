@@ -22,6 +22,87 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengFact]
+    public async Task FactoryRejectsGeneratedAlternateKeysOnlyWhenReferencedBySelectedForeignKeys()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = $"EF10_AKP_{suffix}";
+        var child = $"EF10_AKC_{suffix}";
+        var sequence = $"EF10_AKS_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\"");
+            cleanup.Add($"DROP SEQUENCE \"{sequence}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT PRIMARY KEY, CODE NUMBER(18,0) DEFAULT \"{sequence}\".NEXTVAL NOT NULL UNIQUE)");
+            cleanup.Add($"DROP TABLE \"{parent}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{child}\" (ID INT PRIMARY KEY, CODE NUMBER(18,0), FOREIGN KEY(CODE) REFERENCES \"{parent}\"(CODE))");
+            cleanup.Add($"DROP TABLE \"{child}\"");
+            var factory = CreateFactory();
+            var unreferenced = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [parent])).Tables);
+            Assert.NotNull(unreferenced.Columns[1].DefaultValueSql);
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [parent, child])));
+            Assert.Contains(parent, error.Message, StringComparison.Ordinal);
+            Assert.Contains("'CODE'", error.Message, StringComparison.Ordinal);
+            Assert.Contains("generated key", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
+    [DamengTheory]
+    [InlineData("DECIMAL(18,2)", false)]
+    [InlineData("NUMBER(18,0)", false)]
+    [InlineData("DECIMAL(18,2)", true)]
+    [InlineData("NUMBER(18,0)", true)]
+    public async Task FactoryRejectsNonIntegralSequencePrimaryKeys(string type, bool composite)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_SEQPK_{suffix}";
+        var ordinary = $"EF10_SEQNK_{suffix}";
+        var sequence = $"EF10_SEQPKS_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3");
+            cleanup.Add($"DROP SEQUENCE \"{sequence}\"");
+            var key = composite ? "N, ID" : "ID";
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID {type} DEFAULT \"{sequence}\".NEXTVAL, N INT NOT NULL, PRIMARY KEY({key}))");
+            cleanup.Add($"DROP TABLE \"{table}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID {type} DEFAULT \"{sequence}\".NEXTVAL, N INT PRIMARY KEY)");
+            cleanup.Add($"DROP TABLE \"{ordinary}\"");
+            // The source database can generate this key even though the provider cannot
+            // read it back through its supported generated-key strategies.
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" (N) VALUES (1)");
+            await using (var query = connection.CreateCommand())
+            {
+                query.CommandText = $"SELECT ID FROM \"{table}\"";
+                Assert.Equal(41m, Convert.ToDecimal(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            }
+
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains("'ID'", error.Message, StringComparison.Ordinal);
+            Assert.Contains("store type", error.Message, StringComparison.Ordinal);
+            Assert.Contains("exclude this table", error.Message, StringComparison.Ordinal);
+            var supported = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [ordinary])).Tables);
+            Assert.NotNull(supported.Columns[0].DefaultValueSql);
+            Assert.Null(supported.Columns[0][DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal("N", Assert.Single(supported.PrimaryKey!.Columns).Name);
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
     [DamengTheory]
     [InlineData("DECIMAL(18,2)")]
     [InlineData("NUMBER(18,0)")]

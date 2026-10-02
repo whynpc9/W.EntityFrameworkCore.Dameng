@@ -14,6 +14,53 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void ReferencedUniqueColumnsHaveTheSameGeneratedKeyRestriction()
+    {
+        var parent = new DatabaseTable { Name = "Parent" };
+        var column = new DatabaseColumn { Table = parent, Name = "Code", StoreType = "NUMBER(18,0)", DefaultValueSql = "\"S\".NEXTVAL" };
+        var child = new DatabaseTable { Name = "Child" };
+        var foreignKey = new DatabaseForeignKey { Table = child, PrincipalTable = parent, Name = "FK" };
+        foreignKey.PrincipalColumns.Add(column);
+        child.ForeignKeys.Add(foreignKey);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(child));
+        Assert.Contains("Parent", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Code", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("DECIMAL(18,2)", false)]
+    [InlineData("NUMBER(18,0)", false)]
+    [InlineData("NUMBER(18,0)", true)]
+    public void UnsupportedGeneratedPrimaryKeyIdentifiesItsColumn(string storeType, bool composite)
+    {
+        var table = new DatabaseTable { Name = "T" };
+        var column = new DatabaseColumn { Table = table, Name = "GeneratedId", StoreType = storeType, DefaultValueSql = "\"S\".NEXTVAL" };
+        table.PrimaryKey = new DatabasePrimaryKey { Table = table, Name = "PK_T" };
+        if (composite) table.PrimaryKey.Columns.Add(new DatabaseColumn { Table = table, Name = "Tenant", StoreType = "INT" });
+        table.PrimaryKey.Columns.Add(column);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(table));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("GeneratedId", error.Message, StringComparison.Ordinal);
+        Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+        Assert.Contains("exclude this table", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OrdinaryPrimaryKeysAndNonKeyDefaultsAreAllowed(bool usesSequence)
+    {
+        var table = new DatabaseTable { Name = "T" };
+        var id = new DatabaseColumn { Table = table, Name = "Id", StoreType = "BIGINT" };
+        if (usesSequence) id[DamengAnnotationNames.ValueGenerationStrategy] = DamengValueGenerationStrategy.Sequence;
+        table.PrimaryKey = new DatabasePrimaryKey { Table = table, Name = "PK_T" };
+        table.PrimaryKey.Columns.Add(id);
+        table.Columns.Add(id);
+        table.Columns.Add(new DatabaseColumn { Table = table, Name = "Amount", StoreType = "DECIMAL(18,2)", DefaultValueSql = "\"S\".NEXTVAL" });
+        DamengDatabaseModelFactory.ValidateKeyGeneration(table);
+    }
+
     [Theory]
     [InlineData("INT", true)]
     [InlineData("BIGINT", true)]
