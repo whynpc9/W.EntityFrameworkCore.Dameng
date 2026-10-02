@@ -8,6 +8,16 @@ internal sealed class DamengRelationalAnnotationProvider(
     RelationalAnnotationProviderDependencies dependencies)
     : RelationalAnnotationProvider(dependencies)
 {
+    public override IEnumerable<IAnnotation> For(IUniqueConstraint constraint, bool designTime)
+    {
+        if (designTime
+            && constraint.MappedKeys.FirstOrDefault(key => key.IsPrimaryKey())
+                ?.FindAnnotation(DamengAnnotationNames.IsClustered) is { } annotation)
+        {
+            yield return annotation;
+        }
+    }
+
     public override IEnumerable<IAnnotation> For(IColumn column, bool designTime)
     {
         if (!designTime)

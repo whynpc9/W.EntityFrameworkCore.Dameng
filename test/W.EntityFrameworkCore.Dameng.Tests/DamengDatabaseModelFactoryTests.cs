@@ -8,6 +8,18 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData("NORMAL", false)]
+    [InlineData("CLUSTER", true)]
+    public void PrimaryKeyClusteringIsReadFromTheBackingIndex(string indexType, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadPrimaryKeyClustering(indexType));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("UNKNOWN")]
+    public void UnknownPrimaryKeyClusteringIsRejected(string? indexType)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadPrimaryKeyClustering(indexType));
+
     [Fact]
     public void EnabledConstraintStateCanBeScaffolded()
         => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", "ENABLED");

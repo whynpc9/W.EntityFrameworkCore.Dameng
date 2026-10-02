@@ -11,6 +11,26 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengMigrationsSqlGeneratorTests
 {
     [Fact]
+    public void InvalidPrimaryKeyClusteringAnnotationIsRejected()
+    {
+        using var context = CreateContext();
+        var operation = new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["ID"] };
+        operation["Dameng:IsClustered"] = "yes";
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Theory]
+    [InlineData(true, "CLUSTER PRIMARY KEY")]
+    [InlineData(false, "NOT CLUSTER PRIMARY KEY")]
+    public void PrimaryKeyClusteringAnnotationIsExplicitInSql(bool clustered, string expected)
+    {
+        using var context = CreateContext();
+        var operation = new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["ID"] };
+        operation["Dameng:IsClustered"] = clustered;
+        Assert.Contains(expected + " (\"ID\")", GenerateSql(context, operation), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateTableGeneratesIdentityComputedAndRelationalConstraints()
     {
         using var context = CreateContext();

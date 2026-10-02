@@ -549,12 +549,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var command = CreateCommand(
             connection,
             """
-            SELECT C.CONSTRAINT_NAME, C.CONSTRAINT_TYPE, C.TABLE_NAME, CC.COLUMN_NAME, CC.POSITION
+            SELECT C.CONSTRAINT_NAME, C.CONSTRAINT_TYPE, C.TABLE_NAME, CC.COLUMN_NAME, CC.POSITION,
+                   I.INDEX_TYPE
             FROM ALL_CONSTRAINTS C
             INNER JOIN ALL_CONS_COLUMNS CC
                 ON CC.OWNER = C.OWNER
                 AND CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME
                 AND CC.TABLE_NAME = C.TABLE_NAME
+            LEFT JOIN ALL_INDEXES I
+                ON I.OWNER = C.OWNER AND I.TABLE_NAME = C.TABLE_NAME AND I.INDEX_NAME = C.INDEX_NAME
             WHERE C.OWNER = :schema
               AND C.CONSTRAINT_TYPE IN ('P', 'U')
             ORDER BY C.TABLE_NAME, C.CONSTRAINT_NAME, CC.POSITION
@@ -565,6 +568,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             string Name,
             string Type,
             DatabaseTable Table,
+            string? IndexType,
             List<string> Columns)>();
 
         using var reader = command.ExecuteReader();
@@ -589,14 +593,14 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     : default;
             if (constraint == default)
             {
-                constraint = (constraintName, constraintType, table, []);
+                constraint = (constraintName, constraintType, table, GetNullableString(reader, 5), []);
                 constraints.Add(constraint);
             }
 
             constraint.Columns.Add(columnName);
         }
 
-        foreach (var (name, type, table, columns) in constraints)
+        foreach (var (name, type, table, indexType, columns) in constraints)
         {
             if (type == "P")
             {
@@ -605,6 +609,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     Table = table,
                     Name = name
                 };
+                primaryKey[DamengAnnotationNames.IsClustered] = ReadPrimaryKeyClustering(indexType);
                 AddColumnsByName(table, columns, primaryKey.Columns);
                 table.PrimaryKey = primaryKey;
             }
@@ -620,6 +625,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
         }
     }
+
+    internal static bool ReadPrimaryKeyClustering(string? indexType)
+        => indexType switch
+        {
+            "CLUSTER" => true,
+            "NORMAL" => false,
+            _ => throw new NotSupportedException(
+                $"Cannot preserve Dameng primary-key clustering for backing index type '{indexType ?? "NULL"}'.")
+        };
 
     private static void AddColumnsByName(
         DatabaseTable table,

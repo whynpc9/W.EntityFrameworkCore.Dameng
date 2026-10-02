@@ -13,4 +13,6 @@ internal static class DamengAnnotationNames
     public const string SequenceName = Prefix + nameof(SequenceName);
 
     public const string SequenceSchema = Prefix + nameof(SequenceSchema);
+
+    public const string IsClustered = Prefix + nameof(IsClustered);
 }

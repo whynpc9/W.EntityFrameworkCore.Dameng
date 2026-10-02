@@ -1,6 +1,8 @@
 using System.Data.Common;
 using System.Globalization;
 using Dm;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
@@ -18,6 +20,74 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FactoryPreservesPrimaryKeyClusteringThroughGeneratedDdl(bool clustered)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_PKCS_{suffix}";
+        var target = $"EF10_PKCT_{suffix}";
+        var clause = clustered ? "CLUSTER PRIMARY KEY" : "NOT CLUSTER PRIMARY KEY";
+        var lob = clustered ? "" : ", NOTE CLOB";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT NOT NULL{lob}, {clause}(ID))");
+            created.Add(source);
+            var factory = new DamengDatabaseModelFactory();
+            var table = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
+            var actual = Assert.IsType<bool>(table.PrimaryKey![DamengAnnotationNames.IsClustered]);
+            Assert.Equal(clustered, actual);
+            await using var context = new ClusteringContext(target, actual);
+            var sql = context.Database.GenerateCreateScript();
+            Assert.Contains(clause, sql, StringComparison.Ordinal);
+            await DamengScriptExecutor.ExecuteAsync(connection, sql, false, text => text);
+            created.Add(target);
+            var copy = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [target])).Tables);
+            Assert.Equal(clustered, copy.PrimaryKey![DamengAnnotationNames.IsClustered]);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
+    private sealed class ClusteringContext(string table, bool clustered) : DbContext
+    {
+        public string Table => table;
+        public bool Clustered => clustered;
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+            => optionsBuilder.UseDameng(DamengTestEnvironment.GetRequiredConnectionString())
+                .ReplaceService<IModelCacheKeyFactory, ClusteringModelCacheKeyFactory>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.SharedTypeEntity<Dictionary<string, object>>("Row", entity =>
+            {
+                entity.ToTable(table);
+                entity.IndexerProperty<int>("ID").ValueGeneratedNever();
+                entity.HasKey("ID").HasAnnotation(DamengAnnotationNames.IsClustered, clustered);
+                if (!clustered)
+                {
+                    entity.IndexerProperty<string>("NOTE").HasColumnType("CLOB");
+                }
+            });
+    }
+
+    private sealed class ClusteringModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+            => context is ClusteringContext typed
+                ? (context.GetType(), typed.Table, typed.Clustered, designTime)
+                : (object)(context.GetType(), designTime);
+    }
+
     [DamengTheory]
     [InlineData("P")]
     [InlineData("U")]

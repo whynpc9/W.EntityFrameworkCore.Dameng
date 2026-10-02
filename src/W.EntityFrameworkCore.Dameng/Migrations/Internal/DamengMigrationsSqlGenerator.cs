@@ -78,6 +78,34 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             || string.Equals(first, "DECLARE", StringComparison.OrdinalIgnoreCase);
     }
 
+    protected override void PrimaryKeyConstraint(
+        AddPrimaryKeyOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder)
+    {
+        if (operation[DamengAnnotationNames.IsClustered] is not { } clustering)
+        {
+            base.PrimaryKeyConstraint(operation, model, builder);
+            return;
+        }
+
+        if (clustering is not bool clustered)
+        {
+            throw new NotSupportedException("Dameng primary-key clustering must be a Boolean annotation.");
+        }
+
+        if (operation.Name is not null)
+        {
+            builder.Append("CONSTRAINT ")
+                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name))
+                .Append(" ");
+        }
+
+        builder.Append(clustered ? "CLUSTER PRIMARY KEY (" : "NOT CLUSTER PRIMARY KEY (")
+            .Append(ColumnList(operation.Columns))
+            .Append(")");
+    }
+
     protected override void Generate(
         MigrationOperation operation,
         IModel? model,
