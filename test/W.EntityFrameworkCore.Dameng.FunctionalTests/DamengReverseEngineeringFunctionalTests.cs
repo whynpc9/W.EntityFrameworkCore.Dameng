@@ -25,6 +25,50 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task FactoryRejectsCompoundLocalSequenceDefaultsWithoutBlockingSimpleDefaults(bool qualified)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_CMP_{suffix}";
+        var simple = $"EF10_CMPS_{suffix}";
+        var sequence = $"EF10_CMPQ_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        var helper = context.GetService<ISqlGenerationHelper>();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var schema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        var reference = helper.DelimitIdentifier(sequence, qualified ? schema : null) + ".NEXTVAL";
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3");
+            cleanup.Add($"DROP SEQUENCE \"{sequence}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID BIGINT DEFAULT {reference} + 1, N INT)");
+            cleanup.Add($"DROP TABLE \"{table}\"");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{simple}\" (ID BIGINT DEFAULT {reference}, N INT)");
+            cleanup.Add($"DROP TABLE \"{simple}\"");
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" (N) VALUES (1)");
+            query.CommandText = $"SELECT ID FROM \"{table}\"";
+            Assert.Equal(42L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains("'ID'", error.Message, StringComparison.Ordinal);
+            Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
+            var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: [simple]));
+            Assert.Equal(sequence, Assert.Single(model.Sequences).Name);
+            Assert.Equal(DamengValueGenerationStrategy.Sequence, Assert.Single(model.Tables).Columns[0][DamengAnnotationNames.ValueGenerationStrategy]);
+        }
+        finally
+        {
+            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task SpacedNextValDefaultsKeepTheirLocalSequenceDefinition(bool qualified)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
@@ -2144,12 +2188,14 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
     }
 
-    [DamengFact]
-    public async Task FactoryKeepsRawDefaultForCrossSchemaSequenceReferences()
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FactoryKeepsRawDefaultForCrossSchemaSequenceReferences(bool compound)
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
         var otherSchema = $"EF10_RQ_{suffix}";
-        var sequenceName = $"EF10_RQS_{suffix}";
+        var sequenceName = compound ? "NEXTVAL" : $"EF10_RQS_{suffix}";
         var tableName = $"EF10_RQT_{suffix}";
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
@@ -2166,9 +2212,10 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 setup,
                 $"CREATE SEQUENCE \"{otherSchema}\".\"{sequenceName}\" START WITH 7 INCREMENT BY 2");
             sequenceCreated = true;
+            var suffixSql = compound ? " + 1" : "";
             await ExecuteAsync(
                 setup,
-                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"N\" INT DEFAULT \"{otherSchema}\".\"{sequenceName}\".NEXTVAL)");
+                $"CREATE TABLE \"{tableName}\" (\"ID\" INT NOT NULL PRIMARY KEY, \"N\" INT DEFAULT \"{otherSchema}\".\"{sequenceName}\".NEXTVAL{suffixSql})");
             tableCreated = true;
 
             var factory = CreateFactory();

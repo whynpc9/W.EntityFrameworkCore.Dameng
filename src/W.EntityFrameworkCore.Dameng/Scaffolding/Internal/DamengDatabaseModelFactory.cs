@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Storage.Internal;
 
 namespace W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 
@@ -323,10 +324,49 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
             else if (defaultValue is not null)
             {
+                ValidateCompoundSequenceDefault(tableName, columnName, defaultValue, schema);
                 column.DefaultValueSql = defaultValue;
             }
 
             table.Columns.Add(column);
+        }
+    }
+
+    internal static void ValidateCompoundSequenceDefault(string table, string column, string sql, string schema)
+    {
+        if (!sql.Contains("NEXTVAL", StringComparison.OrdinalIgnoreCase)
+            && !sql.Contains("CURRVAL", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var tokens = DamengSqlLexer.Read(sql).ToList();
+        for (var index = 2; index < tokens.Count; index++)
+        {
+            var value = tokens[index].Text;
+            if (value.StartsWith('"'))
+            {
+                value = NormalizeIdentifier(value);
+            }
+            if (!(value.Equals("NEXTVAL", StringComparison.OrdinalIgnoreCase)
+                    || value.Equals("CURRVAL", StringComparison.OrdinalIgnoreCase))
+                || tokens[index - 1].Text != "."
+                || (index + 1 < tokens.Count && tokens[index + 1].Text is "(" or "."))
+            {
+                continue;
+            }
+
+            var start = index >= 4 && tokens[index - 3].Text == "." ? index - 4 : index - 2;
+            // Reuse identifier parsing; substitute NEXTVAL only to recognize CURRVAL's
+            // dependency, never to rewrite or execute its default expression.
+            var reference = string.Concat(tokens.Skip(start).Take(index - start).Select(token => token.Text)) + "NEXTVAL";
+            if (TryParseSequenceDefault(reference, out var name, out var owner)
+                && (owner is null || string.Equals(owner, schema, StringComparison.Ordinal)))
+            {
+                throw new NotSupportedException(
+                    $"Dameng table or view '{table}' column '{column}' has an unsupported default referencing local sequence '{name}'. "
+                    + "Reverse engineering supports only simple local NEXTVAL defaults; exclude this object.");
+            }
         }
     }
 

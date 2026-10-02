@@ -31,6 +31,9 @@ metadata:
 
 `dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。选中表/视图的列必须可由注册的提供程序类型映射源按存储类型映射，否则点名对象、列和类型并明确拒绝，避免脚手架静默丢列。HUGE 等非普通原生表类型、全局临时表、分区表与选中表上的表达式/函数索引、位图等专用索引、表/视图触发器（含禁用）、用户 CHECK、AUTO_INCREMENT、虚拟计算列、DEFAULT ON NULL、ON UPDATE、禁用或延迟/未验证主键/唯一/外键、独立用户聚集索引和聚集唯一约束在反向工程时明确拒绝；这不影响显式模型生成 CHECK 或虚拟列迁移 DDL。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
 
+复合或其他未支持默认值若引用未限定/当前模式的 NEXTVAL/CURRVAL，反向工程明确拒绝；
+字符串、注释和已限定外模式引用保留原处理边界。
+
 本地 NEXTVAL 识别允许限定点号两侧的空白，引用名称内部不改写；用目录模式限定；只有兼容的整数 CLR 类型使用序列策略，非整数列保留限定默认 SQL，序列定义仍保留；默认 SQL 列若参与主键或被选中外键引用成候选键，且无支持的键生成策略，则反向工程明确拒绝，普通非键列继续支持。
 
 IDENTITY 反向工程只接受映射为 int/long 的列。达梦服务器可有 DEC(n,0) IDENTITY，

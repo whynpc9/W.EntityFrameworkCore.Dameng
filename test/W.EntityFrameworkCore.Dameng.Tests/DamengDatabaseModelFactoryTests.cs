@@ -15,6 +15,36 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData("Seq.NEXTVAL + 1")]
+    [InlineData("(Seq.NEXTVAL)")]
+    [InlineData("COALESCE(APP.Seq.NEXTVAL, 1)")]
+    [InlineData("\"APP\" /* a */ . \"Seq\" . NEXTVAL * 2")]
+    [InlineData("Seq.CURRVAL + 1")]
+    [InlineData("APP.Seq.\"NEXTVAL\" + 1")]
+    [InlineData("Seq.\"CURRVAL\" + 1")]
+    [InlineData("OTHER.Seq.NEXTVAL + APP.Seq.NEXTVAL")]
+    [InlineData("APP.\"NEXTVAL\".NEXTVAL + 1")]
+    public void CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(string sql)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateCompoundSequenceDefault("T", "C", sql, "APP"));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("sequence", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("'Seq.NEXTVAL + 1'")]
+    [InlineData("'O''Brien.Seq.NEXTVAL'")]
+    [InlineData("1 /* Seq.NEXTVAL */")]
+    [InlineData("1 -- Seq.NEXTVAL")]
+    [InlineData("OTHER.Seq.NEXTVAL + 1")]
+    [InlineData("OTHER.\"NEXTVAL\".NEXTVAL + 1")]
+    [InlineData("pkg.NEXTVAL()")]
+    [InlineData("CURRENT_TIMESTAMP")]
+    public void SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(string sql)
+        => DamengDatabaseModelFactory.ValidateCompoundSequenceDefault("T", "C", sql, "APP");
+
+    [Theory]
     [InlineData("OTHER")]
     [InlineData(null)]
     public void ExternalForeignKeysCannotBeReturnedWithoutTheirRelationship(string? principalSchema)
