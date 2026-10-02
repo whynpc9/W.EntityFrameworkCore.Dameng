@@ -161,7 +161,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT TABLE_NAME, TEMPORARY, PARTITIONED FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME");
+            "SELECT T.TABLE_NAME, T.TEMPORARY, T.PARTITIONED, O.INFO3 FROM ALL_TABLES T "
+            + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = T.OWNER AND S.TYPE$ = 'SCH' "
+            + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = T.TABLE_NAME "
+            + "AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
+            + "WHERE T.OWNER = :schema ORDER BY T.TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var tables = new List<DatabaseTable>();
@@ -175,6 +179,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             ValidateTableKind(name, GetNullableString(reader, 1), GetNullableString(reader, 2));
+            ValidateNativeTableKind(name, GetNullableInt64(reader, 3));
             tables.Add(
                 new DatabaseTable
                 {
@@ -200,6 +205,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             throw new NotSupportedException(
                 $"Dameng table '{table}' has unsupported PARTITIONED marker '{partitioned ?? "NULL"}'. "
                 + "Reverse engineering cannot preserve partition definitions; exclude this table.");
+        }
+    }
+
+    internal static void ValidateNativeTableKind(string table, long? info3)
+    {
+        // INFO3's low six bits identify the native table kind. HUGE tables are still UTAB
+        // objects and can report TEMPORARY=N/PARTITIONED=NO. Only ordinary kind 0 is modeled.
+        var kind = info3 & 0x3FL;
+        if (kind != 0)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' has unsupported native table kind '{kind?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve HUGE or other non-ordinary table definitions; exclude this table.");
         }
     }
 

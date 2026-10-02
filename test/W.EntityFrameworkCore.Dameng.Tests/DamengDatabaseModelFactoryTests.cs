@@ -8,6 +8,27 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(256L)]
+    [InlineData(4294967296L)]
+    public void OrdinaryNativeTableKindIgnoresUnrelatedHigherBits(long info3)
+        => DamengDatabaseModelFactory.ValidateNativeTableKind("T", info3);
+
+    [Theory]
+    [InlineData(0x13L)]
+    [InlineData(0x21L)]
+    [InlineData(0x27L)]
+    [InlineData(0x121L)]
+    [InlineData(0x3FL)]
+    [InlineData(null)]
+    public void HugeOrUnknownNativeTableKindIsRejected(long? info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateNativeTableKind("T", info3));
+        Assert.Contains("HUGE", error.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void PermanentTableKindCanBeScaffolded()
         => DamengDatabaseModelFactory.ValidateTableKind("T", "N", "NO");

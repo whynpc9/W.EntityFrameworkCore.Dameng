@@ -8,6 +8,10 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Xunit;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+
+#pragma warning disable EF1001 // Tests intentionally inspect provider design-time contracts.
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
@@ -23,6 +27,56 @@ public sealed class DamengMigrationScriptFunctionalTests
     {
         _database = database;
         _output = output;
+    }
+
+    [DamengFact]
+    public async Task ScaffoldedMigrationRejectsHugeTableInsteadOfCreatingAnOrdinaryTable()
+    {
+        await _database.EnableHugeStorageAsync();
+        var prefix = NewPrefix();
+        var huge = prefix + "_HUGE";
+        var ordinary = prefix + "_ROW";
+        await using var connection = await _database.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE HUGE TABLE \"{huge}\" (ID INT) STORAGE(WITH DELTA, FILESIZE(16))");
+            created.Add(huge);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT PRIMARY KEY)");
+            created.Add(ordinary);
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT T.TEMPORARY, T.PARTITIONED, O.SUBTYPE$, O.INFO3 "
+                    + "FROM USER_TABLES T INNER JOIN SYS.SYSOBJECTS O ON O.NAME = T.TABLE_NAME "
+                    + "AND O.SCHID = CURRENT_SCHID() AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
+                    + "WHERE T.TABLE_NAME = :name";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = huge;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("N", reader.GetString(0));
+                Assert.Equal("NO", reader.GetString(1));
+                Assert.Equal("UTAB", reader.GetString(2));
+                Assert.InRange(Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture) & 0x3FL, 0x21L, 0x27L);
+            }
+
+            var factory = new DamengDatabaseModelFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [huge])));
+            Assert.Contains(huge, error.Message, StringComparison.Ordinal);
+            Assert.Contains("HUGE", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
     }
 
     [DamengFact]
