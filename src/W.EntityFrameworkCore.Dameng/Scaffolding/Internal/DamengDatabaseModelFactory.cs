@@ -79,6 +79,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
+            ValidateConstraintStates(connection, currentSchema, tableLookup);
 
             var pendingSequenceDefaults = new List<PendingSequenceDefault>();
             LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults);
@@ -506,6 +507,38 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         return (
             Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
             Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture));
+    }
+
+    private static void ValidateConstraintStates(
+        DbConnection connection,
+        string schema,
+        Dictionary<string, DatabaseTable> tables)
+    {
+        using var command = CreateCommand(
+            connection,
+            "SELECT TABLE_NAME, CONSTRAINT_NAME, STATUS FROM ALL_CONSTRAINTS "
+            + "WHERE OWNER = :schema AND CONSTRAINT_TYPE IN ('P', 'U', 'R')");
+        AddParameter(command, "schema", schema);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var table = reader.GetString(0);
+            if (tables.ContainsKey(table))
+            {
+                ValidateConstraintState(table, reader.GetString(1), GetNullableString(reader, 2));
+            }
+        }
+    }
+
+    internal static void ValidateConstraintState(string table, string constraint, string? status)
+    {
+        if (!string.Equals(status, "ENABLED", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng constraint '{constraint}' on table '{table}' has unsupported state '{status ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve disabled or unknown constraint states. "
+                + "Exclude this table or explicitly enable the constraint before scaffolding.");
+        }
     }
 
     private static void LoadConstraints(

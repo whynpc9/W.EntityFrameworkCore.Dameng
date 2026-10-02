@@ -78,12 +78,57 @@ internal static class DamengScriptExecutor
             {
                 hasStatement = true;
                 anonymous = word is "BEGIN" or "DECLARE";
+                if (word == "CREATE")
+                {
+                    var kind = index + 1;
+                    if (kind + 1 < tokens.Count
+                        && tokens[kind].Text.Equals("OR", StringComparison.OrdinalIgnoreCase)
+                        && tokens[kind + 1].Text.Equals("REPLACE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        kind += 2;
+                    }
+
+                    if (kind < tokens.Count && tokens[kind].Text.ToUpperInvariant()
+                        is "PROCEDURE" or "FUNCTION" or "TRIGGER" or "PACKAGE")
+                    {
+                        throw new NotSupportedException(
+                            "The test script executor does not split CREATE routine/package/trigger bodies. "
+                            + "Execute the complete definition as one command instead.");
+                    }
+                }
             }
 
             if (anonymous)
             {
-                if (word is "BEGIN" or "CASE")
+                if (word == "DECLARE")
                 {
+                    stack.Push("DECLARE");
+                }
+                else if (word is "PROCEDURE" or "FUNCTION"
+                    && stack.TryPeek(out var scope) && scope == "DECLARE")
+                {
+                    // A local routine owns a declaration region and body of its own. Its
+                    // END must leave the containing DECLARE region on the stack.
+                    stack.Push("ROUTINE_HEADER");
+                }
+                else if (word is "IS" or "AS"
+                    && stack.TryPeek(out var header) && header == "ROUTINE_HEADER")
+                {
+                    stack.Pop();
+                    stack.Push("DECLARE");
+                }
+                else if (word == ";" && stack.TryPeek(out var forward) && forward == "ROUTINE_HEADER")
+                {
+                    // Forward declaration with no body.
+                    stack.Pop();
+                }
+                else if (word is "BEGIN" or "CASE")
+                {
+                    if (word == "BEGIN" && stack.TryPeek(out var declaration) && declaration == "DECLARE")
+                    {
+                        stack.Pop();
+                    }
+
                     stack.Push(word);
                     bodySeen |= word == "BEGIN";
                 }

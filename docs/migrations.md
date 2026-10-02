@@ -205,6 +205,8 @@ SQL> START /path/migrate.sql
 应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送；
 块可以嵌套（历史记录守卫内的 `EnsureSchema` 守卫块）。解析时忽略引号/注释中的关键字，按词法 token 配对，保留 `DECLARE` 声明和前导注释；同一行可以有多个关键字。区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束，不要在内层 `END;` 处提前截断。
 
+本仓库测试执行器支持匿名块的变量声明、局部过程/函数声明及其嵌套体，但不是完整 DMSQL 脚本解析器。`CREATE PROCEDURE/FUNCTION/TRIGGER/PACKAGE` 定义明确拒绝拆批；这类定义应作为完整命令交给相应执行器，不按内部的分号拆开。
+
 脚本正文里如果出现 `&`，DIsql 会把它当成替换变量。执行前在会话里运行 `SET DEFINE OFF`。
 
 执行后查询 `__EFMigrationsHistory`（或工厂里配置的历史表），确认 `MigrationId` 与这次的 `To` 一致。

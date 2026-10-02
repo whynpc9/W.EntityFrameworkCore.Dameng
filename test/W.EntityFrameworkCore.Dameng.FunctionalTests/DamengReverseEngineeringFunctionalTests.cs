@@ -18,6 +18,54 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData("P")]
+    [InlineData("U")]
+    [InlineData("R")]
+    public async Task FactoryRejectsDisabledConstraintsOnlyOnSelectedTables(string kind)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = $"EF10_CSP_{suffix}";
+        var table = $"EF10_CST_{suffix}";
+        var constraint = $"EF10_CSC_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT NOT NULL, NOT CLUSTER PRIMARY KEY(ID))");
+            created.Add(parent);
+            var definition = kind switch
+            {
+                "P" => "NOT CLUSTER PRIMARY KEY(ID)",
+                "U" => "UNIQUE(ID)",
+                _ => $"FOREIGN KEY(ID) REFERENCES \"{parent}\"(ID)"
+            };
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT NOT NULL, CONSTRAINT \"{constraint}\" {definition})");
+            created.Add(table);
+            var factory = new DamengDatabaseModelFactory();
+            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+            await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DISABLE CONSTRAINT \"{constraint}\"");
+
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(
+                connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(constraint, error.Message, StringComparison.Ordinal);
+            Assert.Contains("DISABLED", error.Message, StringComparison.Ordinal);
+            Assert.Equal(parent, Assert.Single(factory.Create(
+                connection, new DatabaseModelFactoryOptions(tables: [parent])).Tables).Name);
+
+            await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" ENABLE CONSTRAINT \"{constraint}\"");
+            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            }
+        }
+    }
+
     [DamengFact]
     public async Task FactoryNormalizesUnquotedFiltersAndPreservesQuotedCase()
     {

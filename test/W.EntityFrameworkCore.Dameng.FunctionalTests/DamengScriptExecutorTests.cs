@@ -16,6 +16,10 @@ public sealed class DamengScriptExecutorTests
     [InlineData("BEGIN CASE WHEN 1=1 THEN NULL; END CASE; END;")]
     [InlineData("BEGIN /* block\n/\nEND; ' */ NULL; END;")]
     [InlineData("BEGIN -- quote ' in comment\n NULL; END;")]
+    [InlineData("DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN NULL; END;")]
+    [InlineData("DECLARE PROCEDURE p; PROCEDURE p IS BEGIN NULL; END p; BEGIN p; END;")]
+    [InlineData("DECLARE PROCEDURE p IS PROCEDURE q IS BEGIN NULL; END; BEGIN q; END; BEGIN p; END;")]
+    [InlineData("DECLARE FUNCTION f RETURN INT IS BEGIN RETURN CASE WHEN 1=1 THEN 1 ELSE 2 END; END; BEGIN NULL; END;")]
     public void SplitRecognizesTokensAndPreservesBlockComments(string block)
     {
         foreach (var idempotent in new[] { false, true })
@@ -40,6 +44,14 @@ public sealed class DamengScriptExecutorTests
     [InlineData("SELECT 'unterminated")]
     public void SplitRejectsIncompleteCommands(string script)
         => Assert.Throws<InvalidOperationException>(() => DamengScriptExecutor.SplitStatements(script));
+
+    [Theory]
+    [InlineData("CREATE PROCEDURE p AS BEGIN NULL; END;")]
+    [InlineData("CREATE OR REPLACE FUNCTION f RETURN INT AS BEGIN RETURN 1; END;")]
+    [InlineData("CREATE TRIGGER t AFTER INSERT ON x BEGIN NULL; END;")]
+    [InlineData("CREATE PACKAGE p AS PROCEDURE q; END;")]
+    public void SplitRejectsStoredDefinitionsBeforeReturningPartialCommands(string definition)
+        => Assert.Throws<NotSupportedException>(() => DamengScriptExecutor.SplitStatements("SELECT 1 FROM dual;" + definition));
 
     [Fact]
     public void IdempotentSplitKeepsNestedGuardBlocksAsSingleBatches()

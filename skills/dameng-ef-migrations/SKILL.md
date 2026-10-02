@@ -69,6 +69,8 @@ disql 可以直接跑带 `/` 的文件。ADO.NET 不能把 `/` 放进 `CommandTe
 3. 每个片段里，`BEGIN` 之前的语句按分号执行。
 4. 从 `BEGIN` 或 `DECLARE` 到配平的 `END;` 作为一条命令执行，连同紧邻的前导注释一起保留。按引号/注释外的词法 token 识别，不能要求关键字独占一行；区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束。块内允许再嵌套 `BEGIN ... END;`。
 
+本仓库测试执行器支持匿名块的变量声明、局部过程/函数声明及其嵌套体，但不是完整 DMSQL 脚本解析器。`CREATE PROCEDURE/FUNCTION/TRIGGER/PACKAGE` 定义明确拒绝拆批；这类定义应作为完整命令交给相应执行器，不按内部的分号拆开。
+
 同一脚本执行第二遍应保持种子一行、每个 `MigrationId` 一行。单条动态 SQL 转义后的 UTF-8 超过 32767 字节时，生成阶段会抛 `NotSupportedException`，把 migration 拆小。自定义 `migrationBuilder.Sql(...)` 里不能出现单独一行 `/`。
 
 ## 本次执行通过的模型

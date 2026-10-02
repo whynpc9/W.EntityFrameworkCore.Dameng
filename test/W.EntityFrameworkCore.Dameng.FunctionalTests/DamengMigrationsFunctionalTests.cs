@@ -33,7 +33,8 @@ public sealed class DamengMigrationsFunctionalTests
                 var operations = new MigrationOperation[]
                 {
                     new SqlOperation { Sql = $"-- leading ' comment\nBEGIN -- inline\n INSERT INTO \"{name}\" VALUES (1); END;", SuppressTransaction = true },
-                    new SqlOperation { Sql = $"/* leading block comment */ DECLARE v INT; BEGIN v := 2; INSERT INTO \"{name}\" VALUES (v); END;", SuppressTransaction = true }
+                    new SqlOperation { Sql = $"/* leading block comment */ DECLARE v INT; BEGIN v := 2; INSERT INTO \"{name}\" VALUES (v); END;", SuppressTransaction = true },
+                    new SqlOperation { Sql = $"DECLARE PROCEDURE p IS BEGIN INSERT INTO \"{name}\" VALUES (3); END; BEGIN p; END;", SuppressTransaction = true }
                 };
                 var commands = generator.Generate(operations, options: MigrationsSqlGenerationOptions.Script
                     | (idempotent ? MigrationsSqlGenerationOptions.Idempotent : MigrationsSqlGenerationOptions.Default));
@@ -48,7 +49,7 @@ public sealed class DamengMigrationsFunctionalTests
 
             await using var count = connection.CreateCommand();
             count.CommandText = $"SELECT COUNT(*) FROM \"{name}\"";
-            Assert.Equal(4L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            Assert.Equal(6L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
         }
         finally
         {

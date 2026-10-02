@@ -8,6 +8,22 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void EnabledConstraintStateCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", "ENABLED");
+
+    [Theory]
+    [InlineData("DISABLED")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void UnsupportedConstraintStateFailsExplicitly(string? status)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", status));
+        Assert.Contains("PK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Exclude this table", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     // Character types keep their declared length semantics.
     [InlineData("VARCHAR", 30, null, null, 30, "B", "VARCHAR(30)")]
