@@ -43,6 +43,8 @@ IDENTITY 反向工程只接受映射为 int/long 的列。达梦服务器可有 
 表过滤只限制表/视图，不限制序列，序列目录只绑定一个模式参数。
 反向工程本地序列仅接受 CACHE_SIZE=0、ORDER_FLAG=N；缓存序列与 ORDER 序列明确拒绝。任何不可表示的当前模式序列都会阻止整个模型返回，不能靠表过滤绕过。
 CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设置。
+序列最小值须小于最大值；非循环续号越界拒绝。循环目录续号若是从界内前值沿增量方向迈出的一步，
+按循环规则从另一端重建起点；其余不一致状态拒绝。
 
 反向工程按目录保留显式 CHAR/BYTE 单位。BYTE 仅支持 CHAR/VARCHAR/VARCHAR2，
 提供程序生成的建表/加列/改列 DDL 先检查 SF_GET_LENGTH_IN_CHAR()=0，否则拒绝；

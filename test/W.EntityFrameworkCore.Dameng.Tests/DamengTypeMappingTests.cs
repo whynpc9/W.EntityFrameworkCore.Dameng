@@ -175,6 +175,9 @@ public sealed class DamengTypeMappingTests
     [InlineData("VARCHAR2(9 BYTE)")]
     [InlineData("CHAR(9 BYTE)")]
     [InlineData("varchar( 9 byte )")]
+    [InlineData("VARCHAR2 (9 BYTE)")]
+    [InlineData("CHAR  (9 BYTE)")]
+    [InlineData("varchar\t(9 byte)")]
     public void ByteQualifiedStoreTypesKeepTheirUnitAndLength(string storeType)
     {
         using var context = CreateContext();
@@ -188,7 +191,23 @@ public sealed class DamengTypeMappingTests
     }
 
     [Theory]
+    [InlineData("VARCHAR2 (9 CHAR)")]
+    [InlineData("CHAR  (9 CHAR)")]
+    [InlineData("varchar\t(9 char)")]
+    public void CharacterLengthSemanticsAllowWhitespaceBeforeParenthesis(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(9, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+    }
+
+    [Theory]
     [InlineData("NVARCHAR2(9 BYTE)")]
+    [InlineData("NVARCHAR2 (9 BYTE)")]
+    [InlineData("INT (9 BYTE)")]
     [InlineData("NCHAR(9 BYTE)")]
     [InlineData("INT(9 BYTE)")]
     public void ByteQualifierSupportDoesNotExpandToOtherStoreTypes(string storeType)

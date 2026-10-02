@@ -555,6 +555,23 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             throw new NotSupportedException($"Dameng local sequence '{name}' has an unknown cycle flag.");
         }
 
+        // NOCACHE cyclic sequences can report the next arithmetic value before wrapping.
+        // Normalize only a single valid step past the appropriate boundary. Decimal
+        // subtraction avoids overflow near Int64 limits while checking the previous value.
+        var previousValue = (decimal)startValue - increment;
+        if (cyclic == "Y" && previousValue >= minValue && previousValue <= maxValue)
+        {
+            if (increment > 0 && startValue > maxValue) startValue = minValue;
+            else if (increment < 0 && startValue < minValue) startValue = maxValue;
+        }
+
+        if (minValue >= maxValue || startValue < minValue || startValue > maxValue)
+        {
+            throw new NotSupportedException(
+                $"Dameng local sequence '{name}' has an exhausted or inconsistent continuation outside its valid bounds. "
+                + "Reverse engineering cannot preserve this sequence state.");
+        }
+
         if (!TryReadInt64Facet(reader, 6, out var cacheSize) || cacheSize != 0
             || reader.GetValue(7) as string != "N")
         {

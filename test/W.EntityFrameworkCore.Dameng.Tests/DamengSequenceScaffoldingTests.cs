@@ -42,6 +42,55 @@ public sealed class DamengSequenceScaffoldingTests
         Assert.True(sequence.IsCyclic);
     }
 
+    [Theory]
+    [InlineData(1L, 1000L, 0L)]
+    [InlineData(1L, 1000L, 1001L)]
+    [InlineData(1000L, 1L, 41L)]
+    [InlineData(41L, 41L, 41L)]
+    public void InvalidSequenceBoundsOrContinuationCannotBeRecreated(long min, long max, long start)
+    {
+        using var table = CreateRow(1L, min, max, "N", start);
+        using var reader = table.CreateDataReader();
+        Assert.True(reader.Read());
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadSequenceRecord(reader, "APP"));
+        Assert.Contains("Seq", error.Message, StringComparison.Ordinal);
+        Assert.Contains("bounds", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1L)]
+    [InlineData(1000L)]
+    public void SequenceContinuationAtEitherBoundIsStillRepresentable(long start)
+    {
+        using var table = CreateRow(1L, 1L, 1000L, "N", start);
+        using var reader = table.CreateDataReader();
+        Assert.True(reader.Read());
+        Assert.Equal(start, DamengDatabaseModelFactory.ReadSequenceRecord(reader, "APP").StartValue);
+    }
+
+    [Theory]
+    [InlineData(3L, 1001L, 1L)]
+    [InlineData(-3L, -1L, 1000L)]
+    public void CyclicContinuationOneStepPastTheBoundaryWraps(long increment, long start, long expected)
+    {
+        using var table = CreateRow(increment, 1L, 1000L, "Y", start);
+        using var reader = table.CreateDataReader();
+        Assert.True(reader.Read());
+        Assert.Equal(expected, DamengDatabaseModelFactory.ReadSequenceRecord(reader, "APP").StartValue);
+    }
+
+    [Theory]
+    [InlineData(3L, 0L)]
+    [InlineData(-3L, 1001L)]
+    [InlineData(3L, 2000L)]
+    public void InconsistentCyclicContinuationIsNotSilentlyNormalized(long increment, long start)
+    {
+        using var table = CreateRow(increment, 1L, 1000L, "Y", start);
+        using var reader = table.CreateDataReader();
+        Assert.True(reader.Read());
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadSequenceRecord(reader, "APP"));
+    }
+
     public static TheoryData<int, object> InvalidFacets => new()
     {
         { 1, (long)int.MaxValue + 1 },

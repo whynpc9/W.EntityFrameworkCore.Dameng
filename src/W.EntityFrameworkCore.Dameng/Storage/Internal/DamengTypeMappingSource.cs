@@ -217,7 +217,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             size = int.Parse(
                 charSemanticsMatch.Groups["size"].Value,
                 CultureInfo.InvariantCulture);
-            return charSemanticsMatch.Groups["name"].Value;
+            return charSemanticsMatch.Groups["name"].Value.Trim();
         }
 
         return base.ParseStoreTypeName(trimmedStoreType, ref unicode, ref size, ref precision, ref scale);

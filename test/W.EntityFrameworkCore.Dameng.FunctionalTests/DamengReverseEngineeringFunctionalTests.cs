@@ -23,6 +23,97 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CyclicSequenceAtBoundaryKeepsItsWrappedContinuation(bool descending)
+    {
+        var schema = "EF10_CYCLE_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var originalSchema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+        try
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+            var boundary = descending ? 1 : 3;
+            var next = descending ? 3 : 1;
+            await ExecuteAsync(connection, $"CREATE SEQUENCE CYCLIC_SEQ START WITH {boundary} INCREMENT BY {(descending ? -1 : 1)} MINVALUE 1 MAXVALUE 3 CYCLE NOCACHE NOORDER");
+            query.CommandText = "SELECT CYCLIC_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(boundary, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT LAST_NUMBER FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND SEQUENCE_NAME='CYCLIC_SEQ'";
+            Assert.Equal(descending ? 0 : 4, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            var item = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions()).Sequences);
+            Assert.True(item.IsCyclic);
+            Assert.Equal(next, item.StartValue);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var copy = new CreateSequenceOperation
+            {
+                Name = "COPY_SEQ",
+                Schema = schema,
+                ClrType = typeof(long),
+                StartValue = item.StartValue!.Value,
+                IncrementBy = item.IncrementBy!.Value,
+                MinValue = item.MinValue,
+                MaxValue = item.MaxValue,
+                IsCyclic = true
+            };
+            foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate([copy])) await ExecuteAsync(connection, command.CommandText);
+            query.CommandText = "SELECT CYCLIC_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(next, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT COPY_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(next, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExhaustedSequenceContinuationIsRejectedBeforeGeneratingInvalidDdl(bool descending)
+    {
+        var schema = "EF10_EXH_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var originalSchema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+        try
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+            var boundary = descending ? 1 : 3;
+            await ExecuteAsync(connection, $"CREATE SEQUENCE EXHAUSTED_SEQ START WITH {boundary} INCREMENT BY {(descending ? -1 : 1)} MINVALUE 1 MAXVALUE 3 NOCYCLE NOCACHE NOORDER");
+            Assert.Equal(boundary, Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions()).Sequences).StartValue);
+            query.CommandText = "SELECT EXHAUSTED_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(boundary, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT LAST_NUMBER FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER=:schema AND SEQUENCE_NAME='EXHAUSTED_SEQ'";
+            var parameter = query.CreateParameter();
+            parameter.ParameterName = "schema";
+            parameter.Value = schema;
+            query.Parameters.Add(parameter);
+            var continuation = Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            Assert.True(descending ? continuation < 1 : continuation > 3, $"LAST_NUMBER={continuation}");
+            var error = Assert.Throws<NotSupportedException>(() => CreateFactory().Create(connection, new DatabaseModelFactoryOptions()));
+            Assert.Contains("EXHAUSTED_SEQ", error.Message, StringComparison.Ordinal);
+            Assert.Contains("bounds", error.Message, StringComparison.Ordinal);
+            query.Parameters.Clear();
+            query.CommandText = "SELECT EXHAUSTED_SEQ.NEXTVAL FROM dual";
+            await Assert.ThrowsAsync<DmException>(() => query.ExecuteScalarAsync());
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+        }
+    }
+
+    [DamengTheory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(true, true)]
@@ -599,10 +690,13 @@ public sealed class DamengReverseEngineeringFunctionalTests
     }
 
     [DamengTheory]
-    [InlineData("VARCHAR")]
-    [InlineData("VARCHAR2")]
-    [InlineData("CHAR")]
-    public async Task ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(string type)
+    [InlineData("VARCHAR", false)]
+    [InlineData("VARCHAR2", false)]
+    [InlineData("CHAR", false)]
+    [InlineData("VARCHAR", true)]
+    [InlineData("VARCHAR2", true)]
+    [InlineData("CHAR", true)]
+    public async Task ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(string type, bool spacedStoreType)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         var source = $"EF10_BSRC_{suffix}";
@@ -622,12 +716,16 @@ public sealed class DamengReverseEngineeringFunctionalTests
             var operation = new CreateTableOperation { Name = copy };
             foreach (var column in table.Columns)
             {
+                var storeType = spacedStoreType ? column.StoreType!.Replace("(", " (", StringComparison.Ordinal) : column.StoreType!;
+                var mapping = context.GetService<IRelationalTypeMappingSource>().FindMapping(storeType);
+                Assert.NotNull(mapping);
+                Assert.Equal(9, mapping.Size);
                 operation.Columns.Add(new AddColumnOperation
                 {
                     Table = copy,
                     Name = column.Name,
                     ClrType = typeof(string),
-                    ColumnType = column.StoreType,
+                    ColumnType = storeType,
                     IsNullable = true
                 });
             }
