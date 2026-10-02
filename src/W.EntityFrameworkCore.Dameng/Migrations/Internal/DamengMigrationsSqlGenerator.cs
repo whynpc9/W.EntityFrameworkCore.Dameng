@@ -117,7 +117,8 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         {
             throw new NotSupportedException(
                 "The Dameng provider does not support adding or restoring IDENTITY on an existing column. "
-                + "Drop and recreate the column instead.");
+                + "This change requires a reviewed migration plan that preserves existing data. "
+                + "Dropping and recreating a column does not preserve existing data.");
         }
 
         if (IsIdentity(operation)
@@ -126,7 +127,8 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         {
             throw new NotSupportedException(
                 "The Dameng provider does not support changing an identity column's seed or increment with ALTER COLUMN. "
-                + "Drop and recreate the column instead.");
+                + "This change requires a reviewed migration plan that preserves existing data. "
+                + "Dropping and recreating a column does not preserve existing data.");
         }
 
         if (operation.ComputedColumnSql != operation.OldColumn.ComputedColumnSql

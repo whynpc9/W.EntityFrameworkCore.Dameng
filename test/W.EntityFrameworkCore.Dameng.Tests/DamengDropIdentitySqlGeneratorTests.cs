@@ -65,6 +65,9 @@ public sealed class DamengDropIdentitySqlGeneratorTests
         var down = Assert.IsType<AlterColumnOperation>(Assert.Single(differ.GetDifferences(targetModel, sourceModel)));
         var exception = Assert.Throws<NotSupportedException>(() => target.GetService<IMigrationsSqlGenerator>().Generate([down]));
         Assert.Contains("adding or restoring IDENTITY", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("reviewed migration plan that preserves existing data", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Dropping and recreating a column does not preserve existing data", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Drop and recreate the column instead", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
