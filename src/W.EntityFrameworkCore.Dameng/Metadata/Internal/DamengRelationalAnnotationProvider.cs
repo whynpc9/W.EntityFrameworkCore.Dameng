@@ -8,6 +8,27 @@ internal sealed class DamengRelationalAnnotationProvider(
     RelationalAnnotationProviderDependencies dependencies)
     : RelationalAnnotationProvider(dependencies)
 {
+    public override IEnumerable<IAnnotation> For(ITable table, bool designTime)
+    {
+        if (!designTime)
+        {
+            yield break;
+        }
+
+        var annotations = table.EntityTypeMappings
+            .Select(mapping => mapping.TypeBase.FindAnnotation(DamengAnnotationNames.IsClusterBtree))
+            .Where(annotation => annotation is not null).ToList();
+        if (annotations.Any(annotation => annotation!.Value is not true))
+        {
+            throw new NotSupportedException("Dameng table storage annotation supports only CLUSTERBTR (true).");
+        }
+
+        if (annotations.Count > 0)
+        {
+            yield return new Annotation(DamengAnnotationNames.IsClusterBtree, true);
+        }
+    }
+
     public override IEnumerable<IAnnotation> For(IUniqueConstraint constraint, bool designTime)
     {
         if (designTime

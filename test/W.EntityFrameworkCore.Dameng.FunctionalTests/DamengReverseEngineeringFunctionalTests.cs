@@ -23,6 +23,84 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengFact]
+    public async Task ClusterBtreeStorageSurvivesRecreationAndHeapTablesAreRejected()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = $"EF10_BTR_{suffix}";
+        var copy = $"EF10_BTRC_{suffix}";
+        var heap = $"EF10_HEAP_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT) STORAGE(CLUSTERBTR)");
+            cleanup.Add(source);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{heap}\" (ID INT) STORAGE(NOBRANCH)");
+            cleanup.Add(heap);
+            var factory = CreateFactory();
+            var table = Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables);
+            Assert.Equal(true, table[DamengAnnotationNames.IsClusterBtree]);
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [heap])));
+            Assert.Contains(heap, error.Message, StringComparison.Ordinal);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var operation = new CreateTableOperation { Name = copy };
+            operation[DamengAnnotationNames.IsClusterBtree] = table[DamengAnnotationNames.IsClusterBtree];
+            operation.Columns.Add(new AddColumnOperation { Table = copy, Name = "ID", ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
+            var command = Assert.Single(context.GetService<IMigrationsSqlGenerator>().Generate([operation]));
+            Assert.Contains("STORAGE(CLUSTERBTR)", command.CommandText, StringComparison.Ordinal);
+            await ExecuteAsync(connection, command.CommandText);
+            cleanup.Add(copy);
+            foreach (var name in new[] { source, copy })
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT X.FLAG FROM USER_INDEXES I JOIN SYS.SYSOBJECTS O ON O.NAME=I.INDEX_NAME "
+                    + "AND O.SCHID=CURRENT_SCHID() AND O.SUBTYPE$='INDEX' JOIN SYS.SYSINDEXES X ON X.ID=O.ID "
+                    + "WHERE I.TABLE_NAME=:name AND I.INDEX_TYPE='CLUSTER'";
+                var parameter = query.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = name;
+                query.Parameters.Add(parameter);
+                var flag = await query.ExecuteScalarAsync();
+                Assert.NotNull(flag);
+                Assert.Equal(1L, Convert.ToInt64(flag, CultureInfo.InvariantCulture) & 1L);
+            }
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengFact]
+    public async Task SelectedForeignKeyRequiresItsPrincipalToBeIncluded()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = $"EF10_REQP_{suffix}";
+        var child = $"EF10_REQC_{suffix}";
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var cleanup = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT PRIMARY KEY)");
+            cleanup.Add(parent);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{child}\" (ID INT PRIMARY KEY, PID INT REFERENCES \"{parent}\"(ID))");
+            cleanup.Add(child);
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [child])));
+            Assert.Contains(child, error.Message, StringComparison.Ordinal);
+            Assert.Contains(parent, error.Message, StringComparison.Ordinal);
+            var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: [child, parent]));
+            Assert.Single(Assert.Single(model.Tables, table => table.Name == child).ForeignKeys);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengFact]
     public async Task FactoryRejectsDecimalIdentityBeforeAddingAnUnsupportedStrategy()
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
@@ -1309,18 +1387,19 @@ public sealed class DamengReverseEngineeringFunctionalTests
             await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT NOT NULL, CONSTRAINT \"{constraint}\" {definition})");
             created.Add(table);
             var factory = CreateFactory();
-            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+            var selectedTables = kind == "R" ? new[] { table, parent } : new[] { table };
+            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: selectedTables)).Tables, item => item.Name == table);
             await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" DISABLE CONSTRAINT \"{constraint}\"");
 
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(
-                connection, new DatabaseModelFactoryOptions(tables: [table])));
+                connection, new DatabaseModelFactoryOptions(tables: selectedTables)));
             Assert.Contains(constraint, error.Message, StringComparison.Ordinal);
             Assert.Contains("DISABLED", error.Message, StringComparison.Ordinal);
             Assert.Equal(parent, Assert.Single(factory.Create(
                 connection, new DatabaseModelFactoryOptions(tables: [parent])).Tables).Name);
 
             await ExecuteAsync(connection, $"ALTER TABLE \"{table}\" ENABLE CONSTRAINT \"{constraint}\"");
-            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+            Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: selectedTables)).Tables, item => item.Name == table);
         }
         finally
         {
@@ -1687,7 +1766,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
     }
 
     [DamengFact]
-    public async Task FactorySkipsCrossSchemaForeignKeysAndKeepsSelfReferences()
+    public async Task FactoryRejectsCrossSchemaForeignKeysAndKeepsFilteredSelfReferences()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
         var otherSchema = $"EF10_RO_{suffix}";
@@ -1730,16 +1809,11 @@ public sealed class DamengReverseEngineeringFunctionalTests
             selfCreated = true;
 
             var factory = CreateFactory();
-            DatabaseModel model;
-            await using (var connection = new DmConnection(connectionString))
-            {
-                model = factory.Create(connection, new DatabaseModelFactoryOptions());
-            }
-
-            // The principal lives in another schema; the local table with the same name must
-            // not become the principal, and the foreign key must be skipped entirely.
-            var child = Assert.Single(model.Tables, candidate => candidate.Name == childTable);
-            Assert.Empty(child.ForeignKeys);
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(setup,
+                new DatabaseModelFactoryOptions(tables: [childTable, sharedName])));
+            Assert.Contains(childTable, error.Message, StringComparison.Ordinal);
+            Assert.Contains(otherSchema, error.Message, StringComparison.Ordinal);
+            var model = factory.Create(setup, new DatabaseModelFactoryOptions(tables: [selfTable, sharedName]));
 
             var self = Assert.Single(model.Tables, candidate => candidate.Name == selfTable);
             var selfReference = Assert.Single(self.ForeignKeys);

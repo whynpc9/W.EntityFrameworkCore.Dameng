@@ -381,12 +381,25 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         MigrationCommandListBuilder builder,
         bool terminate = true)
     {
-        base.Generate(operation, model, builder, terminate);
+        var storage = operation[DamengAnnotationNames.IsClusterBtree];
+        if (storage is not null and not true)
+        {
+            throw new NotSupportedException("Dameng table storage annotation supports only CLUSTERBTR (true).");
+        }
+
+        base.Generate(operation, model, builder, terminate: false);
+        if (storage is true)
+        {
+            builder.Append(" STORAGE(CLUSTERBTR)");
+        }
 
         if (!terminate)
         {
             return;
         }
+
+        builder.AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+        EndStatement(builder);
 
         if (operation.Comment is not null)
         {
@@ -412,6 +425,11 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
+        if (!Equals(operation[DamengAnnotationNames.IsClusterBtree], operation.OldTable?[DamengAnnotationNames.IsClusterBtree]))
+        {
+            throw new NotSupportedException("Changing Dameng table storage requires dropping and recreating the table.");
+        }
+
         base.Generate(operation, model, builder);
 
         if (!string.Equals(operation.Comment, operation.OldTable?.Comment, StringComparison.Ordinal))

@@ -15,6 +15,22 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData("OTHER")]
+    [InlineData(null)]
+    public void ExternalForeignKeysCannotBeReturnedWithoutTheirRelationship(string? principalSchema)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateForeignKeyPrincipalSchema(
+            "APP", "Child", "FK_Child", principalSchema));
+        Assert.Contains("Child", error.Message, StringComparison.Ordinal);
+        Assert.Contains("FK_Child", error.Message, StringComparison.Ordinal);
+        Assert.Contains(principalSchema ?? "NULL", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CurrentSchemaForeignKeysCanBePreserved()
+        => DamengDatabaseModelFactory.ValidateForeignKeyPrincipalSchema("Quoted.Schema", "Child", "FK", "Quoted.Schema");
+
+    [Theory]
     [InlineData("SMALLINT", false)]
     [InlineData("TINYINT", false)]
     [InlineData("DECIMAL(18,0)", false)]

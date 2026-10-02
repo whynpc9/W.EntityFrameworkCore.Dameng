@@ -13,6 +13,52 @@ public sealed class DamengMigrationsSqlGeneratorTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void ClusterBtreeStorageIsExplicitWhenAnnotated(bool annotated)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation.Columns.Add(new AddColumnOperation { Table = "T", Name = "Id", ClrType = typeof(int), ColumnType = "INT" });
+        if (annotated) operation["Dameng:IsClusterBtree"] = true;
+        var sql = GenerateSql(context, operation);
+        Assert.Equal(annotated, sql.Contains("STORAGE(CLUSTERBTR)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UnknownTableStorageAndStorageChangesAreRejected()
+    {
+        using var context = CreateContext();
+        var create = new CreateTableOperation { Name = "T" };
+        create["Dameng:IsClusterBtree"] = false;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, create));
+        var alter = new AlterTableOperation { Name = "T" };
+        alter["Dameng:IsClusterBtree"] = true;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, alter));
+    }
+
+    [Fact]
+    public void TableStorageAnnotationFlowsFromEntityModelToCreateScript()
+    {
+        using var context = new ClusterBtreeContext(new DbContextOptionsBuilder<ClusterBtreeContext>()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var model = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(true, Assert.Single(model.GetRelationalModel().Tables)["Dameng:IsClusterBtree"]);
+        Assert.Contains("STORAGE(CLUSTERBTR)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
+    }
+
+    private sealed class ClusterBtreeContext(DbContextOptions<ClusterBtreeContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var entity = modelBuilder.Entity("Stored");
+            entity.Property<int>("Id").ValueGeneratedNever();
+            entity.HasKey("Id");
+            entity.HasAnnotation("Dameng:IsClusterBtree", true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void ByteColumnDdlHasAnExplicitTargetSemanticsGuard(bool idempotent)
     {
         using var context = CreateContext();

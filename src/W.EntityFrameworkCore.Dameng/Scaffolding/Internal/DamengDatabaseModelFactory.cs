@@ -983,10 +983,24 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 // supplies FK index ownership that ALL_CONSTRAINTS.INDEX_NAME omits.
                 var readColumns = ShouldReadIndexColumns(
                     table, name, GetNullableString(reader, 2), GetNullableString(reader, 3));
+                if (GetNullableString(reader, 2) == "CLUSTER")
+                {
+                    tables[table][DamengAnnotationNames.IsClusterBtree] = true;
+                }
                 if (!readColumns)
                 {
                     skippedIndexNames.Add(name);
                 }
+            }
+        }
+
+        foreach (var table in tables.Values.Where(table => table is not DatabaseView))
+        {
+            if (table[DamengAnnotationNames.IsClusterBtree] is not true)
+            {
+                throw new NotSupportedException(
+                    $"Dameng table '{table.Name}' has heap or unknown storage without a clustered index. "
+                    + "Reverse engineering currently preserves only CLUSTERBTR tables; exclude this table.");
             }
         }
 
@@ -1109,16 +1123,16 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             connection,
             """
             SELECT C.CONSTRAINT_NAME, C.TABLE_NAME, P.TABLE_NAME AS PRINCIPAL_TABLE_NAME,
-                   P.OWNER AS PRINCIPAL_OWNER,
+                   C.R_OWNER AS PRINCIPAL_OWNER,
                    CC.COLUMN_NAME, PC.COLUMN_NAME AS PRINCIPAL_COLUMN_NAME, C.DELETE_RULE
             FROM ALL_CONSTRAINTS C
-            INNER JOIN ALL_CONSTRAINTS P
+            LEFT JOIN ALL_CONSTRAINTS P
                 ON P.OWNER = C.R_OWNER AND P.CONSTRAINT_NAME = C.R_CONSTRAINT_NAME
-            INNER JOIN ALL_CONS_COLUMNS CC
+            LEFT JOIN ALL_CONS_COLUMNS CC
                 ON CC.OWNER = C.OWNER
                 AND CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME
                 AND CC.TABLE_NAME = C.TABLE_NAME
-            INNER JOIN ALL_CONS_COLUMNS PC
+            LEFT JOIN ALL_CONS_COLUMNS PC
                 ON PC.OWNER = P.OWNER
                 AND PC.CONSTRAINT_NAME = P.CONSTRAINT_NAME
                 AND PC.TABLE_NAME = P.TABLE_NAME
@@ -1141,17 +1155,26 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         while (reader.Read())
         {
             var tableName = reader.GetString(1);
-            var principalTableName = reader.GetString(2);
-            var principalOwner = reader.GetString(3);
-            if (!string.Equals(principalOwner, schema, StringComparison.Ordinal)
-                || !tables.TryGetValue(tableName, out var table)
-                || !tables.TryGetValue(principalTableName, out var principalTable))
+            if (!tables.TryGetValue(tableName, out var table))
             {
-                // Cross-schema principals are outside the current-schema scope.
                 continue;
             }
 
             var constraintName = reader.GetString(0);
+            ValidateForeignKeyPrincipalSchema(schema, tableName, constraintName, GetNullableString(reader, 3));
+            var principalTableName = GetNullableString(reader, 2);
+            if (principalTableName is null || !tables.TryGetValue(principalTableName, out var principalTable))
+            {
+                throw new NotSupportedException(
+                    $"Dameng table '{tableName}' foreign key '{constraintName}' references an unavailable or unselected principal '{principalTableName ?? "NULL"}'. "
+                    + "Include the principal table or exclude the dependent table from reverse engineering.");
+            }
+
+            if (reader.IsDBNull(4) || reader.IsDBNull(5))
+            {
+                throw new NotSupportedException($"Dameng table '{tableName}' foreign key '{constraintName}' has incomplete column metadata.");
+            }
+
             var onDelete = MapDeleteRule(GetNullableString(reader, 6));
 
             var foreignKey = foreignKeys.LastOrDefault()
@@ -1182,15 +1205,24 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             AddColumnsByName(columnLookup[table], columns, databaseForeignKey.Columns);
             AddColumnsByName(columnLookup[principalTable], principalColumns, databaseForeignKey.PrincipalColumns);
 
-            // A partially resolved key would pair remaining columns by position and point the
-            // relationship at the wrong columns; drop it instead.
+            // A partially resolved key must not become a different or missing relationship.
             if (databaseForeignKey.Columns.Count != columns.Count
                 || databaseForeignKey.PrincipalColumns.Count != principalColumns.Count)
             {
-                continue;
+                throw new NotSupportedException($"Dameng table '{table.Name}' foreign key '{name}' has unresolved columns; exclude this table.");
             }
 
             table.ForeignKeys.Add(databaseForeignKey);
+        }
+    }
+
+    internal static void ValidateForeignKeyPrincipalSchema(string schema, string table, string constraint, string? principalSchema)
+    {
+        if (!string.Equals(schema, principalSchema, StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' foreign key '{constraint}' references schema '{principalSchema ?? "NULL"}' outside the current schema. "
+                + "Reverse engineering cannot preserve this external relationship; exclude the dependent table.");
         }
     }
 
