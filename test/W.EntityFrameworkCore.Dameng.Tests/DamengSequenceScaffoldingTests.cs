@@ -10,54 +10,18 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengSequenceScaffoldingTests
 {
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(1, 1)]
-    [InlineData(500, 1)]
-    [InlineData(501, 2)]
-    [InlineData(1001, 3)]
-    public void CatalogQueriesBoundParametersAndReadEachDistinctNameOnce(int count, int expectedBatches)
-    {
-        using var connection = new DmConnection("Server=database.example;Port=5236;User Id=app;Password=example");
-        var names = Enumerable.Range(0, count).Select(index => $"SEQ_{index}").ToArray();
-        if (count > 0)
-        {
-            names[0] = "Seq'$.Name";
-        }
-
-        var seen = new List<string>();
-        var batches = 0;
-        foreach (var command in DamengDatabaseModelFactory.CreateSequenceCatalogCommands(
-            connection, "Quoted'Schema", names.Concat(names.Take(3))))
-        {
-            using (command)
-            {
-                batches++;
-                Assert.InRange(command.Parameters.Count, 2, 501);
-                Assert.Equal("Quoted'Schema", command.Parameters[0].Value);
-                Assert.DoesNotContain("Quoted'Schema", command.CommandText, StringComparison.Ordinal);
-                Assert.DoesNotContain("Seq'$.Name", command.CommandText, StringComparison.Ordinal);
-                var parameters = command.Parameters.Cast<DbParameter>().ToArray();
-                Assert.Equal(parameters.Length, parameters.Select(parameter => parameter.ParameterName).Distinct().Count());
-                Assert.All(parameters, parameter => Assert.Contains(":" + parameter.ParameterName, command.CommandText, StringComparison.Ordinal));
-                seen.AddRange(parameters.Skip(1).Select(parameter => Assert.IsType<string>(parameter.Value)));
-            }
-        }
-
-        Assert.Equal(expectedBatches, batches);
-        Assert.Equal(names.Order(StringComparer.Ordinal), seen.Order(StringComparer.Ordinal));
-        Assert.Equal(ConnectionState.Closed, connection.State);
-    }
-
     [Fact]
-    public void CatalogNameDeduplicationPreservesQuotedCase()
+    public void CatalogQueryReadsAllSequencesInOnlyTheBoundSchema()
     {
         using var connection = new DmConnection("Server=database.example;Port=5236;User Id=app;Password=example");
-        using var command = Assert.Single(DamengDatabaseModelFactory.CreateSequenceCatalogCommands(
-            connection, "APP", ["Seq", "SEQ", "Seq"]));
-        Assert.Equal(3, command.Parameters.Count);
-        Assert.Equal("Seq", command.Parameters[1].Value);
-        Assert.Equal("SEQ", command.Parameters[2].Value);
+        using var command = DamengDatabaseModelFactory.CreateSequenceCatalogCommand(connection, "Quoted'Schema");
+        Assert.Single(command.Parameters.Cast<DbParameter>());
+        Assert.Equal("schema", command.Parameters[0].ParameterName);
+        Assert.Equal("Quoted'Schema", command.Parameters[0].Value);
+        Assert.Contains("SEQUENCE_OWNER = :schema", command.CommandText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Quoted'Schema", command.CommandText, StringComparison.Ordinal);
+        Assert.DoesNotContain("SEQUENCE_NAME IN", command.CommandText, StringComparison.Ordinal);
+        Assert.Equal(ConnectionState.Closed, connection.State);
     }
 
     [Theory]

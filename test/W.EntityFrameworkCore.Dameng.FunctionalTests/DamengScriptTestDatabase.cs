@@ -301,8 +301,12 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         Span<char> chars = stackalloc char[24];
+        // Always satisfy character-class policies; random draws alone can omit digits.
         chars[0] = 'A';
-        for (var index = 1; index < chars.Length; index++)
+        chars[1] = 'a';
+        chars[2] = '7';
+        chars[3] = '!';
+        for (var index = 4; index < chars.Length; index++)
         {
             chars[index] = alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)];
         }

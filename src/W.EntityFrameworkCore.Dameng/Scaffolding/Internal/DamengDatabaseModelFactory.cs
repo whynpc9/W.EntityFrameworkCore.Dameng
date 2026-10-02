@@ -83,6 +83,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             var tables = GetTables(connection, currentSchema, tableFilter);
             tables.AddRange(GetViews(connection, currentSchema, tableFilter));
+            var sequenceFacets = LoadSequenceFacets(connection, currentSchema);
+            foreach (var sequence in sequenceFacets.Values)
+            {
+                sequence.Database = databaseModel;
+                databaseModel.Sequences.Add(sequence);
+            }
+
             if (tables.Count == 0)
             {
                 return databaseModel;
@@ -97,7 +104,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var columnLookup = tables.ToDictionary(
                 table => table,
                 table => table.Columns.ToDictionary(column => column.Name, StringComparer.Ordinal));
-            ResolveSequenceDefaults(connection, currentSchema, databaseModel, pendingSequenceDefaults);
+            ResolveSequenceDefaults(currentSchema, sequenceFacets, pendingSequenceDefaults);
             LoadIdentityAnnotations(connection, currentSchema, tableLookup, columnLookup);
             LoadConstraints(connection, currentSchema, tableLookup, columnLookup);
             LoadIndexes(connection, currentSchema, tableLookup, columnLookup);
@@ -427,26 +434,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     // with invented default facets and recreate a different sequence on migration. Cross-schema
     // or unreadable references remain explicit external dependencies via their raw SQL.
     private void ResolveSequenceDefaults(
-        DbConnection connection,
         string schema,
-        DatabaseModel databaseModel,
+        Dictionary<string, DatabaseSequence> facets,
         List<PendingSequenceDefault> pending)
     {
-        if (pending.Count == 0)
-        {
-            return;
-        }
-
-        var facets = LoadSequenceFacets(
-            connection,
-            schema,
-            pending
-                .Where(
-                    entry => entry.SequenceSchema is null
-                        || string.Equals(entry.SequenceSchema, schema, StringComparison.Ordinal))
-                .Select(entry => entry.SequenceName));
-
-        var addedToModel = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in pending)
         {
             if (entry.SequenceSchema is not null
@@ -463,11 +454,6 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             ApplyLocalSequenceDefault(entry.Column, sequence);
-
-            if (addedToModel.Add(sequence.Name))
-            {
-                databaseModel.Sequences.Add(sequence);
-            }
         }
     }
 
@@ -521,51 +507,30 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
-    private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(
-        DbConnection connection,
-        string schema,
-        IEnumerable<string> sequenceNames)
+    private static Dictionary<string, DatabaseSequence> LoadSequenceFacets(DbConnection connection, string schema)
     {
         var facets = new Dictionary<string, DatabaseSequence>(StringComparer.Ordinal);
-        foreach (var command in CreateSequenceCatalogCommands(connection, schema, sequenceNames))
+        using var command = CreateSequenceCatalogCommand(connection, schema);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
         {
-            using (command)
-            using (var reader = command.ExecuteReader())
-            {
-                while (reader.Read())
-                {
-                    var sequence = ReadSequenceRecord(reader, schema);
-                    facets.Add(sequence.Name, sequence);
-                }
-            }
+            var sequence = ReadSequenceRecord(reader, schema);
+            facets.Add(sequence.Name, sequence);
         }
 
         return facets;
     }
 
-    // Keep both the IN list and the total bind count bounded (500 names plus schema).
-    // A command is created lazily; the consumer owns and disposes each yielded command.
-    internal static IEnumerable<DbCommand> CreateSequenceCatalogCommands(
-        DbConnection connection,
-        string schema,
-        IEnumerable<string> sequenceNames)
+    // Sequences belong to the selected schema independently of table filters or defaults.
+    // One schema parameter bounds the bind count even for a large sequence catalog.
+    internal static DbCommand CreateSequenceCatalogCommand(DbConnection connection, string schema)
     {
-        foreach (var names in sequenceNames.Distinct(StringComparer.Ordinal).Chunk(500))
-        {
-            var placeholders = string.Join(", ", Enumerable.Range(0, names.Length).Select(index => $":seq{index}"));
-            var command = CreateCommand(
-                connection,
-                "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER, CACHE_SIZE, ORDER_FLAG"
-                + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema"
-                + $" AND SEQUENCE_NAME IN ({placeholders})");
-            AddParameter(command, "schema", schema);
-            for (var index = 0; index < names.Length; index++)
-            {
-                AddParameter(command, $"seq{index}", names[index]);
-            }
-
-            yield return command;
-        }
+        var command = CreateCommand(
+            connection,
+            "SELECT SEQUENCE_NAME, INCREMENT_BY, MIN_VALUE, MAX_VALUE, CYCLE_FLAG, LAST_NUMBER, CACHE_SIZE, ORDER_FLAG"
+            + " FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER = :schema ORDER BY SEQUENCE_NAME");
+        AddParameter(command, "schema", schema);
+        return command;
     }
 
     internal static DatabaseSequence ReadSequenceRecord(DbDataReader reader, string schema)
@@ -581,7 +546,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         {
             throw new NotSupportedException(
                 $"Dameng local sequence '{name}' has facets that EF cannot represent exactly "
-                + "(nonzero Int32 increment and Int64 bounds/start required). Exclude the referencing table.");
+                + "(nonzero Int32 increment and Int64 bounds/start required). The current schema cannot be scaffolded losslessly.");
         }
 
         var cyclic = reader.GetValue(4) as string;
@@ -595,7 +560,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         {
             throw new NotSupportedException(
                 $"Dameng local sequence '{name}' has unsupported CACHE_SIZE or ORDER_FLAG. "
-                + "Reverse engineering supports only NOCACHE NOORDER sequences; exclude the referencing table.");
+                + "Reverse engineering supports only NOCACHE NOORDER sequences in the current schema.");
         }
 
         return new DatabaseSequence

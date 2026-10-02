@@ -35,6 +35,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();
         var tableName = $"EF10_CLI_{suffix}";
         var sequenceName = $"EF10_CLISQ_{suffix}";
+        var standaloneSequenceName = $"EF10_CLISO_{suffix}";
         var historyTableName = $"EF10_CLIH_{suffix}";
 
         var repoRoot = FindRepositoryRoot();
@@ -128,6 +129,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             await using (var connection = new DmConnection(connectionString))
             {
                 await connection.OpenAsync();
+                await using var createStandalone = connection.CreateCommand();
+                createStandalone.CommandText = $"CREATE SEQUENCE \"{standaloneSequenceName}\" START WITH 73 INCREMENT BY 5 MINVALUE 1 MAXVALUE 1000 NOCACHE NOORDER";
+                await createStandalone.ExecuteNonQueryAsync();
                 Assert.Equal(
                     "命令行订单表",
                     await ScalarStringAsync(
@@ -199,6 +203,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 scaffoldedContext.Contains("IsDescending()", StringComparison.Ordinal),
                 "Scaffolded context must keep the descending index.");
 
+            Assert.Contains(standaloneSequenceName, scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("StartsAt(73", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("IncrementsBy(5", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClusterBtree\", true)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
@@ -210,6 +217,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("STORAGE(CLUSTERBTR)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("VARCHAR2(40 BYTE)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("SF_GET_LENGTH_IN_CHAR()", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            var scaffoldedSql = File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql"));
+            Assert.Contains(standaloneSequenceName, scaffoldedSql, StringComparison.Ordinal);
+            Assert.Contains("START WITH 73 INCREMENT BY 5", scaffoldedSql, StringComparison.Ordinal);
 
             var scaffoldedEntity = File.ReadAllText(
                 Assert.Single(
@@ -228,6 +238,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", tableName);
                 await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", historyTableName);
                 await DropIfExistsAsync(connection, "USER_SEQUENCES", "SEQUENCE_NAME", sequenceName);
+                await DropIfExistsAsync(connection, "USER_SEQUENCES", "SEQUENCE_NAME", standaloneSequenceName);
             }
 
             TryDeleteDirectory(projectDirectory);

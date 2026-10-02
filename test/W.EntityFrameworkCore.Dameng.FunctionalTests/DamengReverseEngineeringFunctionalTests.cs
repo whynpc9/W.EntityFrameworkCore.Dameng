@@ -22,6 +22,98 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task StandaloneSequencesSurviveSchemaScaffoldingAndRecreation(bool hasTable, bool filterTable)
+    {
+        var schema = "EF10_SONLY_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var originalSchema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+        try
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+            await ExecuteAsync(connection, "CREATE SEQUENCE ASCENDING_SEQ START WITH 41 INCREMENT BY 3 MINVALUE 1 MAXVALUE 1000 NOCACHE NOORDER");
+            await ExecuteAsync(connection, "CREATE SEQUENCE DESCENDING_SEQ START WITH -7 INCREMENT BY -2 MINVALUE -99 MAXVALUE -1 NOCACHE NOORDER");
+            if (hasTable) await ExecuteAsync(connection, "CREATE TABLE ORDINARY (ID INT) STORAGE(CLUSTERBTR)");
+            query.CommandText = "SELECT ASCENDING_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(41L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: filterTable ? ["ORDINARY"] : []));
+            Assert.Equal(hasTable ? 1 : 0, model.Tables.Count);
+            Assert.Equal(2, model.Sequences.Count);
+            Assert.All(model.Sequences, item => { Assert.Equal(schema, item.Schema); Assert.Same(model, item.Database); });
+            var ascending = Assert.Single(model.Sequences, item => item.Name == "ASCENDING_SEQ");
+            Assert.Equal(44L, ascending.StartValue);
+            Assert.Equal(3, ascending.IncrementBy);
+            Assert.Equal(1L, ascending.MinValue);
+            Assert.Equal(1000L, ascending.MaxValue);
+            Assert.False(ascending.IsCyclic);
+            var descending = Assert.Single(model.Sequences, item => item.Name == "DESCENDING_SEQ");
+            Assert.Equal(-7L, descending.StartValue);
+            Assert.Equal(-2, descending.IncrementBy);
+            Assert.Equal(-99L, descending.MinValue);
+            Assert.Equal(-1L, descending.MaxValue);
+            foreach (var item in model.Sequences) await ExecuteAsync(connection, $"DROP SEQUENCE \"{item.Name}\"");
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var operations = model.Sequences.Select(item => new CreateSequenceOperation
+            {
+                Name = item.Name,
+                Schema = item.Schema,
+                ClrType = typeof(long),
+                StartValue = item.StartValue!.Value,
+                IncrementBy = item.IncrementBy!.Value,
+                MinValue = item.MinValue,
+                MaxValue = item.MaxValue,
+                IsCyclic = item.IsCyclic!.Value
+            }).Cast<MigrationOperation>().ToList();
+            foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate(operations)) await ExecuteAsync(connection, command.CommandText);
+            query.CommandText = "SELECT ASCENDING_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(44L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT DESCENDING_SEQ.NEXTVAL FROM dual";
+            Assert.Equal(-7L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData("CACHE 10")]
+    [InlineData("INCREMENT BY 2147483648 NOCACHE")]
+    public async Task UnsupportedStandaloneSequencesRejectEvenWithoutTables(string options)
+    {
+        var schema = "EF10_BADSEQ_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var originalSchema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+        try
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+            await ExecuteAsync(connection, $"CREATE SEQUENCE UNSUPPORTED_SEQ {options}");
+            var factory = CreateFactory();
+            foreach (var optionsValue in new[] { new DatabaseModelFactoryOptions(), new DatabaseModelFactoryOptions(tables: ["NO_TABLE"]) })
+            {
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, optionsValue));
+                Assert.Contains("UNSUPPORTED_SEQ", error.Message, StringComparison.Ordinal);
+            }
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+        }
+    }
+
     [DamengFact]
     public async Task FactoryRejectsLongRowStorageWithoutBlockingOrdinaryTableFilters()
     {
@@ -610,8 +702,9 @@ public sealed class DamengReverseEngineeringFunctionalTests
                     new DatabaseModelFactoryOptions(tables: [table])));
                 Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
                 Assert.Contains("NOCACHE NOORDER", error.Message, StringComparison.Ordinal);
-                Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
-                    new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+                var filteredError = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                    new DatabaseModelFactoryOptions(tables: [ordinary])));
+                Assert.Contains(sequence, filteredError.Message, StringComparison.Ordinal);
             }
             else
             {
@@ -1127,7 +1220,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
     }
 
     [DamengFact]
-    public async Task FactoryRejectsUnrepresentableLocalSequenceWithoutBlockingOtherTables()
+    public async Task FactoryRejectsUnrepresentableLocalSequenceEvenWithOtherTableFilters()
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         var sequence = $"EF10_BIGSEQ_{suffix}";
@@ -1151,8 +1244,9 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 new DatabaseModelFactoryOptions(tables: [table])));
             Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
             Assert.Contains("cannot represent exactly", error.Message, StringComparison.Ordinal);
-            Assert.Equal(safe, Assert.Single(factory.Create(connection,
-                new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+            var filteredError = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [safe])));
+            Assert.Contains(sequence, filteredError.Message, StringComparison.Ordinal);
         }
         finally
         {
@@ -1162,56 +1256,6 @@ public sealed class DamengReverseEngineeringFunctionalTests
             }
 
             if (sequenceCreated)
-            {
-                await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
-            }
-        }
-    }
-
-    [DamengFact]
-    public async Task SequenceCatalogQueriesCrossBatchBoundariesWithoutLosingNames()
-    {
-        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
-        var names = Enumerable.Range(0, 1001).Select(index => $"EF10_BATCH_{suffix}_{index}").ToArray();
-        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
-        await connection.OpenAsync();
-        var created = new List<string>();
-        try
-        {
-            foreach (var index in new[] { 0, 499, 500, 1000 })
-            {
-                await ExecuteAsync(connection, $"CREATE SEQUENCE \"{names[index]}\" START WITH 41 INCREMENT BY 3 MAXVALUE 1000");
-                created.Add(names[index]);
-            }
-
-            await using var schemaCommand = connection.CreateCommand();
-            schemaCommand.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
-            var schema = Convert.ToString(await schemaCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
-            var found = new List<string>();
-            var batches = 0;
-            foreach (var command in DamengDatabaseModelFactory.CreateSequenceCatalogCommands(connection, schema, names.Concat(names.Take(10))))
-            {
-                using (command)
-                {
-                    batches++;
-                    Assert.InRange(command.Parameters.Count, 2, 501);
-                    await using var reader = await command.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
-                    {
-                        var sequence = DamengDatabaseModelFactory.ReadSequenceRecord(reader, schema);
-                        found.Add(sequence.Name);
-                        Assert.Equal(41L, sequence.StartValue);
-                        Assert.Equal(3, sequence.IncrementBy);
-                    }
-                }
-            }
-
-            Assert.Equal(3, batches);
-            Assert.Equal(created.Order(StringComparer.Ordinal), found.Order(StringComparer.Ordinal));
-        }
-        finally
-        {
-            foreach (var sequence in created)
             {
                 await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
             }
