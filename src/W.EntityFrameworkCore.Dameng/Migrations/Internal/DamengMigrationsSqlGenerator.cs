@@ -407,10 +407,21 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             throw new NotSupportedException("Dameng table storage annotation supports only CLUSTERBTR (true).");
         }
 
+        var fillFactor = operation[DamengAnnotationNames.TableFillFactor];
+        if (fillFactor is not null && fillFactor is not (int and >= 0 and <= 100))
+            throw new NotSupportedException("Dameng table fill factor must be an integer from 0 to 100.");
+
         base.Generate(operation, model, builder, terminate: false);
-        if (storage is true)
+        if (storage is true || fillFactor is not null)
         {
-            builder.Append(" STORAGE(CLUSTERBTR)");
+            builder.Append(" STORAGE(");
+            if (storage is true) builder.Append("CLUSTERBTR");
+            if (fillFactor is int fill)
+            {
+                if (storage is true) builder.Append(", ");
+                builder.Append("FILLFACTOR ").Append((fill == 0 ? 100 : fill).ToString(CultureInfo.InvariantCulture));
+            }
+            builder.Append(")");
         }
 
         if (!terminate)
@@ -445,6 +456,9 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
+        if (!Equals(operation[DamengAnnotationNames.TableFillFactor], operation.OldTable?[DamengAnnotationNames.TableFillFactor]))
+            throw new NotSupportedException("Changing Dameng table fill factor requires rebuilding the table.");
+
         if (!Equals(operation[DamengAnnotationNames.IsClusterBtree], operation.OldTable?[DamengAnnotationNames.IsClusterBtree]))
         {
             throw new NotSupportedException("Changing Dameng table storage requires dropping and recreating the table.");

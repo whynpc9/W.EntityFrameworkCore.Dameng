@@ -27,6 +27,19 @@ internal sealed class DamengRelationalAnnotationProvider(
         {
             yield return new Annotation(DamengAnnotationNames.IsClusterBtree, true);
         }
+
+        var fillAnnotations = table.EntityTypeMappings
+            .Select(mapping => mapping.TypeBase.FindAnnotation(DamengAnnotationNames.TableFillFactor))
+            .Where(annotation => annotation is not null).ToList();
+        if (fillAnnotations.Count > 0)
+        {
+            if (fillAnnotations.Any(annotation => annotation!.Value is not int or < 0 or > 100))
+                throw new NotSupportedException("Dameng table fill factor must be an integer from 0 to 100.");
+            var values = fillAnnotations.Select(annotation => (int)annotation!.Value!).Select(value => value == 0 ? 100 : value).Distinct().ToList();
+            if (values.Count != 1)
+                throw new NotSupportedException("Mapped entity types must agree on the Dameng table fill factor.");
+            yield return new Annotation(DamengAnnotationNames.TableFillFactor, values[0]);
+        }
     }
 
     public override IEnumerable<IAnnotation> For(IUniqueConstraint constraint, bool designTime)

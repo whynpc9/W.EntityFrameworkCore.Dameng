@@ -23,6 +23,47 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData(0, 100)]
+    [InlineData(85, 85)]
+    [InlineData(100, 100)]
+    public async Task TableFillFactorSurvivesScaffoldingAndRecreation(int declared, int expected)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_FFS_" + suffix;
+        var copy = "EF10_FFC_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT) STORAGE(CLUSTERBTR, FILLFACTOR {declared})");
+            created.Add(table);
+            var source = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+            Assert.Equal(expected, source[DamengAnnotationNames.TableFillFactor]);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var operation = new CreateTableOperation { Name = copy };
+            operation.AddAnnotations(source.GetAnnotations());
+            operation.Columns.Add(new AddColumnOperation { Table = copy, Name = "ID", ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
+            var commands = context.GetService<IMigrationsSqlGenerator>().Generate([operation]);
+            Assert.Contains($"FILLFACTOR {expected}", Assert.Single(commands).CommandText, StringComparison.Ordinal);
+            foreach (var command in commands) await ExecuteAsync(connection, command.CommandText);
+            created.Add(copy);
+            await ExecuteAsync(connection, $"INSERT INTO \"{copy}\" VALUES (42)");
+            await using var query = connection.CreateCommand();
+            query.CommandText = "SELECT INFO1 FROM SYS.SYSOBJECTS WHERE SCHID=CURRENT_SCHID() AND NAME=:name AND TYPE$='SCHOBJ' AND SUBTYPE$='UTAB'";
+            var name = query.CreateParameter(); name.ParameterName = "name"; name.Value = copy; query.Parameters.Add(name);
+            Assert.Equal(expected, (Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture) >> 24) & 0xFFL);
+            Assert.Equal(expected, Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [copy])).Tables)[DamengAnnotationNames.TableFillFactor]);
+            query.Parameters.Clear(); query.CommandText = $"SELECT ID FROM \"{copy}\"";
+            Assert.Equal(42, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task MissingCurrentSchemaSequenceDefaultsAreRejected(bool qualified)

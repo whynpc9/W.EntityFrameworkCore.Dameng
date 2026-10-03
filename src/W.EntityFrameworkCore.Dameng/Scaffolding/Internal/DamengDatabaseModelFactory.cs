@@ -184,7 +184,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT T.TABLE_NAME, T.TEMPORARY, T.PARTITIONED, O.INFO3 FROM ALL_TABLES T "
+            "SELECT T.TABLE_NAME, T.TEMPORARY, T.PARTITIONED, O.INFO3, O.INFO1 FROM ALL_TABLES T "
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = T.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = T.TABLE_NAME "
             + "AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
@@ -203,15 +203,24 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             ValidateTableKind(name, GetNullableString(reader, 1), GetNullableString(reader, 2));
             ValidateNativeTableKind(name, GetNullableInt64(reader, 3));
-            tables.Add(
-                new DatabaseTable
-                {
-                    Name = name,
-                    Schema = schema
-                });
+            var table = new DatabaseTable { Name = name, Schema = schema };
+            table[DamengAnnotationNames.TableFillFactor] = ReadTableFillFactor(name, GetNullableInt64(reader, 4));
+            tables.Add(table);
         }
 
         return tables;
+    }
+
+    internal static int ReadTableFillFactor(string table, long? info1)
+    {
+        // Native INFO1's high byte is the table fill factor on the supported server;
+        // ALL_TABLES.PCT_FREE is NULL. DDL 0 and 100 both mean fully filled pages.
+        if (info1 is null)
+            throw new NotSupportedException($"Dameng table '{table}' has unreadable fill-factor metadata.");
+        var fill = (info1.Value >> 24) & 0xFFL;
+        if (fill > 100)
+            throw new NotSupportedException($"Dameng table '{table}' has unsupported fill factor '{fill}'.");
+        return fill == 0 ? 100 : (int)fill;
     }
 
     internal static void ValidateTableTablespace(string table, long? tablespaceId, long? ownerInfo3)

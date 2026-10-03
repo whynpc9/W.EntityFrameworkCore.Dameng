@@ -15,6 +15,20 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData(2097152L, 100)]
+    [InlineData(1679818752L, 100)]
+    [InlineData(1428160512L, 85)]
+    [InlineData(1426063376L, 85)]
+    public void NativeTableFillFactorRetainsItsEffectivePercentage(long info1, int expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadTableFillFactor("T", info1));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(4278190080L)]
+    public void UnreadableOrUnknownFillFactorCannotBeGuessed(long? info1)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadTableFillFactor("T", info1));
+
     [Fact]
     public void MissingLocalSequenceMetadataRejectsTheOwningColumn()
     {

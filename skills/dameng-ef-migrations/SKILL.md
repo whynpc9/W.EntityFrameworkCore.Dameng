@@ -55,6 +55,7 @@ CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设�
 提供程序生成的建表/加列/改列 DDL 先检查 SF_GET_LENGTH_IN_CHAR()=0，否则拒绝；
 不要把模式 0 真库中的守卫分支测试描述为模式 1 实例验证。
 
+反向工程表保留 Dameng:TableFillFactor 注解并生成显式 FILLFACTOR，0 规范为 100；非默认值保留，变更须重建。
 反向工程的 B 树表保留 Dameng:IsClusterBtree 注解并生成 STORAGE(CLUSTERBTR)，
 堆表/未知存储拒绝，存储变更须重建；未设置注解的手写模型保持原行为。
 B 树表的实际存储表空间须匹配模式所属用户的默认数据表空间；非默认或未知放置明确拒绝。

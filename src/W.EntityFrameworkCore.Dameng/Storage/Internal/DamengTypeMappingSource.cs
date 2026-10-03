@@ -13,8 +13,8 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 {
     internal const int MaxInlineLength = 32767;
 
-    // Conservative character-column generation budget from the documented 32 KB-page
-    // reference. Actual capacity also depends on the target page size and total row size;
+    // Conservative character-column inference budget for the smallest supported 4 KB page.
+    // Actual capacity also depends on the target page size and total row size;
     // declaration success alone is not evidence that the declared length can be filled.
     internal const int MaxCharSemanticsBytes = 1900;
 

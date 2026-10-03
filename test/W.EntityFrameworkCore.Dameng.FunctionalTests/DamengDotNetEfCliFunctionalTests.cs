@@ -210,6 +210,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("IncrementsBy(5", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClusterBtree\", true)", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("HasAnnotation(\"Dameng:TableFillFactor\", 85)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"CHAR(476 CHAR)\")", scaffoldedContext, StringComparison.Ordinal);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
@@ -217,8 +218,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             await RunDotNetEfAsync(dotnetEf, projectDirectory, connectionString,
                 ["dbcontext", "script", "--context", "ScaffoldedCliContext", "--no-build", "--output", "scaffolded-create.sql"]);
             Assert.Contains("NOT CLUSTER PRIMARY KEY", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
-            Assert.Contains("STORAGE(CLUSTERBTR)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            Assert.Contains("STORAGE(CLUSTERBTR, FILLFACTOR 85)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("VARCHAR2(40 BYTE)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            Assert.Contains("CHAR(476 CHAR)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("SF_GET_LENGTH_IN_CHAR()", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             var scaffoldedSql = File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql"));
             Assert.Contains(standaloneSequenceName, scaffoldedSql, StringComparison.Ordinal);
@@ -317,6 +319,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     modelBuilder.Entity<CliOrder>(entity =>
                     {
                         entity.ToTable("{{tableName}}", table => table.HasComment("命令行订单表"));
+                        entity.HasAnnotation("Dameng:TableFillFactor", 85);
                         entity.HasKey(item => item.Id).HasAnnotation("Dameng:IsClustered", false);
                         entity.Property(item => item.Id).UseDamengIdentityColumn(5, 2);
                         entity.Property(item => item.Code)

@@ -10,6 +10,43 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengMigrationsSqlGeneratorTests
 {
+    [Theory]
+    [InlineData(false, 85, "STORAGE(FILLFACTOR 85)")]
+    [InlineData(true, 85, "STORAGE(CLUSTERBTR, FILLFACTOR 85)")]
+    [InlineData(true, 0, "STORAGE(CLUSTERBTR, FILLFACTOR 100)")]
+    [InlineData(true, 100, "STORAGE(CLUSTERBTR, FILLFACTOR 100)")]
+    public void TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(bool clustered, int fillFactor, string expected)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation.Columns.Add(new AddColumnOperation { Table = "T", Name = "Id", ClrType = typeof(int), ColumnType = "INT" });
+        if (clustered) operation["Dameng:IsClusterBtree"] = true;
+        operation["Dameng:TableFillFactor"] = fillFactor;
+        Assert.Contains(expected, GenerateSql(context, operation), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    [InlineData("85")]
+    public void InvalidTableFillFactorsAreRejected(object value)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation["Dameng:TableFillFactor"] = value;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Fact]
+    public void TableFillFactorChangesRequireARebuild()
+    {
+        using var context = CreateContext();
+        var operation = new AlterTableOperation { Name = "T" };
+        operation.OldTable["Dameng:TableFillFactor"] = 85;
+        operation["Dameng:TableFillFactor"] = 100;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
     [Fact]
     public void UnspecifiedStoreTypeCannotTurnOversizedFixedAnsiIntoBinary()
     {
@@ -52,7 +89,8 @@ public sealed class DamengMigrationsSqlGeneratorTests
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
         var model = context.GetService<IDesignTimeModel>().Model;
         Assert.Equal(true, Assert.Single(model.GetRelationalModel().Tables)["Dameng:IsClusterBtree"]);
-        Assert.Contains("STORAGE(CLUSTERBTR)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
+        Assert.Equal(85, Assert.Single(model.GetRelationalModel().Tables)["Dameng:TableFillFactor"]);
+        Assert.Contains("STORAGE(CLUSTERBTR, FILLFACTOR 85)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
     }
 
     private sealed class ClusterBtreeContext(DbContextOptions<ClusterBtreeContext> options) : DbContext(options)
@@ -63,6 +101,7 @@ public sealed class DamengMigrationsSqlGeneratorTests
             entity.Property<int>("Id").ValueGeneratedNever();
             entity.HasKey("Id");
             entity.HasAnnotation("Dameng:IsClusterBtree", true);
+            entity.HasAnnotation("Dameng:TableFillFactor", 85);
         }
     }
 
