@@ -24,7 +24,9 @@
 
 这并不是一个完整的 EF Core 提供程序：
 
-- 尚未实现反向工程（`dotnet ef dbcontext scaffold`）；
+- 反向工程（`dotnet ef dbcontext scaffold`）覆盖当前模式的表、视图、列、默认值、注释、
+  主键、唯一约束、索引和外键；跨模式对象与视图注释不在范围内，精确边界见
+  [兼容性矩阵](docs/compatibility.md)；
 - 规范测试项目是使用 EF 测试工具构建的小型自有冒烟测试切片；它不继承上游 EF
   关系数据库测试套件，也不构成一致性声明。
 

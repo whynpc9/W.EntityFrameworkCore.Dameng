@@ -4,9 +4,10 @@
 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。能力边界以
 [兼容性矩阵](compatibility.md) 为准。
 
-本仓库验证的是进程内的 `IMigrator.GenerateScript()` 和 `Database.Migrate()`。
-`dotnet ef` 命令会走到同一套设计时服务和 SQL 生成器，但命令行进程本身还没有端到端回归。
-`dotnet ef dbcontext scaffold` 不在当前范围内。
+进程内的 `IMigrator.GenerateScript()`、`Database.Migrate()` 与命令行 `dotnet ef`
+（`migrations add` / `migrations script` / `database update` / `dbcontext scaffold`）
+都在同一套设计时服务和 SQL 生成器上完成过真实库回归。命令行回归使用仓库内
+`artifacts/dotnet-ef-tool` 的版本匹配 dotnet-ef 本地工具（全局旧版工具在 Unix 上有已知构建问题）。
 
 不要把连接字符串、主机、用户或口令写进仓库、脚本、日志或本文档。
 
@@ -199,10 +200,20 @@ dotnet ef migrations script \
   --startup-project src/App/App.csproj
 ```
 
-非幂等脚本是以分号结束的达梦 DDL，并包含历史表插入。幂等脚本把每条迁移命令包进
-`EXECUTE IMMEDIATE` 和历史表条件，块以单独一行的 `/` 结束。
-转义后的动态命令字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。
+非幂等脚本是以分号结束的达梦 DDL，并包含历史表插入。幂等脚本把普通 SQL 按引号/注释
+之外的分号拆成独立的 `EXECUTE IMMEDIATE`，置于历史表条件中，块以单独一行的 `/` 结束。
+这样同一 `migrationBuilder.Sql` 中先建表、再写入时，后续语句在表创建后才绑定。
+匿名 `BEGIN`/`DECLARE` 块应单独放入一个 `SqlOperation`，保持完整并原样内嵌；
+生成器会核对外层 `END;` 边界，其后追加的 SQL 必须移到另一个操作。
+普通 SQL 后混入匿名块，以及 `CREATE [OR REPLACE] PROCEDURE/FUNCTION/TRIGGER/PACKAGE/TYPE`
+存储定义会在幂等生成时明确拒绝拆分，存储定义应另行整体执行。
+转义后的单条动态语句字面量按 UTF-8 超过 32767 字节时，生成会失败，需要把 migration 拆小。
 自定义 `SqlOperation` 里不能出现单独一行的 `/`。
+
+反向工程的字节长度列显式保留 `CHAR/VARCHAR/VARCHAR2(n BYTE)`。提供程序生成的
+建表、加列或修改列 DDL 会先检查 `SF_GET_LENGTH_IN_CHAR()`，仅在 0 时执行；
+其他或未知模式明确报错，避免把原字节容量按字符解释。该守卫不修改实例配置；
+当前真实验证环境为模式 0，未将模拟拒绝分支当作模式 1 实例验证。
 
 审查时对照[兼容性矩阵](compatibility.md)里的迁移行。第一次取 `NEXTVAL` 之前修改序列增量，
 达梦可能不从原来的起点继续计。
@@ -220,7 +231,10 @@ SQL> START /path/migrate.sql
 
 幂等脚本必须交给 DIsql。`/` 是客户端批次结束符，不是服务器 SQL。
 不要把整个文件交给 ADO.NET、`ExecuteSqlRaw` 或其他按分号拆批的执行器。
-应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送。
+应用若要执行同一段幂等 SQL，先去掉单独一行的 `/`，再把每个 `BEGIN ... END;` 作为一条命令发送；
+块可以嵌套（历史记录守卫内的 `EnsureSchema` 守卫块）。解析时忽略引号/注释中的关键字，按词法 token 配对，保留 `DECLARE` 声明和前导注释；同一行可以有多个关键字。区分 `END IF`、`END LOOP`、`CASE ... END` 与块结束，不要在内层 `END;` 处提前截断。
+
+本仓库测试执行器支持匿名块的变量声明、局部过程/函数声明及其嵌套体，但不是完整 DMSQL 脚本解析器。`CREATE PROCEDURE/FUNCTION/TRIGGER/PACKAGE` 定义明确拒绝拆批；这类定义应作为完整命令交给相应执行器，不按内部的分号拆开。
 
 脚本正文里如果出现 `&`，DIsql 会把它当成替换变量。执行前在会话里运行 `SET DEFINE OFF`。
 

@@ -41,6 +41,18 @@ public sealed class DamengTypeMappingTests
         };
 
     [Theory]
+    [InlineData("FLOAT(7)")]
+    [InlineData("FLOAT(24)")]
+    [InlineData("FLOAT(53)")]
+    public void ExplicitFloatPrecisionRemainsInStoreType(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+    }
+
+    [Theory]
     [MemberData(nameof(DefaultMappings))]
     public void ClrTypesHaveRangeSafeDefaultMappings(Type clrType, string storeType, DbType? dbType)
     {
@@ -73,10 +85,17 @@ public sealed class DamengTypeMappingTests
 
         AssertStringMapping(source, unicode: true, fixedLength: false, 32767, "NVARCHAR2(32767)", DbType.String);
         AssertStringMapping(source, unicode: true, fixedLength: false, 32768, "NCLOB", DbType.String);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 32767, "VARCHAR2(32767)", DbType.AnsiString);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 32768, "CLOB", DbType.AnsiString);
+        // Non-Unicode character semantics budget four bytes per character against the
+        // smallest supported page's conservative 1900-byte limit: 475 chars fit, 476 use CLOB.
+        AssertStringMapping(source, unicode: false, fixedLength: false, 475, "VARCHAR2(475 CHAR)", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: true, 475, "CHAR(475 CHAR)", DbType.AnsiStringFixedLength);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 476, "CLOB", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 1000, "CLOB", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 2047, "CLOB", DbType.AnsiString);
         AssertStringMapping(source, unicode: true, fixedLength: true, 12, "NCHAR(12)", DbType.StringFixedLength);
-        AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12)", DbType.AnsiStringFixedLength);
+        AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12 CHAR)", DbType.AnsiStringFixedLength);
+        Assert.Null(source.FindMapping(
+            typeof(string), storeTypeName: null, unicode: false, size: 476, fixedLength: true));
         Assert.Throws<NotSupportedException>(
             () => source.FindMapping(
                 typeof(string),
@@ -84,6 +103,34 @@ public sealed class DamengTypeMappingTests
                 unicode: true,
                 size: 32768,
                 fixedLength: true));
+    }
+
+    [Fact]
+    public void InferredOversizedFixedAnsiPropertyIsRejectedInsteadOfConvertedToBinary()
+    {
+        var options = new DbContextOptionsBuilder<OversizedFixedAnsiContext>()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options;
+        using var context = new OversizedFixedAnsiContext(options);
+        Assert.Throws<NotSupportedException>(() => _ = context.Model);
+    }
+
+    private sealed class OversizedFixedAnsiContext(DbContextOptions<OversizedFixedAnsiContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity("TooWide").HasNoKey().Property<string>("Value")
+                .IsUnicode(false).IsFixedLength().HasMaxLength(476);
+    }
+
+    [Theory]
+    [InlineData("VARCHAR2(2047 CHAR)", 2047)]
+    [InlineData("CHAR(476 CHAR)", 476)]
+    public void ExplicitStoreTypesRetainTheirInstanceSpecificCapacity(string storeType, int size)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(size, mapping.Size);
     }
 
     [Fact]
@@ -122,7 +169,109 @@ public sealed class DamengTypeMappingTests
         Assert.NotNull(unicode);
         Assert.Equal("NVARCHAR2(450)", unicode.StoreType);
         Assert.NotNull(ansi);
-        Assert.Equal("VARCHAR2(900)", ansi.StoreType);
+        Assert.Equal("VARCHAR2(450 CHAR)", ansi.StoreType);
+    }
+
+    [Fact]
+    public void CharQualifiedAnsiStoreTypeParsesAndRoundTrips()
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+
+        var mapping = source.FindMapping("VARCHAR2(20 CHAR)");
+        Assert.NotNull(mapping);
+        Assert.Equal("VARCHAR2(20 CHAR)", mapping.StoreType);
+        Assert.Equal(20, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+
+        var fixedMapping = source.FindMapping("CHAR(5 CHAR)");
+        Assert.NotNull(fixedMapping);
+        Assert.Equal("CHAR(5 CHAR)", fixedMapping.StoreType);
+        Assert.Equal(5, fixedMapping.Size);
+
+        // Unicode declarations are already character-based and stay unchanged.
+        var unicode = source.FindMapping("NVARCHAR2(20)");
+        Assert.NotNull(unicode);
+        Assert.Equal("NVARCHAR2(20)", unicode.StoreType);
+    }
+
+    [Theory]
+    [InlineData("VARCHAR(9 BYTE)")]
+    [InlineData("VARCHAR2(9 BYTE)")]
+    [InlineData("CHAR(9 BYTE)")]
+    [InlineData("varchar( 9 byte )")]
+    [InlineData("VARCHAR2 (9 BYTE)")]
+    [InlineData("CHAR  (9 BYTE)")]
+    [InlineData("varchar\t(9 byte)")]
+    public void ByteQualifiedStoreTypesKeepTheirUnitAndLength(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(9, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+        Assert.True(DamengTypeMappingSource.RequiresByteLengthSemantics(storeType));
+        Assert.False(DamengTypeMappingSource.RequiresByteLengthSemantics("VARCHAR(9 CHAR)"));
+    }
+
+    [Theory]
+    [InlineData("VARCHAR2 (9 CHAR)")]
+    [InlineData("CHAR  (9 CHAR)")]
+    [InlineData("varchar\t(9 char)")]
+    public void CharacterLengthSemanticsAllowWhitespaceBeforeParenthesis(string storeType)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(9, mapping.Size);
+        Assert.False(mapping.IsUnicode);
+    }
+
+    [Theory]
+    [InlineData("NVARCHAR2(9 BYTE)")]
+    [InlineData("NVARCHAR2 (9 BYTE)")]
+    [InlineData("INT (9 BYTE)")]
+    [InlineData("NCHAR(9 BYTE)")]
+    [InlineData("INT(9 BYTE)")]
+    public void ByteQualifierSupportDoesNotExpandToOtherStoreTypes(string storeType)
+    {
+        using var context = CreateContext();
+        Assert.Null(GetMappingSource(context).FindMapping(storeType));
+    }
+
+    [Theory]
+    [InlineData("INT(9 CHAR)", typeof(int))]
+    [InlineData("int (9 char)", typeof(int))]
+    [InlineData("DECIMAL(9 CHAR)", typeof(decimal))]
+    [InlineData("VARBINARY(9 CHAR)", typeof(byte[]))]
+    [InlineData("CLOB(9 CHAR)", typeof(string))]
+    [InlineData("NVARCHAR2(9 CHAR)", typeof(string))]
+    [InlineData("NCHAR(9 CHAR)", typeof(string))]
+    public void CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(string storeType, Type clrType)
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+        Assert.Null(source.FindMapping(storeType));
+        Assert.Null(source.FindMapping(clrType, storeType));
+    }
+
+    [Fact]
+    public void InvalidIntegerCharacterQualifierCannotGenerateMigrationSql()
+    {
+        using var context = new InvalidLengthUnitContext(new DbContextOptionsBuilder().UseDameng("Server=localhost;User Id=test;Password=test;").Options);
+        Assert.Throws<InvalidOperationException>(() => context.Database.GenerateCreateScript());
+    }
+
+    private sealed class InvalidLengthUnitContext(DbContextOptions options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>("InvalidUnit");
+            entity.Property<int>("Id").HasColumnType("INT(9 CHAR)");
+            entity.HasKey("Id");
+        }
     }
 
     [Fact]
@@ -195,6 +344,21 @@ public sealed class DamengTypeMappingTests
         Assert.Equal(
             "0.1234567890123456789012345678",
             mapping.GenerateSqlLiteral(value));
+    }
+
+    [Fact]
+    public void DecimalScaffoldingCanProbeScaleWithoutPrecision()
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+        var probe = source.FindMapping(typeof(decimal), storeTypeName: null, precision: null, scale: 2);
+        Assert.NotNull(probe);
+        Assert.Equal("DECIMAL", probe.StoreType);
+        Assert.Null(probe.Precision);
+        Assert.Null(probe.Scale);
+        var explicitMapping = source.FindMapping(typeof(decimal), storeTypeName: null, precision: 18, scale: 2);
+        Assert.NotNull(explicitMapping);
+        Assert.Equal("DECIMAL(18,2)", explicitMapping.StoreType);
     }
 
     [Theory]

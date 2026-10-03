@@ -23,6 +23,7 @@ public sealed class DamengDesignTimeServices : IDesignTimeServices
         new EntityFrameworkRelationalDesignServicesBuilder(serviceCollection)
             .TryAdd<IAnnotationCodeGenerator, DamengAnnotationCodeGenerator>()
             .TryAdd<IProviderConfigurationCodeGenerator, DamengCodeGenerator>()
+            .TryAdd<IDatabaseModelFactory, DamengDatabaseModelFactory>()
             .TryAddCoreServices();
     }
 }

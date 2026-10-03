@@ -159,9 +159,10 @@ public static class DamengPropertyExtensions
         => property.SetOrRemoveAnnotation(DamengAnnotationNames.SequenceSchema, CheckNullButNotEmpty(schema));
 
     internal static bool IsCompatibleWithDatabaseGeneratedInteger(IReadOnlyProperty property)
-    {
-        var type = GetProviderClrType(property);
+        => IsCompatibleWithDatabaseGeneratedInteger(GetProviderClrType(property));
 
+    internal static bool IsCompatibleWithDatabaseGeneratedInteger(Type type)
+    {
         return type == typeof(sbyte)
             || type == typeof(byte)
             || type == typeof(short)
@@ -170,9 +171,10 @@ public static class DamengPropertyExtensions
     }
 
     internal static bool IsCompatibleWithIdentity(IReadOnlyProperty property)
-    {
-        var type = GetProviderClrType(property);
+        => IsCompatibleWithIdentity(GetProviderClrType(property));
 
+    internal static bool IsCompatibleWithIdentity(Type type)
+    {
         return type == typeof(int)
             || type == typeof(long);
     }

@@ -13,6 +13,155 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengMigrationsFunctionalTests
 {
     [DamengFact]
+    public async Task AnonymousBlockAndFollowingDdlRequireSeparateOperations()
+    {
+        var table = $"EF10_BLOCKDDL_{Guid.NewGuid():N}".ToUpperInvariant();
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+        var block = "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END;";
+        var ddl = $"CREATE TABLE \"{table}\" (ID INT);";
+        var options = MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent;
+        Assert.Throws<NotSupportedException>(() => generator.Generate(
+            [new SqlOperation { Sql = block + ddl }], options: options));
+        var commands = generator.Generate(
+            [new SqlOperation { Sql = block }, new SqlOperation { Sql = ddl, SuppressTransaction = true },
+                new SqlOperation { Sql = $"INSERT INTO \"{table}\" VALUES (1);" }], options: options);
+        var script = $"BEGIN IF NOT EXISTS (SELECT 1 FROM USER_TABLES WHERE TABLE_NAME = '{table}') THEN\n"
+            + string.Join("\n", commands.Select(command => command.CommandText)) + "\nEND IF; END;\n/";
+        try
+        {
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await using var count = connection.CreateCommand();
+            count.CommandText = $"SELECT COUNT(*) FROM \"{table}\" WHERE ID = 1";
+            Assert.Equal(1L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", table, $"DROP TABLE \"{table}\"");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IdempotentMultiStatementSqlOperationExecutesOnce(bool includesDdl)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = $"EF10_DYN_{suffix}";
+        var historyTable = $"EF10_DYH_{suffix}";
+        var migration = $"202610020001_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng(connectionString, options => options.MigrationsHistoryTable(historyTable)).Options);
+        var createSql = $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N VARCHAR(40), C INT);";
+        try
+        {
+            if (!includesDdl)
+            {
+                await using var create = connection.CreateCommand();
+                create.CommandText = createSql;
+                await create.ExecuteNonQueryAsync();
+            }
+
+            var operation = new SqlOperation
+            {
+                Sql = (includesDdl ? createSql + "\n" : "")
+                    + $"INSERT INTO \"{table}\" VALUES (1, 'initial', 0);\n"
+                    + $"/* separator ; inside comment */ UPDATE \"{table}\" SET N = 'O''Brien;尾', C = C + 1 WHERE ID = 1;\n"
+                    + $"-- separator ; inside comment\nINSERT INTO \"{table}\" VALUES (2, '新建', 0);",
+                SuppressTransaction = true
+            };
+            var commands = context.GetService<IMigrationsSqlGenerator>().Generate([operation],
+                options: MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent);
+            var history = context.GetService<IHistoryRepository>();
+            var script = history.GetCreateIfNotExistsScript() + "\n/\n"
+                + history.GetBeginIfNotExistsScript(migration) + "\n"
+                + string.Join("\n", commands.Select(command => command.CommandText))
+                + history.GetInsertScript(new HistoryRow(migration, "10.0.12"))
+                + history.GetEndIfScript();
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+            await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, redact: text => text);
+
+            await using var readback = connection.CreateCommand();
+            readback.CommandText = $"SELECT ID, N, C FROM \"{table}\" ORDER BY ID";
+            await using (var reader = await readback.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(1, reader.GetInt32(0));
+                Assert.Equal("O'Brien;尾", reader.GetString(1));
+                Assert.Equal(1, reader.GetInt32(2));
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(2, reader.GetInt32(0));
+                Assert.Equal("新建", reader.GetString(1));
+                Assert.False(await reader.ReadAsync());
+            }
+
+            Assert.Equal(migration, Assert.Single(await history.GetAppliedMigrationsAsync()).MigrationId);
+        }
+        finally
+        {
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", table, $"DROP TABLE \"{table}\"");
+            await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", historyTable, $"DROP TABLE \"{historyTable}\"");
+        }
+    }
+
+    [DamengFact]
+    public async Task CommentPrefixedInlineBlocksExecuteAsGeneratedCommands()
+    {
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+        var name = "EF10_BLK_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        var created = false;
+        try
+        {
+            await using var create = connection.CreateCommand();
+            create.CommandText = $"CREATE TABLE \"{name}\" (ID INT)";
+            await create.ExecuteNonQueryAsync();
+            created = true;
+            var generator = context.GetService<IMigrationsSqlGenerator>();
+            foreach (var idempotent in new[] { false, true })
+            {
+                var operations = new MigrationOperation[]
+                {
+                    new SqlOperation { Sql = $"-- leading ' comment\nBEGIN -- inline\n INSERT INTO \"{name}\" VALUES (1); END;", SuppressTransaction = true },
+                    new SqlOperation { Sql = $"/* leading block comment */ DECLARE v INT; BEGIN v := 2; INSERT INTO \"{name}\" VALUES (v); END;", SuppressTransaction = true },
+                    new SqlOperation { Sql = $"DECLARE PROCEDURE p IS BEGIN INSERT INTO \"{name}\" VALUES (3); END; BEGIN p; END;", SuppressTransaction = true }
+                };
+                var commands = generator.Generate(operations, options: MigrationsSqlGenerationOptions.Script
+                    | (idempotent ? MigrationsSqlGenerationOptions.Idempotent : MigrationsSqlGenerationOptions.Default));
+                var script = string.Join("\n", commands.Select(command => command.CommandText));
+                if (idempotent)
+                {
+                    script = "BEGIN IF 1=1 THEN\n" + script + "\nEND IF; END;\n/";
+                }
+
+                await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent, text => text.Replace(connectionString, "[redacted]", StringComparison.Ordinal));
+            }
+
+            await using var count = connection.CreateCommand();
+            count.CommandText = $"SELECT COUNT(*) FROM \"{name}\"";
+            Assert.Equal(6L, Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            if (created)
+            {
+                await using var drop = connection.CreateCommand();
+                drop.CommandText = $"DROP TABLE \"{name}\"";
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [DamengFact]
     public async Task GeneratedDdlAndHistoryRepositoryExecuteAgainstDameng()
     {
         var suffix = Guid.NewGuid()
@@ -200,6 +349,476 @@ public sealed class DamengMigrationsFunctionalTests
                 tableName,
                 sequenceName);
         }
+    }
+
+    [DamengFact]
+    public async Task CommentsExecuteAndRoundTripAgainstDameng()
+    {
+        var suffix = Guid.NewGuid()
+            .ToString("N", CultureInfo.InvariantCulture)[..12]
+            .ToUpperInvariant();
+        var tableName = $"EF10_CMT_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        var options = new DbContextOptionsBuilder<CommentContext>()
+            .UseDameng(connectionString)
+            .ReplaceService<IModelCacheKeyFactory, CommentModelCacheKeyFactory>()
+            .EnableDetailedErrors()
+            .Options;
+
+        try
+        {
+            await using var contextV1 = new CommentContext(options, tableName, "首版注释", "备注 '引号'");
+            var modelV1 = contextV1.GetService<IDesignTimeModel>().Model;
+            var createCommands = contextV1.GetService<IMigrationsSqlGenerator>()
+                .Generate(
+                    contextV1.GetService<IMigrationsModelDiffer>()
+                        .GetDifferences(source: null, modelV1.GetRelationalModel()),
+                    modelV1);
+
+            Assert.Contains(
+                createCommands,
+                command => command.CommandText.StartsWith("COMMENT ON TABLE", StringComparison.Ordinal)
+                    && command.TransactionSuppressed);
+            Assert.Contains(
+                createCommands,
+                command => command.CommandText.StartsWith("COMMENT ON COLUMN", StringComparison.Ordinal)
+                    && command.TransactionSuppressed);
+
+            await contextV1.Database.OpenConnectionAsync();
+            foreach (var command in createCommands)
+            {
+                await contextV1.Database.ExecuteSqlRawAsync(command.CommandText);
+            }
+
+            Assert.Equal("首版注释", await ReadTableCommentAsync(connectionString, tableName));
+            Assert.Equal("备注 '引号'", await ReadNoteCommentAsync(connectionString, tableName));
+
+            await using var contextV2 = new CommentContext(options, tableName, "覆盖注释", null);
+            var modelV2 = contextV2.GetService<IDesignTimeModel>().Model;
+            var alterCommands = contextV2.GetService<IMigrationsSqlGenerator>()
+                .Generate(
+                    contextV2.GetService<IMigrationsModelDiffer>()
+                        .GetDifferences(modelV1.GetRelationalModel(), modelV2.GetRelationalModel()),
+                    modelV2);
+
+            foreach (var command in alterCommands)
+            {
+                await contextV2.Database.ExecuteSqlRawAsync(command.CommandText);
+            }
+
+            Assert.Equal("覆盖注释", await ReadTableCommentAsync(connectionString, tableName));
+            Assert.Equal(string.Empty, await ReadNoteCommentAsync(connectionString, tableName));
+        }
+        finally
+        {
+            await using var connection = new DmConnection(connectionString);
+            await connection.OpenAsync();
+            await DropIfExistsAsync(
+                connection,
+                "USER_TABLES",
+                "TABLE_NAME",
+                tableName,
+                $"DROP TABLE \"{tableName}\"");
+        }
+    }
+
+    [DamengFact]
+    public async Task IdempotentScriptCarriesMultilineCommentsAsSingleBatches()
+    {
+        var suffix = Guid.NewGuid()
+            .ToString("N", CultureInfo.InvariantCulture)[..12]
+            .ToUpperInvariant();
+        var tableName = $"EF10_CML_{suffix}";
+        var historyTableName = $"EF10_CMH_{suffix}";
+        var migrationId = $"202609300001_{suffix}";
+        var tableComment = "首行注释\nEND;\n仍属同一条注释";
+        var columnComment = "列注释\nBEGIN\n尾行";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        var options = new DbContextOptionsBuilder<CommentContext>()
+            .UseDameng(
+                connectionString,
+                damengOptions => damengOptions.MigrationsHistoryTable(historyTableName))
+            .ReplaceService<IModelCacheKeyFactory, CommentModelCacheKeyFactory>()
+            .EnableDetailedErrors()
+            .Options;
+
+        try
+        {
+            await using var context = new CommentContext(options, tableName, tableComment, columnComment);
+            var model = context.GetService<IDesignTimeModel>().Model;
+            var commands = context.GetService<IMigrationsSqlGenerator>()
+                .Generate(
+                    context.GetService<IMigrationsModelDiffer>()
+                        .GetDifferences(source: null, model.GetRelationalModel()),
+                    model,
+                    MigrationsSqlGenerationOptions.Script | MigrationsSqlGenerationOptions.Idempotent);
+
+            var historyRepository = context.GetService<IHistoryRepository>();
+            var endIfScript = historyRepository.GetEndIfScript();
+            var script = new StringBuilder()
+                .AppendLine(historyRepository.GetCreateIfNotExistsScript())
+                .AppendLine("/")
+                .AppendLine(historyRepository.GetBeginIfNotExistsScript(migrationId).TrimEnd());
+            foreach (var command in commands)
+            {
+                script.AppendLine(command.CommandText);
+            }
+
+            script
+                .AppendLine(historyRepository.GetInsertScript(new HistoryRow(migrationId, "10.0.12")))
+                .Append(endIfScript);
+
+            await using (var connection = new DmConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await DamengScriptExecutor.ExecuteAsync(
+                    connection,
+                    script.ToString(),
+                    idempotent: true,
+                    redact: text => text);
+            }
+
+            Assert.Equal(tableComment, await ReadTableCommentAsync(connectionString, tableName));
+
+            await using var columnConnection = new DmConnection(connectionString);
+            await columnConnection.OpenAsync();
+            await using var readback = columnConnection.CreateCommand();
+            readback.CommandText =
+                "SELECT COMMENTS FROM USER_COL_COMMENTS WHERE TABLE_NAME = :table_name AND COLUMN_NAME = 'NOTE'";
+            var parameter = readback.CreateParameter();
+            parameter.ParameterName = "table_name";
+            parameter.Value = tableName;
+            readback.Parameters.Add(parameter);
+            Assert.Equal(
+                columnComment,
+                Convert.ToString(await readback.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await using var connection = new DmConnection(connectionString);
+            await connection.OpenAsync();
+            await DropIfExistsAsync(
+                connection,
+                "USER_TABLES",
+                "TABLE_NAME",
+                tableName,
+                $"DROP TABLE \"{tableName}\"");
+            await DropIfExistsAsync(
+                connection,
+                "USER_TABLES",
+                "TABLE_NAME",
+                historyTableName,
+                $"DROP TABLE \"{historyTableName}\"");
+        }
+    }
+
+    [DamengFact]
+    public async Task EnsureSchemaGuardSkipsExistingCurrentSchema()
+    {
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        string currentSchema;
+        await using (var connection = new DmConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using var schemaCommand = connection.CreateCommand();
+            schemaCommand.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+            currentSchema = Convert.ToString(
+                await schemaCommand.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture)!;
+        }
+
+        var options = new DbContextOptionsBuilder<EmptyContext>()
+            .UseDameng(connectionString)
+            .Options;
+        await using var context = new EmptyContext(options);
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        var command = Assert.Single(
+            generator.Generate([new EnsureSchemaOperation { Name = currentSchema }]));
+        Assert.StartsWith("BEGIN", command.CommandText, StringComparison.Ordinal);
+        Assert.Contains("TYPE$ = 'SCH'", command.CommandText, StringComparison.Ordinal);
+
+        var idempotentCommand = Assert.Single(
+            generator.Generate(
+                [new EnsureSchemaOperation { Name = currentSchema }],
+                options: MigrationsSqlGenerationOptions.Idempotent));
+        Assert.StartsWith("BEGIN", idempotentCommand.CommandText, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "EXECUTE IMMEDIATE 'BEGIN",
+            idempotentCommand.CommandText,
+            StringComparison.Ordinal);
+
+        // The guarded block must succeed twice without CREATE SCHEMA privileges:
+        // the catalog check short-circuits before EXECUTE IMMEDIATE runs.
+        await using var execution = new DmConnection(connectionString);
+        await execution.OpenAsync();
+        var step = 0;
+        foreach (var text in new[]
+        {
+            command.CommandText,
+            command.CommandText,
+            idempotentCommand.CommandText,
+            idempotentCommand.CommandText
+        })
+        {
+            step++;
+            try
+            {
+                await using var batch = execution.CreateCommand();
+                batch.CommandText = text;
+                await batch.ExecuteNonQueryAsync();
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException(
+                    $"EnsureSchema execution step {step} failed. Text: "
+                    + text.Replace("\r", "\\r", StringComparison.Ordinal)
+                        .Replace("\n", "\\n", StringComparison.Ordinal),
+                    exception);
+            }
+        }
+    }
+
+    private static async Task<string?> ReadTableCommentAsync(string connectionString, string tableName)
+    {
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COMMENTS FROM USER_TAB_COMMENTS WHERE TABLE_NAME = :table_name";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "table_name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+        var value = await command.ExecuteScalarAsync();
+        return value is null or DBNull ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string?> ReadNoteCommentAsync(string connectionString, string tableName)
+    {
+        await using var connection = new DmConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COMMENTS FROM USER_COL_COMMENTS WHERE TABLE_NAME = :table_name AND COLUMN_NAME = 'NOTE'";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "table_name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+        var value = await command.ExecuteScalarAsync();
+        return value is null or DBNull ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+    }
+
+    private sealed class EmptyContext(DbContextOptions<EmptyContext> options) : DbContext(options);
+
+    [DamengFact]
+    public async Task AnsiSizedStringColumnsUseCharSemanticsAndHoldMultibyteText()
+    {
+        var suffix = Guid.NewGuid()
+            .ToString("N", CultureInfo.InvariantCulture)[..12]
+            .ToUpperInvariant();
+        var tableName = $"EF10_CHR_{suffix}";
+        var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
+
+        var options = new DbContextOptionsBuilder<AnsiStringContext>()
+            .UseDameng(connectionString)
+            .ReplaceService<IModelCacheKeyFactory, AnsiStringModelCacheKeyFactory>()
+            .EnableDetailedErrors()
+            .Options;
+
+        await using var context = new AnsiStringContext(options, tableName);
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var commands = context.GetService<IMigrationsSqlGenerator>()
+            .Generate(
+                context.GetService<IMigrationsModelDiffer>()
+                    .GetDifferences(source: null, model.GetRelationalModel()),
+                model);
+
+        var createTable = Assert.Single(
+            commands,
+            command => command.CommandText.StartsWith("CREATE TABLE", StringComparison.Ordinal));
+        Assert.Contains("\"CODE\" VARCHAR2(3 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"INITIALS\" CHAR(2 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"LONG_CODE\" CLOB", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"BOUNDARY_CODE\" VARCHAR2(475 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"OVERSIZE_CODE\" CLOB", createTable.CommandText, StringComparison.Ordinal);
+
+        try
+        {
+            await context.Database.OpenConnectionAsync();
+            foreach (var command in commands)
+            {
+                await context.Database.ExecuteSqlRawAsync(command.CommandText);
+            }
+
+            var longCode = new string('中', 1000);
+            var boundaryCode = new string('中', 475);
+            var oversizeCode = new string('中', 476);
+            context.Entities.Add(
+                new AnsiStringEntity
+                {
+                    Code = "中文字",
+                    Initials = "中文",
+                    LongCode = longCode,
+                    BoundaryCode = boundaryCode,
+                    OversizeCode = oversizeCode
+                });
+            await context.SaveChangesAsync();
+
+            var readback = await context.Entities
+                .AsNoTracking()
+                .SingleAsync(entity => entity.Code == "中文字");
+            Assert.Equal("中文", readback.Initials);
+            Assert.Equal(longCode, readback.LongCode);
+            Assert.Equal(boundaryCode, readback.BoundaryCode);
+            Assert.Equal(oversizeCode, readback.OversizeCode);
+
+            await using var connection = new DmConnection(connectionString);
+            await connection.OpenAsync();
+            await using var catalog = connection.CreateCommand();
+            catalog.CommandText =
+                "SELECT CHAR_USED FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :table_name AND COLUMN_NAME = 'CODE'";
+            var parameter = catalog.CreateParameter();
+            parameter.ParameterName = "table_name";
+            parameter.Value = tableName;
+            catalog.Parameters.Add(parameter);
+            Assert.Equal(
+                "C",
+                Convert.ToString(await catalog.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await context.Database.CloseConnectionAsync();
+            await DropObjectsAsync(connectionString, tableName, tableName, tableName);
+        }
+    }
+
+    private sealed class AnsiStringContext(
+        DbContextOptions<AnsiStringContext> options,
+        string tableName)
+        : DbContext(options)
+    {
+        public string TableName { get; } = tableName;
+
+        public DbSet<AnsiStringEntity> Entities => Set<AnsiStringEntity>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<AnsiStringEntity>(
+                entity =>
+                {
+                    entity.ToTable(TableName);
+                    entity.HasKey(item => item.Id);
+                    entity.Property(item => item.Id).HasColumnName("ID");
+                    entity.Property(item => item.Code)
+                        .HasColumnName("CODE")
+                        .HasMaxLength(3)
+                        .IsUnicode(false);
+                    entity.Property(item => item.Initials)
+                        .HasColumnName("INITIALS")
+                        .HasMaxLength(2)
+                        .IsUnicode(false)
+                        .IsFixedLength();
+                    entity.Property(item => item.LongCode)
+                        .HasColumnName("LONG_CODE")
+                        .HasMaxLength(1000)
+                        .IsUnicode(false);
+                    // A page-independent inferred mapping budgets at most 1900 bytes:
+                    // 475 CHAR characters fit; 476 falls back to CLOB.
+                    entity.Property(item => item.BoundaryCode)
+                        .HasColumnName("BOUNDARY_CODE")
+                        .HasMaxLength(475)
+                        .IsUnicode(false);
+                    entity.Property(item => item.OversizeCode)
+                        .HasColumnName("OVERSIZE_CODE")
+                        .HasMaxLength(476)
+                        .IsUnicode(false);
+                });
+    }
+
+    private sealed class AnsiStringModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+            => context is AnsiStringContext ansiContext
+                ? (context.GetType(), ansiContext.TableName, designTime)
+                : (context.GetType(), designTime);
+    }
+
+    private sealed class AnsiStringEntity
+    {
+        public int Id { get; set; }
+
+        public string? Code { get; set; }
+
+        public string? Initials { get; set; }
+
+        public string? LongCode { get; set; }
+
+        public string? BoundaryCode { get; set; }
+
+        public string? OversizeCode { get; set; }
+    }
+
+    private sealed class CommentContext(
+        DbContextOptions<CommentContext> options,
+        string tableName,
+        string? tableComment,
+        string? noteComment)
+        : DbContext(options)
+    {
+        public DbSet<CommentEntity> Entities => Set<CommentEntity>();
+
+        public string TableName { get; } = tableName;
+
+        public string? TableComment { get; } = tableComment;
+
+        public string? NoteComment { get; } = noteComment;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity<CommentEntity>(
+                entity =>
+                {
+                    entity.ToTable(
+                        TableName,
+                        table =>
+                        {
+                            if (TableComment is not null)
+                            {
+                                table.HasComment(TableComment);
+                            }
+                        });
+                    entity.HasKey(item => item.Id);
+                    entity.Property(item => item.Id).HasColumnName("ID");
+                    entity.Property(item => item.Note)
+                        .HasColumnName("NOTE")
+                        .HasMaxLength(50);
+
+                    if (NoteComment is not null)
+                    {
+                        entity.Property(item => item.Note).HasComment(NoteComment);
+                    }
+                });
+    }
+
+    private sealed class CommentModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+            => context is CommentContext commentContext
+                ? (
+                    context.GetType(),
+                    commentContext.TableName,
+                    commentContext.TableComment,
+                    commentContext.NoteComment,
+                    designTime)
+                : (context.GetType(), designTime);
+    }
+
+    private sealed class CommentEntity
+    {
+        public int Id { get; set; }
+
+        public string? Note { get; set; }
     }
 
     private static async Task<long> CountIndexAsync(

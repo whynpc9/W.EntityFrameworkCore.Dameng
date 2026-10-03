@@ -12,6 +12,8 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
     private string? _password;
     private bool _userCreated;
     private bool _tablespaceCreated;
+    private string? _ownedHugePath;
+    private bool _hugeStorageEnabled;
 
     public string? ServerBanner { get; private set; }
 
@@ -66,6 +68,7 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
             }
 
             var datafile = directory.Replace('\\', '/') + "/" + tablespace + extension;
+            _ownedHugePath = directory.Replace('\\', '/') + "/" + tablespace + "_HUGE";
             ServerBanner = await TryScalarStringAsync(admin, "SELECT BANNER FROM V$VERSION");
             InstanceVersion = await TryScalarStringAsync(admin, "SELECT SVR_VERSION FROM V$INSTANCE");
             CompatibleMode = await TryScalarStringAsync(
@@ -132,6 +135,40 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
         {
             throw new InvalidOperationException(Redact(failure.ToString()));
         }
+    }
+
+    internal async Task EnableHugeStorageAsync()
+    {
+        if (!_tablespaceCreated || TablespaceName is null || _adminConnectionString is null || _ownedHugePath is null)
+        {
+            throw new InvalidOperationException("An owned temporary test tablespace is required.");
+        }
+
+        if (_hugeStorageEnabled)
+        {
+            return;
+        }
+
+        // Only this fixture's randomly named, disposable tablespace is converted to mixed
+        // storage. The persistent local-test tablespace and global INI settings are untouched.
+        await using var admin = new DmConnection(_adminConnectionString);
+        await admin.OpenAsync();
+        await ExecuteAsync(admin, "ALTER TABLESPACE \"" + TablespaceName + "\" ADD HUGE PATH '"
+            + _ownedHugePath.Replace("'", "''", StringComparison.Ordinal) + "'");
+        _hugeStorageEnabled = true;
+    }
+
+    internal async Task UseDefaultIndexTablespaceAsync(DamengScriptTestDatabase tablespaceOwner)
+    {
+        if (!_userCreated || UserName is null || _adminConnectionString is null
+            || !tablespaceOwner._tablespaceCreated || tablespaceOwner.TablespaceName is null)
+        {
+            throw new InvalidOperationException("Owned temporary test users and tablespaces are required.");
+        }
+
+        await using var admin = new DmConnection(_adminConnectionString);
+        await admin.OpenAsync();
+        await ExecuteAsync(admin, $"ALTER USER \"{UserName}\" DEFAULT INDEX TABLESPACE \"{tablespaceOwner.TablespaceName}\"");
     }
 
     public async Task<DmConnection> OpenAsync()
@@ -264,8 +301,12 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         Span<char> chars = stackalloc char[24];
+        // Always satisfy character-class policies; random draws alone can omit digits.
         chars[0] = 'A';
-        for (var index = 1; index < chars.Length; index++)
+        chars[1] = 'a';
+        chars[2] = '7';
+        chars[3] = '!';
+        for (var index = 4; index < chars.Length; index++)
         {
             chars[index] = alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)];
         }

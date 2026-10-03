@@ -8,6 +8,11 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Xunit;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+
+#pragma warning disable EF1001 // Tests intentionally inspect provider design-time contracts.
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
@@ -23,6 +28,234 @@ public sealed class DamengMigrationScriptFunctionalTests
     {
         _database = database;
         _output = output;
+    }
+
+    [DamengFact]
+    public async Task ScaffoldingValidatesPhysicalIndexPlacementSeparatelyFromDataPlacement()
+    {
+        var database = new DamengScriptTestDatabase();
+        var alternate = new DamengScriptTestDatabase();
+        try
+        {
+            await database.InitializeAsync();
+            await alternate.InitializeAsync();
+            // The fixture omits DEFAULT INDEX TABLESPACE when creating this user.
+            await using (var baseline = await database.OpenAsync())
+            {
+                await ExecuteAsync(baseline, "CREATE TABLE BASELINE (ID INT NOT CLUSTER PRIMARY KEY, N INT) STORAGE(CLUSTERBTR)");
+                await ExecuteAsync(baseline, "CREATE INDEX BASELINE_IX ON BASELINE(N)");
+                await using var command = baseline.CreateCommand();
+                command.CommandText = "SELECT X.GROUPID, U.INFO3 FROM ALL_INDEXES I "
+                    + "JOIN SYS.SYSOBJECTS S ON S.NAME=I.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' "
+                    + "JOIN SYS.SYSOBJECTS O ON O.SCHID=S.ID AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' "
+                    + "JOIN SYS.SYSINDEXES X ON X.ID=O.ID WHERE S.ID=CURRENT_SCHID() AND I.INDEX_NAME='BASELINE_IX'";
+                await using (var reader = await command.ExecuteReaderAsync())
+                {
+                    Assert.True(await reader.ReadAsync());
+                    var ownerInfo3 = Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture);
+                    Assert.Equal(0L, (ownerInfo3 >> 16) & 0xFFFFL);
+                    Assert.Equal(ownerInfo3 & 0xFFFFL, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
+                }
+                using var baselineContext = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+                var baselineFactory = new DamengDatabaseModelFactory(baselineContext.GetService<IRelationalTypeMappingSource>(), baselineContext.GetService<ISqlGenerationHelper>());
+                Assert.Equal("BASELINE", Assert.Single(baselineFactory.Create(baseline, new DatabaseModelFactoryOptions(tables: ["BASELINE"])).Tables).Name);
+                await ExecuteAsync(baseline, "DROP TABLE BASELINE");
+            }
+
+            await database.UseDefaultIndexTablespaceAsync(_database);
+            await using var connection = await database.OpenAsync();
+            await ExecuteAsync(connection, "CREATE TABLE GOOD (ID INT NOT NULL, N INT, U INT UNIQUE, NOT CLUSTER PRIMARY KEY(ID)) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE INDEX GOOD_IX ON GOOD(N)");
+            await ExecuteAsync(connection, "CREATE TABLE VIRTUAL_CHILD (PID INT REFERENCES GOOD(ID)) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE TABLE PHYSICAL_CHILD (PID INT REFERENCES GOOD(ID) WITH INDEX) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, "CREATE TABLE BAD_INDEX (N INT) STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, $"CREATE INDEX BAD_IX ON BAD_INDEX(N) STORAGE(ON \"{alternate.TablespaceName}\")");
+            await ExecuteAsync(connection, $"CREATE TABLE BAD_PK (ID INT NOT CLUSTER PRIMARY KEY USING INDEX TABLESPACE \"{alternate.TablespaceName}\") STORAGE(CLUSTERBTR)");
+            await ExecuteAsync(connection, $"CREATE TABLE BAD_UNIQUE (ID INT UNIQUE USING INDEX TABLESPACE \"{alternate.TablespaceName}\") STORAGE(CLUSTERBTR)");
+
+            var misplacedIndexes = new Dictionary<string, string>(StringComparer.Ordinal);
+            var normalDefaults = 0;
+            var virtualIndexes = 0;
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT I.TABLE_NAME, I.INDEX_NAME, I.INDEX_TYPE, X.GROUPID, U.INFO3 "
+                    + "FROM ALL_INDEXES I JOIN SYS.SYSOBJECTS S ON S.NAME=I.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' "
+                    + "JOIN SYS.SYSOBJECTS O ON O.SCHID=S.ID AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' "
+                    + "LEFT JOIN SYS.SYSINDEXES X ON X.ID=O.ID WHERE S.ID=CURRENT_SCHID()";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var table = reader.GetString(0);
+                    var kind = reader.GetString(2);
+                    var ownerInfo3 = Convert.ToInt64(reader.GetValue(4), CultureInfo.InvariantCulture);
+                    var dataSpace = ownerInfo3 & 0xFFFFL;
+                    var indexSpace = (ownerInfo3 >> 16) & 0xFFFFL;
+                    Assert.NotEqual(dataSpace, indexSpace);
+                    if (kind == "VIRTUAL")
+                    {
+                        virtualIndexes++;
+                        continue;
+                    }
+
+                    var actualSpace = Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture);
+                    if (kind == "CLUSTER") Assert.Equal(dataSpace, actualSpace);
+                    else if (table.StartsWith("BAD_", StringComparison.Ordinal))
+                    {
+                        Assert.Equal("NORMAL", kind);
+                        Assert.NotEqual(dataSpace, actualSpace);
+                        Assert.NotEqual(indexSpace, actualSpace);
+                        misplacedIndexes.Add(table, reader.GetString(1));
+                    }
+                    else
+                    {
+                        Assert.Equal("NORMAL", kind);
+                        Assert.Equal(indexSpace, actualSpace);
+                        normalDefaults++;
+                    }
+                }
+            }
+
+            Assert.Equal(3, misplacedIndexes.Count);
+            Assert.Equal(4, normalDefaults); // secondary index, PK, UNIQUE and physical FK
+            Assert.Equal(1, virtualIndexes);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+            foreach (var (table, index) in misplacedIndexes)
+            {
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+                Assert.Contains(table, error.Message, StringComparison.Ordinal);
+                Assert.Contains(index, error.Message, StringComparison.Ordinal);
+                Assert.Contains("index tablespace", error.Message, StringComparison.Ordinal);
+            }
+
+            var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["GOOD", "VIRTUAL_CHILD", "PHYSICAL_CHILD"]));
+            Assert.Equal(3, model.Tables.Count);
+            var good = Assert.Single(model.Tables, table => table.Name == "GOOD");
+            Assert.NotNull(good.PrimaryKey);
+            Assert.Single(good.UniqueConstraints);
+            Assert.Equal("GOOD_IX", Assert.Single(good.Indexes).Name);
+            var virtualChild = Assert.Single(model.Tables, table => table.Name == "VIRTUAL_CHILD");
+            Assert.Single(virtualChild.ForeignKeys);
+            Assert.Empty(virtualChild.Indexes);
+            var physicalChild = Assert.Single(model.Tables, table => table.Name == "PHYSICAL_CHILD");
+            Assert.Single(physicalChild.ForeignKeys);
+            Assert.Single(physicalChild.Indexes);
+        }
+        finally
+        {
+            // Drop the owning user first, including all its indexes in the other spaces.
+            try { await database.DisposeAsync(); }
+            finally { await alternate.DisposeAsync(); }
+        }
+    }
+
+    [DamengFact]
+    public async Task ScaffoldingRejectsNonDefaultTablespacesAndUsesSchemaOwnerDefault()
+    {
+        var alternate = new DamengScriptTestDatabase();
+        await alternate.InitializeAsync();
+        try
+        {
+            var schema = NewPrefix() + "_SCH";
+            await using var connection = await _database.OpenAsync();
+            await ExecuteAsync(connection, $"CREATE SCHEMA \"{schema}\"");
+            try
+            {
+                await ExecuteAsync(connection, $"SET SCHEMA \"{schema}\"");
+                await ExecuteAsync(connection, $"CREATE TABLE PLACED (ID INT) STORAGE(ON \"{alternate.TablespaceName}\", CLUSTERBTR)");
+                await ExecuteAsync(connection, "CREATE TABLE ORDINARY (ID INT) STORAGE(CLUSTERBTR)");
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT T.TABLE_NAME, T.TABLESPACE_NAME, U.NAME, U.INFO3 "
+                    + "FROM ALL_TABLES T JOIN SYS.SYSOBJECTS S ON S.NAME=T.OWNER AND S.TYPE$='SCH' "
+                    + "JOIN SYS.SYSOBJECTS U ON U.ID=S.PID AND U.TYPE$='UR' AND U.SUBTYPE$='USER' WHERE T.OWNER=:schema ORDER BY T.TABLE_NAME";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "schema";
+                parameter.Value = schema;
+                command.Parameters.Add(parameter);
+                await using (var reader = await command.ExecuteReaderAsync())
+                {
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal("ORDINARY", reader.GetString(0));
+                    Assert.Equal(_database.TablespaceName, reader.GetString(1));
+                    Assert.Equal(_database.UserName, reader.GetString(2));
+                    Assert.False(reader.IsDBNull(3));
+                    Assert.True(await reader.ReadAsync());
+                    Assert.Equal("PLACED", reader.GetString(0));
+                    Assert.Equal(alternate.TablespaceName, reader.GetString(1));
+                    Assert.False(reader.IsDBNull(3));
+                    Assert.False(await reader.ReadAsync());
+                }
+
+                using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+                var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["PLACED"])));
+                Assert.Contains("PLACED", error.Message, StringComparison.Ordinal);
+                Assert.Contains("tablespace ID", error.Message, StringComparison.Ordinal);
+                Assert.Equal("ORDINARY", Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["ORDINARY"])).Tables).Name);
+            }
+            finally
+            {
+                await ExecuteAsync(connection, $"SET SCHEMA \"{_database.UserName}\"");
+                await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            }
+        }
+        finally
+        {
+            await alternate.DisposeAsync();
+        }
+    }
+
+    [DamengFact]
+    public async Task ScaffoldedMigrationRejectsHugeTableInsteadOfCreatingAnOrdinaryTable()
+    {
+        await _database.EnableHugeStorageAsync();
+        var prefix = NewPrefix();
+        var huge = prefix + "_HUGE";
+        var ordinary = prefix + "_ROW";
+        await using var connection = await _database.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE HUGE TABLE \"{huge}\" (ID INT) STORAGE(WITH DELTA, FILESIZE(16))");
+            created.Add(huge);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT PRIMARY KEY)");
+            created.Add(ordinary);
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT T.TEMPORARY, T.PARTITIONED, O.SUBTYPE$, O.INFO3 "
+                    + "FROM USER_TABLES T INNER JOIN SYS.SYSOBJECTS O ON O.NAME = T.TABLE_NAME "
+                    + "AND O.SCHID = CURRENT_SCHID() AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
+                    + "WHERE T.TABLE_NAME = :name";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "name";
+                parameter.Value = huge;
+                command.Parameters.Add(parameter);
+                await using var reader = await command.ExecuteReaderAsync();
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("N", reader.GetString(0));
+                Assert.Equal("NO", reader.GetString(1));
+                Assert.Equal("UTAB", reader.GetString(2));
+                Assert.InRange(Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture) & 0x3FL, 0x21L, 0x27L);
+            }
+
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+            var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [huge])));
+            Assert.Contains(huge, error.Message, StringComparison.Ordinal);
+            Assert.Contains("HUGE", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection,
+                new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(created))
+            {
+                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
     }
 
     [DamengFact]
@@ -144,6 +377,10 @@ public sealed class DamengMigrationScriptFunctionalTests
         Assert.Contains("IF NOT EXISTS", script, StringComparison.Ordinal);
         Assert.Contains(Environment.NewLine + "/" + Environment.NewLine, script, StringComparison.Ordinal);
         Assert.DoesNotContain("BEGIN TRANSACTION", script, StringComparison.Ordinal);
+        // The custom lowercase block passes through unwrapped; a wrapped block's literal would
+        // end as end;'; and the server rejects blocks inside EXECUTE IMMEDIATE.
+        Assert.Contains("VALUES (7)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("end;';", script, StringComparison.Ordinal);
 
         await using var connection = await _database.OpenAsync();
         await DamengScriptExecutor.ExecuteAsync(connection, script, idempotent: true, _database.Redact);
@@ -155,6 +392,8 @@ public sealed class DamengMigrationScriptFunctionalTests
             ("id", 20L)));
         Assert.Equal(1L, await CountHistoryAsync(connection, names.HistoryTable, "202609220001_CreateScriptObjects"));
         Assert.Equal(1L, await CountHistoryAsync(connection, names.HistoryTable, "202609220002_AlterScriptObjects"));
+        Assert.Equal(2L, await ScalarInt64Async(connection,
+            $"SELECT COUNT(*) FROM \"{names.Schema}\".\"{names.RenamedLookupTable}\" WHERE ID IN (8, 9)"));
     }
 
     [DamengFact]
@@ -217,9 +456,11 @@ public sealed class DamengMigrationScriptFunctionalTests
             "SELECT COUNT(*) FROM USER_INDEXES WHERE INDEX_NAME = :name",
             ("name", names.Index)));
         await AssertIndexAsync(connection, names.RenamedIndex, descendingColumn: null);
-        Assert.Equal(0L, await ScalarInt64Async(
+        // The custom lowercase block inserted this row; the lookup table is otherwise unseeded.
+        Assert.Equal(1L, await ScalarInt64Async(
             connection,
-            "SELECT COUNT(*) FROM \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\""));
+            "SELECT COUNT(*) FROM \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\" WHERE \"ID\" = :id",
+            ("id", 7)));
         Assert.Equal(0L, await CountColumnAsync(connection, names.RenamedLookupTable, "LABEL"));
     }
 
@@ -802,6 +1043,18 @@ public sealed class AlterScriptObjectsMigration : Migration
             name: names.LookupTable,
             schema: names.Schema,
             newName: names.RenamedLookupTable);
+        // Custom anonymous blocks in any casing/indentation must pass idempotent generation
+        // unwrapped; the server rejects blocks inside EXECUTE IMMEDIATE. The lookup table uses
+        // an explicit key, so the block does not disturb identity sequencing.
+        migrationBuilder.Sql(
+            "\n  begin\n"
+            + "    INSERT INTO \"" + names.Schema + "\".\"" + names.RenamedLookupTable + "\" (\"ID\") VALUES (7);\n"
+            + "  end;",
+            suppressTransaction: true);
+        migrationBuilder.Sql(
+            $"INSERT INTO \"{names.Schema}\".\"{names.RenamedLookupTable}\" (ID) VALUES (8);\n"
+            + $"INSERT INTO \"{names.Schema}\".\"{names.RenamedLookupTable}\" (ID) VALUES (9);",
+            suppressTransaction: true);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Storage.Internal;
 
 namespace W.EntityFrameworkCore.Dameng.Migrations.Internal;
 
@@ -27,6 +28,24 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
     {
         var commands = base.Generate(operations, model, options);
 
+        if (operations.Any(operation => operation switch
+            {
+                CreateTableOperation create => create.Columns.Any(column => RequiresByteLengthGuard(column, model)),
+                AddColumnOperation add => RequiresByteLengthGuard(add, model),
+                AlterColumnOperation alter => RequiresByteLengthGuard(alter, model),
+                _ => false
+            }))
+        {
+            var guard = new MigrationCommandListBuilder(Dependencies);
+            guard.AppendLine("BEGIN")
+                .AppendLine("    IF NVL(SF_GET_LENGTH_IN_CHAR(), -1) <> 0 THEN")
+                .AppendLine("        RAISE_APPLICATION_ERROR(-20001, 'Dameng BYTE columns require LENGTH_IN_CHAR=0.');")
+                .AppendLine("    END IF;")
+                .AppendLine("END;")
+                .EndCommand(suppressTransaction: true);
+            commands = guard.GetCommandList().Concat(commands).ToList();
+        }
+
         if (!options.HasFlag(MigrationsSqlGenerationOptions.Idempotent))
         {
             return commands;
@@ -40,23 +59,135 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             // EF places this text inside a DMSQL IF block. Dynamic SQL is required both
             // for DDL and to avoid binding skipped DML against an old schema.
             var commandText = command.CommandText.TrimEnd();
-            var commandLiteral = stringTypeMapping.GenerateSqlLiteral(commandText);
-            if (Encoding.UTF8.GetByteCount(commandLiteral) > MaxDynamicSqlLiteralUtf8Length)
+            if (IsAnonymousBlock(commandText))
             {
-                throw new NotSupportedException(
-                    "A Dameng idempotent migration command exceeds the conservative 32767-byte "
-                    + "dynamic SQL literal limit after escaping. Split the migration operation "
-                    + "into smaller commands.");
+                if (DamengSqlBatchParser.SplitStatements(commandText).Count != 1)
+                {
+                    throw new NotSupportedException(
+                        "A Dameng idempotent SqlOperation must contain one standalone anonymous block. "
+                        + "Move statements following its outer END into separate SqlOperations.");
+                }
+
+                // Anonymous DMSQL blocks carry their own guards and cannot be wrapped:
+                // the server rejects EXECUTE IMMEDIATE when the literal contains a block.
+                builder
+                    .Append(commandText)
+                    .EndCommand(command.TransactionSuppressed);
+                continue;
             }
 
-            builder
-                .Append("EXECUTE IMMEDIATE ")
-                .Append(commandLiteral)
-                .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator)
-                .EndCommand(command.TransactionSuppressed);
+            foreach (var statement in SplitDynamicSqlStatements(commandText))
+            {
+                var commandLiteral = stringTypeMapping.GenerateSqlLiteral(statement);
+                if (Encoding.UTF8.GetByteCount(commandLiteral) > MaxDynamicSqlLiteralUtf8Length)
+                {
+                    throw new NotSupportedException(
+                        "A Dameng idempotent migration statement exceeds the conservative 32767-byte "
+                        + "dynamic SQL literal limit after escaping. Split the migration operation "
+                        + "into smaller commands.");
+                }
+
+                builder
+                    .Append("EXECUTE IMMEDIATE ")
+                    .Append(commandLiteral)
+                    .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator)
+                    .EndCommand(command.TransactionSuppressed);
+            }
         }
 
         return builder.GetCommandList();
+    }
+
+    private bool RequiresByteLengthGuard(ColumnOperation column, IModel? model)
+        => column.ComputedColumnSql is null
+            && DamengTypeMappingSource.RequiresByteLengthSemantics(column.ColumnType
+                ?? GetColumnType(column.Schema, column.Table, column.Name, column, model));
+
+    private static IEnumerable<string> SplitDynamicSqlStatements(string sql)
+    {
+        var start = 0;
+        var statementTokens = new List<string>();
+        foreach (var token in DamengSqlLexer.Read(sql))
+        {
+            if (token.Text == ";")
+            {
+                if (statementTokens.Count > 0)
+                {
+                    ValidateDynamicStatement(statementTokens);
+                    yield return sql[start..token.End].Trim();
+                    statementTokens.Clear();
+                }
+
+                start = token.End;
+            }
+            else
+            {
+                // Only the first four tokens are needed to recognize CREATE [OR REPLACE]
+                // procedural definitions. Quotes/comments are opaque to the shared lexer.
+                if (statementTokens.Count < 4)
+                {
+                    statementTokens.Add(token.Text);
+                }
+            }
+        }
+
+        if (statementTokens.Count > 0)
+        {
+            ValidateDynamicStatement(statementTokens);
+            yield return sql[start..].Trim();
+        }
+    }
+
+    private static void ValidateDynamicStatement(List<string> tokens)
+    {
+        var first = tokens[0].ToUpperInvariant();
+        var objectTypeIndex = tokens.Count >= 3
+            && string.Equals(tokens[1], "OR", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(tokens[2], "REPLACE", StringComparison.OrdinalIgnoreCase) ? 3 : 1;
+        var definesRoutine = first == "CREATE" && tokens.Count > objectTypeIndex
+            && tokens[objectTypeIndex].ToUpperInvariant() is "PROCEDURE" or "FUNCTION" or "TRIGGER" or "PACKAGE" or "TYPE";
+        if (first is "BEGIN" or "DECLARE" || definesRoutine)
+        {
+            throw new NotSupportedException(
+                "Dameng idempotent SQL cannot split stored object definitions or anonymous blocks mixed with other statements. "
+                + "Pass an anonymous BEGIN/DECLARE block as its own SqlOperation; execute stored object definitions separately.");
+        }
+    }
+
+    // The first SQL token ignores leading whitespace/comments but preserves quoted text.
+    private static bool IsAnonymousBlock(string commandText)
+    {
+        var first = DamengSqlLexer.Read(commandText).FirstOrDefault().Text;
+        return string.Equals(first, "BEGIN", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(first, "DECLARE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    protected override void PrimaryKeyConstraint(
+        AddPrimaryKeyOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder)
+    {
+        if (operation[DamengAnnotationNames.IsClustered] is not { } clustering)
+        {
+            base.PrimaryKeyConstraint(operation, model, builder);
+            return;
+        }
+
+        if (clustering is not bool clustered)
+        {
+            throw new NotSupportedException("Dameng primary-key clustering must be a Boolean annotation.");
+        }
+
+        if (operation.Name is not null)
+        {
+            builder.Append("CONSTRAINT ")
+                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name))
+                .Append(" ");
+        }
+
+        builder.Append(clustered ? "CLUSTER PRIMARY KEY (" : "NOT CLUSTER PRIMARY KEY (")
+            .Append(ColumnList(operation.Columns))
+            .Append(")");
     }
 
     protected override void Generate(
@@ -171,6 +302,16 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         builder.AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
         EndStatement(builder);
+
+        if (!string.Equals(operation.Comment, operation.OldColumn?.Comment, StringComparison.Ordinal))
+        {
+            GenerateColumnCommentStatement(
+                operation.Schema,
+                operation.Table,
+                operation.Name,
+                operation.Comment,
+                builder);
+        }
     }
 
     protected override void Generate(
@@ -183,6 +324,10 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         {
             throw new NotSupportedException("Dameng does not support filtered indexes.");
         }
+
+        var fillFactor = operation[DamengAnnotationNames.IndexFillFactor];
+        if (fillFactor is not null && fillFactor is not (int and >= 0 and <= 100))
+            throw new NotSupportedException("Dameng index fill factor must be an integer from 0 to 100.");
 
         builder.Append("CREATE ");
 
@@ -200,6 +345,8 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         GenerateIndexColumnList(operation, model, builder);
         builder.Append(")");
+        if (fillFactor is int fill)
+            builder.Append(" STORAGE(FILLFACTOR ").Append((fill == 0 ? 100 : fill).ToString(CultureInfo.InvariantCulture)).Append(")");
 
         if (terminate)
         {
@@ -230,12 +377,124 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
+        // CREATE SCHEMA has no IF NOT EXISTS form; guard with the catalog instead.
+        // The anonymous block must stay a single command (no '/' terminator) and cannot
+        // be wrapped in EXECUTE IMMEDIATE by idempotent generation.
+        var stringTypeMapping = Dependencies.TypeMappingSource.GetMapping(typeof(string));
+
         builder
-            .Append("CREATE SCHEMA ")
-            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name))
-            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+            .AppendLine("BEGIN")
+            .AppendLine("    IF NOT EXISTS (")
+            .AppendLine("        SELECT 1")
+            .AppendLine("        FROM SYS.SYSOBJECTS")
+            .Append("        WHERE TYPE$ = 'SCH' AND NAME = ")
+            .AppendLine(stringTypeMapping.GenerateSqlLiteral(operation.Name))
+            .AppendLine("    ) THEN")
+            .Append("        EXECUTE IMMEDIATE ")
+            .Append(
+                stringTypeMapping.GenerateSqlLiteral(
+                    "CREATE SCHEMA " + Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Name)))
+            .AppendLine(";")
+            .AppendLine("    END IF;")
+            .Append("END;");
 
         EndStatement(builder);
+    }
+
+    protected override void Generate(
+        CreateTableOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder,
+        bool terminate = true)
+    {
+        var storage = operation[DamengAnnotationNames.IsClusterBtree];
+        if (storage is not null and not true)
+        {
+            throw new NotSupportedException("Dameng table storage annotation supports only CLUSTERBTR (true).");
+        }
+
+        var fillFactor = operation[DamengAnnotationNames.TableFillFactor];
+        if (fillFactor is not null && fillFactor is not (int and >= 0 and <= 100))
+            throw new NotSupportedException("Dameng table fill factor must be an integer from 0 to 100.");
+
+        base.Generate(operation, model, builder, terminate: false);
+        if (storage is true || fillFactor is not null)
+        {
+            builder.Append(" STORAGE(");
+            if (storage is true) builder.Append("CLUSTERBTR");
+            if (fillFactor is int fill)
+            {
+                if (storage is true) builder.Append(", ");
+                builder.Append("FILLFACTOR ").Append((fill == 0 ? 100 : fill).ToString(CultureInfo.InvariantCulture));
+            }
+            builder.Append(")");
+        }
+
+        if (!terminate)
+        {
+            return;
+        }
+
+        builder.AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+        EndStatement(builder);
+
+        if (operation.Comment is not null)
+        {
+            GenerateTableCommentStatement(operation.Schema, operation.Name, operation.Comment, builder);
+        }
+
+        foreach (var column in operation.Columns)
+        {
+            if (column.Comment is not null)
+            {
+                GenerateColumnCommentStatement(
+                    operation.Schema,
+                    operation.Name,
+                    column.Name,
+                    column.Comment,
+                    builder);
+            }
+        }
+    }
+
+    protected override void Generate(
+        AlterTableOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder)
+    {
+        if (!Equals(operation[DamengAnnotationNames.TableFillFactor], operation.OldTable?[DamengAnnotationNames.TableFillFactor]))
+            throw new NotSupportedException("Changing Dameng table fill factor requires rebuilding the table.");
+
+        if (!Equals(operation[DamengAnnotationNames.IsClusterBtree], operation.OldTable?[DamengAnnotationNames.IsClusterBtree]))
+        {
+            throw new NotSupportedException("Changing Dameng table storage requires dropping and recreating the table.");
+        }
+
+        base.Generate(operation, model, builder);
+
+        if (!string.Equals(operation.Comment, operation.OldTable?.Comment, StringComparison.Ordinal))
+        {
+            GenerateTableCommentStatement(operation.Schema, operation.Name, operation.Comment, builder);
+        }
+    }
+
+    protected override void Generate(
+        AddColumnOperation operation,
+        IModel? model,
+        MigrationCommandListBuilder builder,
+        bool terminate = true)
+    {
+        base.Generate(operation, model, builder, terminate);
+
+        if (terminate && operation.Comment is not null)
+        {
+            GenerateColumnCommentStatement(
+                operation.Schema,
+                operation.Table,
+                operation.Name,
+                operation.Comment,
+                builder);
+        }
     }
 
     protected override void Generate(
@@ -424,6 +683,12 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         }
 
         builder.Append(operation.IsCyclic ? " CYCLE" : " NOCYCLE");
+        if (!forAlter)
+        {
+            // These are the sequence facets supported by reverse engineering. Be explicit
+            // so a recreated sequence never inherits different server cache/order defaults.
+            builder.Append(" NOCACHE NOORDER");
+        }
     }
 
     protected override void ColumnDefinition(
@@ -483,6 +748,14 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             return;
         }
 
+        if (operation.ColumnType is null && operation.ClrType == typeof(string)
+            && DamengTypeMappingSource.RequiresExplicitFixedAnsiStoreType(operation.IsUnicode, operation.IsFixedLength, operation.MaxLength))
+        {
+            throw new NotSupportedException(
+                $"Dameng column '{table}.{name}' exceeds the portable fixed-length ANSI character limit. "
+                + "Configure an explicit instance-specific store type or use a variable-length column.");
+        }
+
         var columnType = operation.ColumnType
             ?? GetColumnType(schema, table, name, operation, model);
         var isIdentity = IsIdentity(operation);
@@ -532,6 +805,47 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         builder.Append(operation.IsNullable ? " NULL" : " NOT NULL");
         DefaultValue(operation.DefaultValue, defaultValueSql, columnType, builder);
     }
+
+    private void GenerateTableCommentStatement(
+        string? schema,
+        string table,
+        string? comment,
+        MigrationCommandListBuilder builder)
+    {
+        builder
+            .Append("COMMENT ON TABLE ")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(table, schema))
+            .Append(" IS ")
+            .Append(GenerateCommentLiteral(comment))
+            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+
+        EndStatement(builder);
+    }
+
+    private void GenerateColumnCommentStatement(
+        string? schema,
+        string table,
+        string column,
+        string? comment,
+        MigrationCommandListBuilder builder)
+    {
+        builder
+            .Append("COMMENT ON COLUMN ")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(table, schema))
+            .Append(".")
+            .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(column))
+            .Append(" IS ")
+            .Append(GenerateCommentLiteral(comment))
+            .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+
+        EndStatement(builder);
+    }
+
+    // Dameng rejects COMMENT ON ... IS NULL; an empty string clears a comment.
+    private string GenerateCommentLiteral(string? comment)
+        => Dependencies.TypeMappingSource
+            .GetMapping(typeof(string))
+            .GenerateSqlLiteral(comment ?? string.Empty);
 
     private static bool IsIdentity(ColumnOperation operation)
         => operation[DamengAnnotationNames.ValueGenerationStrategy] switch

@@ -364,6 +364,8 @@ public sealed class DamengMathTranslationFunctionalTests
                     damengOptions.UseRelationalNulls();
                 }
             })
+            // The full suite intentionally uses many fixture-specific model-cache factories.
+            .ConfigureWarnings(warnings => warnings.Log(CoreEventId.ManyServiceProvidersCreatedWarning))
             .ReplaceService<IModelCacheKeyFactory, MathModelCacheKeyFactory>()
             .AddInterceptors(commands)
             .EnableDetailedErrors()

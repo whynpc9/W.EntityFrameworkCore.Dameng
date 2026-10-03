@@ -1,0 +1,784 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Scaffolding;
+using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+using Xunit;
+
+#pragma warning disable EF1001 // Tests intentionally exercise EF/provider infrastructure contracts.
+
+namespace W.EntityFrameworkCore.Dameng.Tests;
+
+public sealed class DamengDatabaseModelFactoryTests
+{
+    [Fact]
+    public void UnlimitedTableSpaceIsAccepted()
+        => DamengDatabaseModelFactory.ValidateTableSpaceLimit("T", 0);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-1L)]
+    [InlineData(1L)]
+    [InlineData(128L)]
+    public void LimitedOrUnknownTableSpaceIsRejected(long? limitPages)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableSpaceLimit("Limited", limitPages));
+        Assert.Contains("Limited", error.Message, StringComparison.Ordinal);
+        Assert.Contains("DISKSPACE LIMIT", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(256L, 100)]
+    [InlineData(341L, 85)]
+    [InlineData(356L, 100)]
+    public void IndexFillFactorUsesItsOwnLowByte(long info1, int expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadIndexFillFactor("T", "IX", info1));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(511L)]
+    public void UnknownIndexFillFactorIsRejected(long? info1)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadIndexFillFactor("T", "IX", info1));
+
+    [Fact]
+    public void InheritedConstraintFillFactorMustMatchItsTable()
+    {
+        DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, 85);
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, 100));
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, null));
+    }
+
+    [Theory]
+    [InlineData(2097152L, 100)]
+    [InlineData(1679818752L, 100)]
+    [InlineData(1428160512L, 85)]
+    [InlineData(1426063376L, 85)]
+    public void NativeTableFillFactorRetainsItsEffectivePercentage(long info1, int expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadTableFillFactor("T", info1));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(4278190080L)]
+    public void UnreadableOrUnknownFillFactorCannotBeGuessed(long? info1)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadTableFillFactor("T", info1));
+
+    [Fact]
+    public void MissingLocalSequenceMetadataRejectsTheOwningColumn()
+    {
+        var column = new DatabaseColumn { Name = "N", Table = new DatabaseTable { Name = "T" } };
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.RequireLocalSequence(column, "APP", "MISSING", []));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'N'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("APP.MISSING", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LocalSequenceResolutionReusesTheCatalogDefinition()
+    {
+        var sequence = new DatabaseSequence { Name = "Seq", Schema = "APP", StartValue = 41, IncrementBy = 3 };
+        var column = new DatabaseColumn { Name = "N", Table = new DatabaseTable { Name = "T" } };
+        Assert.Same(sequence, DamengDatabaseModelFactory.RequireLocalSequence(column, "APP", "Seq", new Dictionary<string, DatabaseSequence>(StringComparer.Ordinal) { ["Seq"] = sequence }));
+    }
+
+    [Theory]
+    [InlineData("YES")]
+    [InlineData("UNKNOWN")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void HiddenOrUnknownColumnVisibilityIsRejected(string? hiddenColumn)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateColumnVisibility("T", "Hidden", hiddenColumn));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'Hidden'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("NOT VISIBLE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VisibleColumnsCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateColumnVisibility("T", "C", "NO");
+
+    [Theory]
+    [InlineData(65537L, "VALID")]
+    [InlineData(65553L, "VALID")]
+    [InlineData(1L, "UNUSABLE")]
+    [InlineData(1L, "UNKNOWN")]
+    [InlineData(null, "VALID")]
+    [InlineData(1L, null)]
+    public void UnrepresentablePhysicalIndexStateIsRejected(long? nativeType, string? status)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIndexState("T", "IX_T", nativeType, status));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("index state", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(1L)]
+    [InlineData(17L)]
+    public void VisibleValidPhysicalIndexesCanBeScaffolded(long nativeType)
+        => DamengDatabaseModelFactory.ValidateIndexState("T", "IX_T", nativeType, "VALID");
+
+    [Theory]
+    [InlineData("  ")]
+    [InlineData(" C")]
+    [InlineData(" N")]
+    [InlineData(" D")]
+    public void DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(string actions)
+        => DamengDatabaseModelFactory.ValidateForeignKeyUpdateAction("T", "FK_T", actions);
+
+    [Theory]
+    [InlineData("  ", ReferentialAction.NoAction)]
+    [InlineData(" C", ReferentialAction.Cascade)]
+    [InlineData(" N", ReferentialAction.SetNull)]
+    public void NativeDeleteActionsRetainTheirSupportedMeaning(string actions, ReferentialAction expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadForeignKeyDeleteAction("T", "FK_T", actions));
+
+    [Theory]
+    [InlineData(16384L)]
+    [InlineData(16385L)]
+    [InlineData(null)]
+    public void EncryptedOrUnknownColumnStorageIsRejected(long? info2)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateColumnEncryptionFlags("T", "Secret", info2));
+        Assert.Contains("T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Secret", error.Message, StringComparison.Ordinal);
+        Assert.Contains("encryption", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(1L)]
+    public void OrdinaryAndIdentityColumnsAreNotMistakenForEncryption(long info2)
+        => DamengDatabaseModelFactory.ValidateColumnEncryptionFlags("T", "C", info2);
+
+    [Theory]
+    [InlineData("C ")]
+    [InlineData("N ")]
+    [InlineData("D ")]
+    [InlineData("AA")]
+    [InlineData("?")]
+    [InlineData(null)]
+    public void UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(string? actions)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateForeignKeyUpdateAction("T", "FK_T", actions));
+        Assert.Contains("FK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ON UPDATE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(" D")]
+    [InlineData(" X")]
+    [InlineData(null)]
+    public void UnrepresentableDeleteActionsCannotBecomeImplicitNoAction(string? action)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadForeignKeyDeleteAction("T", "FK_T", action));
+        Assert.Contains("FK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ON DELETE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(4L, 589828L)]
+    [InlineData(10L, 589828L)]
+    [InlineData(5L, 4L)]
+    [InlineData(null, 589828L)]
+    [InlineData(9L, null)]
+    [InlineData(null, null)]
+    public void NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(long? tablespaceId, long? ownerInfo3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIndexTablespace("T", "IX_T", tablespaceId, ownerInfo3));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("index tablespace", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(9L, 589828L)]
+    [InlineData(4L, 262148L)]
+    [InlineData(4L, 4L)]
+    public void PhysicalIndexesUseDefaultIndexTablespaceIndependentlyOfDataTablespace(long tablespaceId, long ownerInfo3)
+        => DamengDatabaseModelFactory.ValidateIndexTablespace("T", "IX_T", tablespaceId, ownerInfo3);
+
+    [Theory]
+    [InlineData(5L, 4L)]
+    [InlineData(null, 4L)]
+    [InlineData(4L, null)]
+    [InlineData(null, null)]
+    public void NonDefaultOrUnknownTablespacePlacementIsRejected(long? tablespaceId, long? ownerInfo3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableTablespace("PlacedTable", tablespaceId, ownerInfo3));
+        Assert.Contains("PlacedTable", error.Message, StringComparison.Ordinal);
+        Assert.Contains("tablespace", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(4L, 4L)]
+    [InlineData(4L, 589828L)]
+    public void SchemaOwnerDefaultDataTablespaceIgnoresDefaultIndexTablespace(long tablespaceId, long ownerInfo3)
+        => DamengDatabaseModelFactory.ValidateTableTablespace("T", tablespaceId, ownerInfo3);
+
+    [Theory]
+    [InlineData(1125899906842624L)]
+    [InlineData(1125899906842880L)]
+    public void LongRowFlagIsRejectedEvenForOrdinaryNativeTableKind(long info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateNativeTableKind("WideTable", info3));
+        Assert.Contains("WideTable", error.Message, StringComparison.Ordinal);
+        Assert.Contains("LONG ROW", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Seq.NEXTVAL + 1")]
+    [InlineData("(Seq.NEXTVAL)")]
+    [InlineData("COALESCE(APP.Seq.NEXTVAL, 1)")]
+    [InlineData("\"APP\" /* a */ . \"Seq\" . NEXTVAL * 2")]
+    [InlineData("Seq.CURRVAL + 1")]
+    [InlineData("APP.Seq.\"NEXTVAL\" + 1")]
+    [InlineData("Seq.\"CURRVAL\" + 1")]
+    [InlineData("OTHER.Seq.NEXTVAL + APP.Seq.NEXTVAL")]
+    [InlineData("APP.\"NEXTVAL\".NEXTVAL + 1")]
+    public void CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(string sql)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateCompoundSequenceDefault("T", "C", sql, "APP"));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("sequence", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("'Seq.NEXTVAL + 1'")]
+    [InlineData("'O''Brien.Seq.NEXTVAL'")]
+    [InlineData("1 /* Seq.NEXTVAL */")]
+    [InlineData("1 -- Seq.NEXTVAL")]
+    [InlineData("OTHER.Seq.NEXTVAL + 1")]
+    [InlineData("OTHER.\"NEXTVAL\".NEXTVAL + 1")]
+    [InlineData("pkg.NEXTVAL()")]
+    [InlineData("CURRENT_TIMESTAMP")]
+    public void SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(string sql)
+        => DamengDatabaseModelFactory.ValidateCompoundSequenceDefault("T", "C", sql, "APP");
+
+    [Theory]
+    [InlineData("OTHER")]
+    [InlineData(null)]
+    public void ExternalForeignKeysCannotBeReturnedWithoutTheirRelationship(string? principalSchema)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateForeignKeyPrincipalSchema(
+            "APP", "Child", "FK_Child", principalSchema));
+        Assert.Contains("Child", error.Message, StringComparison.Ordinal);
+        Assert.Contains("FK_Child", error.Message, StringComparison.Ordinal);
+        Assert.Contains(principalSchema ?? "NULL", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CurrentSchemaForeignKeysCanBePreserved()
+        => DamengDatabaseModelFactory.ValidateForeignKeyPrincipalSchema("Quoted.Schema", "Child", "FK", "Quoted.Schema");
+
+    [Theory]
+    [InlineData("SMALLINT", false)]
+    [InlineData("TINYINT", false)]
+    [InlineData("DECIMAL(18,0)", false)]
+    [InlineData("INT", true)]
+    [InlineData("INTEGER", true)]
+    [InlineData("BIGINT", true)]
+    public void IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(string storeType, bool supported)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var column = new DatabaseColumn { Table = new DatabaseTable { Name = "T" }, Name = "ID", StoreType = storeType };
+        if (supported)
+        {
+            factory.ValidateIdentityColumn(column);
+        }
+        else
+        {
+            var error = Assert.Throws<NotSupportedException>(() => factory.ValidateIdentityColumn(column));
+            Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+            Assert.Contains("'ID'", error.Message, StringComparison.Ordinal);
+            Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ReferencedUniqueColumnsHaveTheSameGeneratedKeyRestriction()
+    {
+        var parent = new DatabaseTable { Name = "Parent" };
+        var column = new DatabaseColumn { Table = parent, Name = "Code", StoreType = "NUMBER(18,0)", DefaultValueSql = "\"S\".NEXTVAL" };
+        var child = new DatabaseTable { Name = "Child" };
+        var foreignKey = new DatabaseForeignKey { Table = child, PrincipalTable = parent, Name = "FK" };
+        foreignKey.PrincipalColumns.Add(column);
+        child.ForeignKeys.Add(foreignKey);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(child));
+        Assert.Contains("Parent", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Code", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("DECIMAL(18,2)", false)]
+    [InlineData("NUMBER(18,0)", false)]
+    [InlineData("NUMBER(18,0)", true)]
+    public void UnsupportedGeneratedPrimaryKeyIdentifiesItsColumn(string storeType, bool composite)
+    {
+        var table = new DatabaseTable { Name = "T" };
+        var column = new DatabaseColumn { Table = table, Name = "GeneratedId", StoreType = storeType, DefaultValueSql = "\"S\".NEXTVAL" };
+        table.PrimaryKey = new DatabasePrimaryKey { Table = table, Name = "PK_T" };
+        if (composite) table.PrimaryKey.Columns.Add(new DatabaseColumn { Table = table, Name = "Tenant", StoreType = "INT" });
+        table.PrimaryKey.Columns.Add(column);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(table));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("GeneratedId", error.Message, StringComparison.Ordinal);
+        Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+        Assert.Contains("exclude this table", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OrdinaryPrimaryKeysAndNonKeyDefaultsAreAllowed(bool usesSequence)
+    {
+        var table = new DatabaseTable { Name = "T" };
+        var id = new DatabaseColumn { Table = table, Name = "Id", StoreType = "BIGINT" };
+        if (usesSequence) id[DamengAnnotationNames.ValueGenerationStrategy] = DamengValueGenerationStrategy.Sequence;
+        table.PrimaryKey = new DatabasePrimaryKey { Table = table, Name = "PK_T" };
+        table.PrimaryKey.Columns.Add(id);
+        table.Columns.Add(id);
+        table.Columns.Add(new DatabaseColumn { Table = table, Name = "Amount", StoreType = "DECIMAL(18,2)", DefaultValueSql = "\"S\".NEXTVAL" });
+        DamengDatabaseModelFactory.ValidateKeyGeneration(table);
+    }
+
+    [Theory]
+    [InlineData("INT", true)]
+    [InlineData("BIGINT", true)]
+    [InlineData("DECIMAL(18,2)", false)]
+    [InlineData("NUMBER(18,0)", false)]
+    public void LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(string storeType, bool usesStrategy)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var column = new DatabaseColumn { Name = "C", StoreType = storeType };
+        factory.ApplyLocalSequenceDefault(column, new DatabaseSequence { Name = "Seq\"X", Schema = "Other.Schema" });
+        if (usesStrategy)
+        {
+            Assert.Equal(DamengValueGenerationStrategy.Sequence, column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal("Other.Schema", column[DamengAnnotationNames.SequenceSchema]);
+            Assert.Null(column.DefaultValueSql);
+        }
+        else
+        {
+            Assert.Null(column[DamengAnnotationNames.ValueGenerationStrategy]);
+            Assert.Equal("\"Other.Schema\".\"Seq\"\"X\".NEXTVAL", column.DefaultValueSql);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("UNKNOWN")]
+    public void UnknownCharacterUnitIdentifiesTheObjectColumnAndCatalogValue(string? unit)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.BuildStoreType(
+            "VARCHAR", 9, null, null, 9, unit, "Target.View", "ProblemColumn"));
+        Assert.Contains("Target.View", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ProblemColumn", error.Message, StringComparison.Ordinal);
+        Assert.Contains(unit ?? "NULL", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("BFILE")]
+    [InlineData("TIME WITH TIME ZONE")]
+    [InlineData("TIME(3) WITH TIME ZONE")]
+    [InlineData("INTERVAL HOUR TO MINUTE")]
+    [InlineData("INTERVAL YEAR(4) TO MONTH")]
+    [InlineData("UNKNOWN_TYPE")]
+    public void UnmappedColumnTypesAreExplicitlyRejected(string storeType)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var error = Assert.Throws<NotSupportedException>(() => factory.ValidateColumnType("T", "C", storeType));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+        Assert.Contains(storeType, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("INT")]
+    [InlineData("BLOB")]
+    [InlineData("VARCHAR(20 CHAR)")]
+    [InlineData("DECIMAL(10,2)")]
+    [InlineData("TIMESTAMP(0)")]
+    [InlineData("TIMESTAMP(3) WITH TIME ZONE")]
+    [InlineData("INTERVAL DAY(4) TO SECOND(3)")]
+    public void MappedColumnTypesKeepTheProviderMappingContract(string storeType)
+    {
+        using var context = new DbContext(new DbContextOptionsBuilder()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        factory.ValidateColumnType("T", "C", storeType);
+    }
+
+    [Fact]
+    public void NativeIdentityTypeIsAcceptedWithoutReadingOtherInfo6Facets()
+    {
+        var info6 = Enumerable.Repeat((byte)255, 32).ToArray();
+        info6[24] = 1;
+        info6[25] = 0;
+        DamengDatabaseModelFactory.ValidateIdentityType("T", "C", info6);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(2, 0)]
+    [InlineData(3, 0)]
+    [InlineData(1, 1)]
+    public void AutoIncrementAndUnknownTypesCannotBecomeIdentity(byte low, byte high)
+    {
+        var info6 = new byte[26];
+        info6[24] = low;
+        info6[25] = high;
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIdentityType("T", "C", info6));
+        Assert.Contains("AUTO_INCREMENT", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(24)]
+    [InlineData(25)]
+    public void IncompleteIdentityTypeIsRejected(int? length)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIdentityType(
+            "T", "C", length is null ? null : new byte[length.Value]));
+
+    [Theory]
+    [InlineData(1L << 57)]
+    [InlineData((1L << 57) | 256L)]
+    public void MaterializedViewPrebuiltTablesAreRejected(long info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateNativeTableKind("Backing", info3));
+        Assert.Contains("Backing", error.Message, StringComparison.Ordinal);
+        Assert.Contains("materialized view", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(256L)]
+    [InlineData(4294967296L)]
+    public void OrdinaryNativeTableKindIgnoresUnrelatedHigherBits(long info3)
+        => DamengDatabaseModelFactory.ValidateNativeTableKind("T", info3);
+
+    [Theory]
+    [InlineData(0x13L)]
+    [InlineData(0x21L)]
+    [InlineData(0x27L)]
+    [InlineData(0x121L)]
+    [InlineData(0x3FL)]
+    [InlineData(null)]
+    public void HugeOrUnknownNativeTableKindIsRejected(long? info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateNativeTableKind("T", info3));
+        Assert.Contains("HUGE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PermanentTableKindCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateTableKind("T", "N", "NO");
+
+    [Theory]
+    [InlineData("Y")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void TemporaryOrUnknownTableKindIsRejected(string? marker)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableKind("T", marker, "NO"));
+
+    [Theory]
+    [InlineData("YES")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void PartitionedOrUnknownPermanentTableKindIsRejected(string? marker)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateTableKind("T", "N", marker));
+        Assert.Contains("partition definitions", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("NORMAL", true)]
+    [InlineData("CLUSTER", false)]
+    public void OnlyNormalStandaloneIndexesAreReadAsColumnIndexes(string type, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
+
+    [Theory]
+    [InlineData("NORMAL", "P", false)]
+    [InlineData("NORMAL", "U", false)]
+    [InlineData("NORMAL", "F", true)]
+    [InlineData("VIRTUAL", "F", false)]
+    public void ConstraintIndexesKeepTheirCatalogRole(string type, string constraintType, bool readColumns)
+        => Assert.Equal(readColumns, DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type, constraintType));
+
+    [Fact]
+    public void ConstraintAssociationDoesNotMakeBitmapIndexesSupported()
+        => Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", "BITMAP", constraintType: "F"));
+
+    [Theory]
+    [InlineData("VIRTUAL")]
+    [InlineData("BITMAP")]
+    [InlineData("FUNCTION-BASED BITMAP")]
+    [InlineData("FUNCTION-BASED NORMAL")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void SpecializedOrUnknownIndexTypeIsRejected(string? type)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ShouldReadIndexColumns("T", "IX_T", type));
+        Assert.Contains("IX_T", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OrdinaryIndexColumnPositionCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateIndexColumnPosition("T", "IX_T", 1);
+
+    [Theory]
+    [InlineData(-1L)]
+    [InlineData(0L)]
+    [InlineData(null)]
+    public void ExpressionOrUnknownIndexColumnPositionIsRejected(long? position)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateIndexColumnPosition("T", "IX_T", position));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(32)]
+    public void OrdinaryColumnFlagsDoNotBlockScaffolding(long flags)
+        => DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "C", flags);
+
+    [Theory]
+    [InlineData(1, "virtual computed column")]
+    [InlineData(16, "DEFAULT ON NULL")]
+    [InlineData(48, "DEFAULT ON NULL")]
+    [InlineData(64, "ON UPDATE")]
+    [InlineData(96, "ON UPDATE")]
+    public void UnsupportedColumnGenerationIsRejected(long flags, string expected)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "C", flags));
+        Assert.Contains(expected, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void VirtualColumnMarkerUsesOnlyTheDocumentedBit(long flags, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.IsVirtualColumnFlags(flags));
+
+    [Theory]
+    [InlineData("NORMAL", false)]
+    [InlineData("CLUSTER", true)]
+    public void PrimaryKeyClusteringIsReadFromTheBackingIndex(string indexType, bool expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadPrimaryKeyClustering(indexType));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("UNKNOWN")]
+    public void UnknownPrimaryKeyClusteringIsRejected(string? indexType)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadPrimaryKeyClustering(indexType));
+
+    [Fact]
+    public void EnabledConstraintStateCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", "ENABLED", "NOT DEFERRABLE", "IMMEDIATE", "VALIDATED");
+
+    [Theory]
+    [InlineData("DISABLED")]
+    [InlineData("UNKNOWN")]
+    [InlineData(null)]
+    public void UnsupportedConstraintStateFailsExplicitly(string? status)
+    {
+        var error = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.ValidateConstraintState("T", "PK_T", status, "NOT DEFERRABLE", "IMMEDIATE", "VALIDATED"));
+        Assert.Contains("PK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Exclude this table", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    // Character types keep their declared length semantics.
+    [InlineData("VARCHAR", 30, null, null, 30, "B", "VARCHAR(30 BYTE)")]
+    [InlineData("CHAR", 9, null, null, 9, "B", "CHAR(9 BYTE)")]
+    [InlineData("VARCHAR2", 9, null, null, 9, "B", "VARCHAR2(9 BYTE)")]
+    [InlineData("VARCHAR", 80, null, null, 20, "C", "VARCHAR(20 CHAR)")]
+    [InlineData("VARCHAR2", 80, null, null, 20, "C", "VARCHAR2(20 CHAR)")]
+    [InlineData("CHAR", 12, null, null, 3, "C", "CHAR(3 CHAR)")]
+    [InlineData("NVARCHAR2", 200, null, null, 50, "C", "NVARCHAR2(50)")]
+    [InlineData("NCHAR", 8, null, null, 2, "C", "NCHAR(2)")]
+    // Decimal facets.
+    [InlineData("DECIMAL", 22, 18, 3, 0, null, "DECIMAL(18,3)")]
+    [InlineData("DECIMAL", 22, null, null, 0, null, "DECIMAL")]
+    [InlineData("NUMERIC", 22, 9, 0, 0, null, "NUMERIC(9,0)")]
+    [InlineData("FLOAT", 8, 53, null, 0, null, "FLOAT(53)")]
+    [InlineData("FLOAT", 4, 24, null, 0, null, "FLOAT(24)")]
+    [InlineData("FLOAT", 8, 7, null, 0, null, "FLOAT(7)")]
+    [InlineData("FLOAT", 8, null, null, 0, null, "FLOAT")]
+    // Temporal scale comes from DATA_SCALE; a declared (0) is preserved because the
+    // unqualified type would fall back to the server's default precision.
+    [InlineData("DATETIME", 8, null, 6, 0, null, "DATETIME(6)")]
+    [InlineData("DATETIME", 8, null, 7, 0, null, "DATETIME(7)")]
+    [InlineData("DATETIME", 8, null, 0, 0, null, "DATETIME(0)")]
+    [InlineData("TIME", 5, null, 3, 0, null, "TIME(3)")]
+    [InlineData("TIME", 5, null, 0, 0, null, "TIME(0)")]
+    [InlineData("TIME", 5, null, null, 0, null, "TIME")]
+    [InlineData("TIMESTAMP", 8, null, 0, 0, null, "TIMESTAMP(0)")]
+    [InlineData("TIMESTAMP", 8, null, 6, 0, null, "TIMESTAMP(6)")]
+    [InlineData("DATETIME WITH TIME ZONE", 11, null, 7, 0, null, "DATETIME(7) WITH TIME ZONE")]
+    [InlineData("DATETIME WITH TIME ZONE", 11, null, 0, 0, null, "DATETIME(0) WITH TIME ZONE")]
+    [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 6, 0, null, "TIMESTAMP(6) WITH TIME ZONE")]
+    [InlineData("TIMESTAMP WITH TIME ZONE", 10, null, 0, 0, null, "TIMESTAMP(0) WITH TIME ZONE")]
+    // The catalog offsets TIMESTAMP WITH LOCAL TIME ZONE scale by 4096.
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4102, 0, null, "TIMESTAMP(6) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4096, 0, null, "TIMESTAMP(0) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, 4099, 0, null, "TIMESTAMP(3) WITH LOCAL TIME ZONE")]
+    [InlineData("TIMESTAMP WITH LOCAL TIME ZONE", 8, null, null, 0, null, "TIMESTAMP WITH LOCAL TIME ZONE")]
+    // Interval precision and scale restore the declared facets.
+    [InlineData("INTERVAL DAY TO SECOND", 24, 9, 6, 0, null, "INTERVAL DAY(9) TO SECOND(6)")]
+    [InlineData("INTERVAL DAY TO SECOND", 24, 4, 3, 0, null, "INTERVAL DAY(4) TO SECOND(3)")]
+    [InlineData("INTERVAL YEAR TO MONTH", 12, 3, 6, 0, null, "INTERVAL YEAR(3) TO MONTH")]
+    // Binary lengths.
+    [InlineData("VARBINARY", 16, null, null, 0, null, "VARBINARY(16)")]
+    [InlineData("BINARY", 4, null, null, 0, null, "BINARY(4)")]
+    // Facetless and large-object types pass through.
+    [InlineData("INT", 4, null, 0, 0, null, "INT")]
+    [InlineData("BIGINT", 8, null, 0, 0, null, "BIGINT")]
+    [InlineData("BIT", 1, null, 0, 0, null, "BIT")]
+    [InlineData("TEXT", 2147483647, null, 0, 0, null, "TEXT")]
+    [InlineData("BLOB", 2147483647, null, 0, null, null, "BLOB")]
+    public void BuildStoreTypeRestoresFacets(
+        string dataType,
+        int? dataLength,
+        int? dataPrecision,
+        int? dataScale,
+        int? charLength,
+        string? charUsed,
+        string expected)
+        => Assert.Equal(
+            expected,
+            DamengDatabaseModelFactory.BuildStoreType(
+                dataType,
+                dataLength,
+                dataPrecision,
+                dataScale,
+                charLength,
+                charUsed));
+
+    [Theory]
+    [InlineData("\"OrderSeq\".NEXTVAL", "OrderSeq", null)]
+    [InlineData("OrderSeq.NEXTVAL", "ORDERSEQ", null)]
+    [InlineData("\"sales\".\"Order Seq\".NEXTVAL", "Order Seq", "sales")]
+    [InlineData("sales.OrderSeq.nextval", "ORDERSEQ", "SALES")]
+    [InlineData("  \"OrderSeq\".NEXTVAL  ", "OrderSeq", null)]
+    [InlineData("\"Quoted\"\"Seq\".NEXTVAL", "Quoted\"Seq", null)]
+    [InlineData("Order$Seq.NEXTVAL", "ORDER$SEQ", null)]
+    [InlineData("sales$.Order#Seq.nextval", "ORDER#SEQ", "SALES$")]
+    [InlineData("\"sales$\".order#seq.NEXTVAL", "ORDER#SEQ", "sales$")]
+    public void TryParseSequenceDefaultMatchesNextvalDefaults(
+        string defaultValueSql,
+        string expectedName,
+        string? expectedSchema)
+    {
+        var matched = DamengDatabaseModelFactory.TryParseSequenceDefault(
+            defaultValueSql,
+            out var sequenceName,
+            out var sequenceSchema);
+
+        Assert.True(matched);
+        Assert.Equal(expectedName, sequenceName);
+        Assert.Equal(expectedSchema, sequenceSchema);
+    }
+
+    [Theory]
+    [InlineData("'NEW'")]
+    [InlineData("CURRENT_TIMESTAMP")]
+    [InlineData("OrderSeq.CURRVAL")]
+    [InlineData("OrderSeq.NEXTVAL + 1")]
+    [InlineData("NEXTVAL")]
+    [InlineData("")]
+    public void TryParseSequenceDefaultRejectsOtherDefaults(string defaultValueSql)
+    {
+        var matched = DamengDatabaseModelFactory.TryParseSequenceDefault(
+            defaultValueSql,
+            out _,
+            out _);
+
+        Assert.False(matched);
+    }
+
+    [Theory]
+    [InlineData("seq . nextval", "SEQ", null)]
+    [InlineData(" app . seq . NEXTVAL ", "SEQ", "APP")]
+    [InlineData("\"App.Schema\"\t.\t\"Seq Name\"\n . NEXTVAL", "Seq Name", "App.Schema")]
+    [InlineData("\"a\"\"b\" . \"s\"\"q\" . NEXTVAL", "s\"q", "a\"b")]
+    public void NextValQualifierWhitespacePreservesIdentifierSemantics(string sql, string name, string? schema)
+    {
+        Assert.True(DamengDatabaseModelFactory.TryParseSequenceDefault(sql, out var actualName, out var actualSchema));
+        Assert.Equal(name, actualName);
+        Assert.Equal(schema, actualSchema);
+    }
+
+    [Theory]
+    [InlineData("DEFERRABLE", "IMMEDIATE", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "DEFERRED", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "IMMEDIATE", "NOT VALIDATED")]
+    [InlineData(null, "IMMEDIATE", "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", null, "VALIDATED")]
+    [InlineData("NOT DEFERRABLE", "IMMEDIATE", null)]
+    public void UnsupportedConstraintFacetsAreRejected(string? deferrable, string? deferred, string? validated)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateConstraintState(
+            "T", "C", "ENABLED", deferrable, deferred, validated));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("app", "APP")]
+    [InlineData(" \"app\" ", "app")]
+    [InlineData("\"a\"\"b\"", "a\"b")]
+    public void NormalizeSchemaIdentifierPreservesDelimitedNames(string input, string expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.NormalizeIdentifier(input));
+
+    [Theory]
+    [InlineData("USERS", null, "USERS")]
+    [InlineData("APP.USERS", "APP", "USERS")]
+    [InlineData("\"A.B\"", null, "A.B")]
+    [InlineData("APP.\"A.B\"", "APP", "A.B")]
+    [InlineData("\"MY.SCHEMA\".T", "MY.SCHEMA", "T")]
+    [InlineData("\"MY.SCHEMA\".\"T.U\"", "MY.SCHEMA", "T.U")]
+    [InlineData("\"WEIRD\"\"NAME\".T", "WEIRD\"NAME", "T")]
+    [InlineData("app.\"Quoted\"", "APP", "Quoted")]
+    [InlineData("app.users", "APP", "USERS")]
+    [InlineData("users", null, "USERS")]
+    [InlineData(" \"app\" . users ", "app", "USERS")]
+    public void SplitQualifiedNameParsesIdentifierComponents(
+        string entry,
+        string? expectedSchema,
+        string expectedName)
+    {
+        var (schema, name) = DamengDatabaseModelFactory.SplitQualifiedName(entry);
+
+        Assert.Equal(expectedSchema, schema);
+        Assert.Equal(expectedName, name);
+    }
+}

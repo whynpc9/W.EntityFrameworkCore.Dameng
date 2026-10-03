@@ -10,6 +10,176 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengMigrationsSqlGeneratorTests
 {
+    [Theory]
+    [InlineData(0, 100)]
+    [InlineData(70, 70)]
+    [InlineData(85, 85)]
+    public void IndexFillFactorIsGeneratedExplicitly(int configured, int expected)
+    {
+        using var context = CreateContext();
+        var operation = new CreateIndexOperation { Name = "IX_T", Table = "T", Columns = ["N"] };
+        operation["Dameng:IndexFillFactor"] = configured;
+        Assert.Contains($"STORAGE(FILLFACTOR {expected})", GenerateSql(context, operation), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    [InlineData("70")]
+    public void InvalidIndexFillFactorsAreRejected(object configured)
+    {
+        using var context = CreateContext();
+        var operation = new CreateIndexOperation { Name = "IX_T", Table = "T", Columns = ["N"] };
+        operation["Dameng:IndexFillFactor"] = configured;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Theory]
+    [InlineData(false, 85, "STORAGE(FILLFACTOR 85)")]
+    [InlineData(true, 85, "STORAGE(CLUSTERBTR, FILLFACTOR 85)")]
+    [InlineData(true, 0, "STORAGE(CLUSTERBTR, FILLFACTOR 100)")]
+    [InlineData(true, 100, "STORAGE(CLUSTERBTR, FILLFACTOR 100)")]
+    public void TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(bool clustered, int fillFactor, string expected)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation.Columns.Add(new AddColumnOperation { Table = "T", Name = "Id", ClrType = typeof(int), ColumnType = "INT" });
+        if (clustered) operation["Dameng:IsClusterBtree"] = true;
+        operation["Dameng:TableFillFactor"] = fillFactor;
+        Assert.Contains(expected, GenerateSql(context, operation), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    [InlineData("85")]
+    public void InvalidTableFillFactorsAreRejected(object value)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation["Dameng:TableFillFactor"] = value;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Fact]
+    public void TableFillFactorChangesRequireARebuild()
+    {
+        using var context = CreateContext();
+        var operation = new AlterTableOperation { Name = "T" };
+        operation.OldTable["Dameng:TableFillFactor"] = 85;
+        operation["Dameng:TableFillFactor"] = 100;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Fact]
+    public void UnspecifiedStoreTypeCannotTurnOversizedFixedAnsiIntoBinary()
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => GenerateSql(context,
+            new AddColumnOperation { Table = "T", Name = "Wide", ClrType = typeof(string), IsUnicode = false, IsFixedLength = true, MaxLength = 476 }));
+        Assert.Contains("T.Wide", error.Message, StringComparison.Ordinal);
+        Assert.Contains("fixed-length ANSI", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClusterBtreeStorageIsExplicitWhenAnnotated(bool annotated)
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation { Name = "T" };
+        operation.Columns.Add(new AddColumnOperation { Table = "T", Name = "Id", ClrType = typeof(int), ColumnType = "INT" });
+        if (annotated) operation["Dameng:IsClusterBtree"] = true;
+        var sql = GenerateSql(context, operation);
+        Assert.Equal(annotated, sql.Contains("STORAGE(CLUSTERBTR)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UnknownTableStorageAndStorageChangesAreRejected()
+    {
+        using var context = CreateContext();
+        var create = new CreateTableOperation { Name = "T" };
+        create["Dameng:IsClusterBtree"] = false;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, create));
+        var alter = new AlterTableOperation { Name = "T" };
+        alter["Dameng:IsClusterBtree"] = true;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, alter));
+    }
+
+    [Fact]
+    public void TableStorageAnnotationFlowsFromEntityModelToCreateScript()
+    {
+        using var context = new ClusterBtreeContext(new DbContextOptionsBuilder<ClusterBtreeContext>()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
+        var model = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(true, Assert.Single(model.GetRelationalModel().Tables)["Dameng:IsClusterBtree"]);
+        Assert.Equal(85, Assert.Single(model.GetRelationalModel().Tables)["Dameng:TableFillFactor"]);
+        Assert.Equal(70, Assert.Single(Assert.Single(model.GetRelationalModel().Tables).Indexes)["Dameng:IndexFillFactor"]);
+        Assert.Contains("STORAGE(FILLFACTOR 70)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
+        Assert.Contains("STORAGE(CLUSTERBTR, FILLFACTOR 85)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
+    }
+
+    private sealed class ClusterBtreeContext(DbContextOptions<ClusterBtreeContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var entity = modelBuilder.Entity("Stored");
+            entity.Property<int>("Id").ValueGeneratedNever();
+            entity.HasKey("Id");
+            entity.HasAnnotation("Dameng:IsClusterBtree", true);
+            entity.HasAnnotation("Dameng:TableFillFactor", 85);
+            entity.HasIndex("Id").HasAnnotation("Dameng:IndexFillFactor", 70);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ByteColumnDdlHasAnExplicitTargetSemanticsGuard(bool idempotent)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+        var operations = new MigrationOperation[]
+        {
+            new AddColumnOperation { Table = "T", Name = "N", ClrType = typeof(string), ColumnType = "VARCHAR(9 BYTE)" },
+            new AlterColumnOperation { Table = "T", Name = "M", ClrType = typeof(string), ColumnType = "CHAR(9 BYTE)",
+                OldColumn = new AddColumnOperation { ClrType = typeof(string), ColumnType = "CHAR(6 BYTE)" } }
+        };
+        var commands = generator.Generate(operations, options: idempotent
+            ? MigrationsSqlGenerationOptions.Idempotent : MigrationsSqlGenerationOptions.Default);
+        Assert.Contains("SF_GET_LENGTH_IN_CHAR()", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.Contains("RAISE_APPLICATION_ERROR", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.StartsWith("BEGIN", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.True(commands[0].TransactionSuppressed);
+        Assert.Contains("VARCHAR(9 BYTE)", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.Contains("CHAR(9 BYTE)", commands[2].CommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InvalidPrimaryKeyClusteringAnnotationIsRejected()
+    {
+        using var context = CreateContext();
+        var operation = new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["ID"] };
+        operation["Dameng:IsClustered"] = "yes";
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Theory]
+    [InlineData(true, "CLUSTER PRIMARY KEY")]
+    [InlineData(false, "NOT CLUSTER PRIMARY KEY")]
+    public void PrimaryKeyClusteringAnnotationIsExplicitInSql(bool clustered, string expected)
+    {
+        using var context = CreateContext();
+        var operation = new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["ID"] };
+        operation["Dameng:IsClustered"] = clustered;
+        var sql = GenerateSql(context, operation);
+        Assert.Contains(expected + " (\"ID\")", sql, StringComparison.Ordinal);
+        if (clustered)
+        {
+            Assert.DoesNotContain("NOT CLUSTER PRIMARY KEY", sql, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void CreateTableGeneratesIdentityComputedAndRelationalConstraints()
     {
@@ -288,10 +458,20 @@ public sealed class DamengMigrationsSqlGeneratorTests
             },
             new DropSchemaOperation { Name = "app" });
 
-        Assert.Contains("CREATE SCHEMA \"app\";\n", sql, StringComparison.Ordinal);
+        Assert.Contains(
+            "IF NOT EXISTS (" + Environment.NewLine
+            + "        SELECT 1" + Environment.NewLine
+            + "        FROM SYS.SYSOBJECTS" + Environment.NewLine
+            + "        WHERE TYPE$ = 'SCH' AND NAME = 'app'",
+            sql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';",
+            sql,
+            StringComparison.Ordinal);
         Assert.Contains(
             "CREATE SEQUENCE \"app\".\"OrderSequence\" START WITH 10 "
-            + "INCREMENT BY 5 MINVALUE 10 MAXVALUE 100 CYCLE;\n",
+            + "INCREMENT BY 5 MINVALUE 10 MAXVALUE 100 CYCLE NOCACHE NOORDER;\n",
             sql,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -434,6 +614,265 @@ public sealed class DamengMigrationsSqlGeneratorTests
     }
 
     [Fact]
+    public void CreateTableGeneratesCommentStatements()
+    {
+        using var context = CreateContext();
+        var operation = new CreateTableOperation
+        {
+            Name = "Orders",
+            Schema = "app",
+            Comment = "订单表 'v2'"
+        };
+        operation.Columns.Add(
+            new AddColumnOperation
+            {
+                Name = "Id",
+                Table = operation.Name,
+                Schema = operation.Schema,
+                ClrType = typeof(long),
+                ColumnType = "BIGINT",
+                IsNullable = false
+            });
+        operation.Columns.Add(
+            new AddColumnOperation
+            {
+                Name = "Name",
+                Table = operation.Name,
+                Schema = operation.Schema,
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = false,
+                Comment = "名称"
+            });
+
+        var sql = GenerateSql(context, operation);
+
+        Assert.Contains(
+            "COMMENT ON TABLE \"app\".\"Orders\" IS '订单表 ''v2''';\n",
+            sql,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "COMMENT ON COLUMN \"app\".\"Orders\".\"Name\" IS '名称';\n",
+            sql,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "COMMENT ON COLUMN \"app\".\"Orders\".\"Id\"",
+            sql,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AlterTableGeneratesCommentOnlyWhenChanged()
+    {
+        using var context = CreateContext();
+
+        var changedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                Comment = "新注释",
+                OldTable = new CreateTableOperation { Comment = "旧注释" }
+            });
+        var clearedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                OldTable = new CreateTableOperation { Comment = "旧注释" }
+            });
+        var unchangedSql = GenerateSql(
+            context,
+            new AlterTableOperation
+            {
+                Name = "Orders",
+                Schema = "app",
+                Comment = "同一条注释",
+                OldTable = new CreateTableOperation { Comment = "同一条注释" }
+            });
+
+        Assert.Equal("COMMENT ON TABLE \"app\".\"Orders\" IS '新注释';\n", changedSql);
+        Assert.Equal("COMMENT ON TABLE \"app\".\"Orders\" IS '';\n", clearedSql);
+        Assert.Equal(string.Empty, unchangedSql);
+    }
+
+    [Fact]
+    public void AddAndAlterColumnGenerateCommentChanges()
+    {
+        using var context = CreateContext();
+
+        var addSql = GenerateSql(
+            context,
+            new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "备注"
+            });
+
+        var alter = new AlterColumnOperation
+        {
+            Name = "Note",
+            Table = "Orders",
+            Schema = "app",
+            ClrType = typeof(string),
+            ColumnType = "NVARCHAR2(100)",
+            IsNullable = true,
+            OldColumn = new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "旧备注"
+            }
+        };
+        var alterSql = GenerateSql(context, alter);
+
+        var alterUnchanged = new AlterColumnOperation
+        {
+            Name = "Note",
+            Table = "Orders",
+            Schema = "app",
+            ClrType = typeof(string),
+            ColumnType = "NVARCHAR2(200)",
+            IsNullable = true,
+            Comment = "保留备注",
+            OldColumn = new AddColumnOperation
+            {
+                Name = "Note",
+                Table = "Orders",
+                Schema = "app",
+                ClrType = typeof(string),
+                ColumnType = "NVARCHAR2(100)",
+                IsNullable = true,
+                Comment = "保留备注"
+            }
+        };
+        var alterUnchangedSql = GenerateSql(context, alterUnchanged);
+
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" ADD \"Note\" NVARCHAR2(100) NULL;\n"
+            + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '备注';\n",
+            addSql);
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(100) NULL;\n"
+            + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '';\n",
+            alterSql);
+        Assert.Equal(
+            "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(200) NULL;\n",
+            alterUnchangedSql);
+    }
+
+    [Fact]
+    public void EnsureSchemaUsesCatalogGuardAndStaysUnwrappedInIdempotentScripts()
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        var command = Assert.Single(
+            generator.Generate([new EnsureSchemaOperation { Name = "app" }]));
+
+        Assert.Equal(
+            "BEGIN" + Environment.NewLine
+            + "    IF NOT EXISTS (" + Environment.NewLine
+            + "        SELECT 1" + Environment.NewLine
+            + "        FROM SYS.SYSOBJECTS" + Environment.NewLine
+            + "        WHERE TYPE$ = 'SCH' AND NAME = 'app'" + Environment.NewLine
+            + "    ) THEN" + Environment.NewLine
+            + "        EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';" + Environment.NewLine
+            + "    END IF;" + Environment.NewLine
+            + "END;",
+            command.CommandText);
+
+        var idempotentCommand = Assert.Single(
+            generator.Generate(
+                [new EnsureSchemaOperation { Name = "app" }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.StartsWith("BEGIN", idempotentCommand.CommandText, StringComparison.Ordinal);
+        Assert.Contains(
+            "EXECUTE IMMEDIATE 'CREATE SCHEMA \"app\"';",
+            idempotentCommand.CommandText,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "EXECUTE IMMEDIATE 'BEGIN",
+            idempotentCommand.CommandText,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    // Baseline uppercase block.
+    [InlineData("BEGIN\n    NULL;\nEND;")]
+    // Leading whitespace/newlines and lowercase keywords are the same anonymous block.
+    [InlineData("\n  \nbegin\n    null;\n  end;")]
+    [InlineData("  BEGIN\n    NULL;\n  END;")]
+    // DECLARE opens the block form with declarations.
+    [InlineData("DECLARE\n    v INT;\nBEGIN\n    v := 1;\nEND;")]
+    [InlineData("declare v int;\nbegin\n    null;\nend;")]
+    [InlineData("-- ensure lookup\nbegin null; end;")]
+    [InlineData("/* BEGIN ' */ /* second */ DECLARE v INT; BEGIN v := 1; END;")]
+    [InlineData("-- comment\rBEGIN NULL; END;")]
+    [InlineData("DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END; -- trailing comment")]
+    [InlineData("BEGIN BEGIN NULL; END; IF 1=1 THEN NULL; END IF; END; /* trailing ; */")]
+    [InlineData("DECLARE FUNCTION f RETURN INT IS BEGIN RETURN CASE WHEN 1=1 THEN 1 ELSE 2 END; END; BEGIN NULL; END;")]
+    public void IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(string blockSql)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        var command = Assert.Single(
+            generator.Generate(
+                [new SqlOperation { Sql = blockSql, SuppressTransaction = true }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.Equal(blockSql.TrimEnd(), command.CommandText);
+    }
+
+    [Theory]
+    [InlineData("BEGIN NULL; END; CREATE TABLE T (ID INT);")]
+    [InlineData("-- lead\nBEGIN NULL; END; INSERT INTO T VALUES (1);")]
+    [InlineData("DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END; SELECT 1 FROM dual;")]
+    [InlineData("BEGIN NULL; END; BEGIN NULL; END;")]
+    public void IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(string sql)
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = sql }], options: MigrationsSqlGenerationOptions.Idempotent));
+        Assert.Contains("standalone anonymous block", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("BEGINNING")]
+    [InlineData("DECLARES")]
+    [InlineData("/* BEGIN */ SELECT 1 FROM dual")]
+    [InlineData("-- DECLARE\nSELECT 1 FROM dual")]
+    public void IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(string sql)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IMigrationsSqlGenerator>();
+
+        // The keyword prefix alone must not trigger block passthrough (word boundary).
+        var command = Assert.Single(
+            generator.Generate(
+                [new SqlOperation { Sql = sql, SuppressTransaction = true }],
+                options: MigrationsSqlGenerationOptions.Script
+                    | MigrationsSqlGenerationOptions.Idempotent));
+
+        Assert.StartsWith("EXECUTE IMMEDIATE '", command.CommandText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SeedDataOperationsGenerateInsertUpdateAndDelete()
     {
         using var context = CreateContext();
@@ -543,13 +982,12 @@ public sealed class DamengMigrationsSqlGeneratorTests
     }
 
     [Fact]
-    public void IdempotentGenerationWrapsTheWholeCommandInEscapedDynamicSql()
+    public void IdempotentGenerationWrapsEachStatementInEscapedDynamicSql()
     {
         using var context = CreateContext();
         var generator = context.GetService<IMigrationsSqlGenerator>();
 
-        var command = Assert.Single(
-            generator.Generate(
+        var commands = generator.Generate(
                 [
                     new SqlOperation
                     {
@@ -560,15 +998,44 @@ public sealed class DamengMigrationsSqlGeneratorTests
                     }
                 ],
                 options: MigrationsSqlGenerationOptions.Script
-                    | MigrationsSqlGenerationOptions.Idempotent));
+                    | MigrationsSqlGenerationOptions.Idempotent);
 
-        Assert.Equal(
-            "EXECUTE IMMEDIATE 'UPDATE \"Statuses\" SET \"Name\" = ''O''''Brien'';"
-            + Environment.NewLine
-            + "INSERT INTO \"Statuses\" (\"Name\") VALUES (''新建'');';"
-            + Environment.NewLine,
-            command.CommandText);
-        Assert.True(command.TransactionSuppressed);
+        Assert.Equal(2, commands.Count);
+        Assert.Equal("EXECUTE IMMEDIATE 'UPDATE \"Statuses\" SET \"Name\" = ''O''''Brien'';';" + Environment.NewLine,
+            commands[0].CommandText);
+        Assert.Equal("EXECUTE IMMEDIATE 'INSERT INTO \"Statuses\" (\"Name\") VALUES (''新建'');';" + Environment.NewLine,
+            commands[1].CommandText);
+        Assert.All(commands, command => Assert.True(command.TransactionSuppressed));
+    }
+
+    [Fact]
+    public void IdempotentStatementBoundariesIgnoreQuotedAndCommentedSemicolons()
+    {
+        using var context = CreateContext();
+        var commands = context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = "/* ; */ UPDATE \"T;X\" SET \"N\" = 'O''Brien;'; -- ;\nINSERT INTO \"T;X\" VALUES ('尾;'); ; -- trailing" }],
+            options: MigrationsSqlGenerationOptions.Idempotent);
+        Assert.Equal(2, commands.Count);
+        Assert.Contains("'O''''Brien;'", commands[0].CommandText, StringComparison.Ordinal);
+        Assert.Contains("-- ;", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.Contains("(''尾;'')", commands[1].CommandText, StringComparison.Ordinal);
+        Assert.All(commands, command => Assert.False(command.TransactionSuppressed));
+    }
+
+    [Theory]
+    [InlineData("UPDATE T SET N=1; BEGIN NULL; END;")]
+    [InlineData("UPDATE T SET N=1; DECLARE N INT; BEGIN NULL; END;")]
+    [InlineData("CREATE PROCEDURE P AS BEGIN NULL; END;")]
+    [InlineData("CREATE OR REPLACE FUNCTION F RETURN INT AS BEGIN RETURN 1; END;")]
+    [InlineData("CREATE TRIGGER TR BEFORE INSERT ON T BEGIN NULL; END;")]
+    [InlineData("CREATE PACKAGE P AS PROCEDURE F; END;")]
+    [InlineData("CREATE TYPE T AS OBJECT (N INT);")]
+    public void IdempotentGenerationRejectsUnsafeProceduralSplitting(string sql)
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => context.GetService<IMigrationsSqlGenerator>().Generate(
+            [new SqlOperation { Sql = sql }], options: MigrationsSqlGenerationOptions.Idempotent));
+        Assert.Contains("cannot split", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,6 +1,8 @@
 using System.Data;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -10,6 +12,15 @@ namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 {
     internal const int MaxInlineLength = 32767;
+
+    // Conservative character-column inference budget for the smallest supported 4 KB page.
+    // Actual capacity also depends on the target page size and total row size;
+    // declaration success alone is not evidence that the declared length can be filled.
+    internal const int MaxCharSemanticsBytes = 1900;
+
+    private static readonly Regex LengthSemanticsStoreTypePattern = new(
+        @"^(?<name>.+?)\(\s*(?<size>\d+)\s+(?<unit>CHAR|BYTE)\s*\)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly RelationalTypeMapping Bool = new BoolTypeMapping("BIT", DbType.Boolean);
     private static readonly RelationalTypeMapping Byte = CreateConvertedMapping(
@@ -156,6 +167,27 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     {
     }
 
+    public override RelationalTypeMapping? FindMapping(
+        Type type,
+        string? storeTypeName,
+        bool keyOrIndex = false,
+        bool? unicode = null,
+        int? size = null,
+        bool? rowVersion = null,
+        bool? fixedLength = null,
+        int? precision = null,
+        int? scale = null)
+    {
+        // Scaffolding probes this CLR/facet overload before retaining an explicit store
+        // type. Do not throw for that probe or allow EF's string-to-bytes fallback.
+        if (type == typeof(string) && storeTypeName is null
+            && RequiresExplicitFixedAnsiStoreType(unicode, fixedLength, size)) return null;
+        return base.FindMapping(type, storeTypeName, keyOrIndex, unicode, size, rowVersion, fixedLength, precision, scale);
+    }
+
+    internal static bool RequiresExplicitFixedAnsiStoreType(bool? unicode, bool? fixedLength, int? size)
+        => unicode == false && fixedLength == true && size * 4L > MaxCharSemanticsBytes;
+
     protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
         var mapping = base.FindMapping(mappingInfo) ?? FindRawMapping(mappingInfo);
@@ -170,7 +202,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         Type modelType,
         Type? providerType,
         CoreTypeMapping? elementMapping)
-        => modelType == typeof(byte[])
+        => modelType == typeof(byte[]) || modelType == typeof(string)
             ? null
             : base.FindCollectionMapping(info, modelType, providerType, elementMapping);
 
@@ -194,7 +226,29 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             return ParseQualifiedTemporalStoreType(trimmedStoreType, ref precision, ref scale);
         }
 
+        var charSemanticsMatch = LengthSemanticsStoreTypePattern.Match(trimmedStoreType);
+        if (charSemanticsMatch.Success)
+        {
+            if (charSemanticsMatch.Groups["name"].Value.Trim().ToUpperInvariant() is not ("CHAR" or "VARCHAR" or "VARCHAR2"))
+            {
+                return trimmedStoreType;
+            }
+
+            size = int.Parse(
+                charSemanticsMatch.Groups["size"].Value,
+                CultureInfo.InvariantCulture);
+            return charSemanticsMatch.Groups["name"].Value.Trim();
+        }
+
         return base.ParseStoreTypeName(trimmedStoreType, ref unicode, ref size, ref precision, ref scale);
+    }
+
+    internal static bool RequiresByteLengthSemantics(string storeType)
+    {
+        var match = LengthSemanticsStoreTypePattern.Match(storeType.Trim());
+        return match.Success
+            && match.Groups["name"].Value.Trim().ToUpperInvariant() is "CHAR" or "VARCHAR" or "VARCHAR2"
+            && match.Groups["unit"].Value.Equals("BYTE", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSimpleTemporalPrecisionStoreType(string storeType)
@@ -234,7 +288,10 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ValidateFractionalSecondPrecision(configuredIntervalScale, "INTERVAL");
         }
 
-        if (clrType == typeof(decimal))
+        // Scaffolding removes precision while retaining scale to probe whether precision
+        // needs a fluent call. That CLR-only probe must resolve to the unbounded default.
+        if (clrType == typeof(decimal)
+            && (mappingInfo.Precision is not null || mappingInfo.StoreTypeName is not null))
         {
             ValidateDecimalFacets(mappingInfo.Precision, mappingInfo.Scale);
         }
@@ -349,9 +406,35 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
                 lob: true);
         }
 
+        // Character semantics budget four bytes per character (UTF-8) against the smallest
+        // supported page's inline maximum (~1900 bytes on 4 KB pages), so the default key
+        // length stays 450 for both Unicode and non-Unicode columns.
         size ??= mappingInfo.IsKeyOrIndex
-            ? unicode ? 450 : 900
+            ? 450
             : 1;
+
+        // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
+        // multi-byte text on byte-semantics instances. The qualifier makes the server budget
+        // four bytes per character (UTF-8), so only lengths whose worst-case byte count stays
+        // inside the smallest supported page's conservative 1900-byte column limit use CHAR;
+        // larger ones fall back to CLOB instead of declaring a length the server cannot hold.
+        if (!unicode && size.Value * 4L > MaxCharSemanticsBytes)
+        {
+            if (fixedLength)
+            {
+                throw new NotSupportedException(
+                    $"Dameng fixed-length character semantics cannot hold {size} characters "
+                    + $"within the portable {MaxCharSemanticsBytes}-byte inline limit; configure an explicit instance-specific store type or use a variable-length column.");
+            }
+
+            return new DamengStringTypeMapping(
+                "CLOB",
+                DbType.AnsiString,
+                unicode,
+                size: null,
+                fixedLength: false,
+                lob: true);
+        }
 
         var storeTypeName = unicode
             ? fixedLength ? "NCHAR" : "NVARCHAR2"
@@ -360,8 +443,10 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ? fixedLength ? DbType.StringFixedLength : DbType.String
             : fixedLength ? DbType.AnsiStringFixedLength : DbType.AnsiString;
 
+        var lengthQualifier = unicode ? "" : " CHAR";
+
         return new DamengStringTypeMapping(
-            $"{storeTypeName}({size})",
+            $"{storeTypeName}({size}{lengthQualifier})",
             dbType,
             unicode,
             size,

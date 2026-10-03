@@ -6,13 +6,18 @@
 
 `CHAR` / `VARCHAR` / `VARCHAR2` / `NVARCHAR2` 在达梦中行为接近；不要按 Oracle 那套「VARCHAR 与 VARCHAR2 不同」来设计。
 
-行内变长字符串上限由**页大小**决定；表达式计算中 `VARCHAR` 上限为 32767，不受页大小限制。指定 `USING LONG ROW` 后，插入长度不再被页大小卡住。
+行内变长字符串上限由**页大小**决定，文档表：4 KB 页字符列上限约 1900 字节、8 KB 约 3900、16 KB 约 8000、32 KB 约 8188；整行非大字段总长度上限约为 2000/4000/8000/16000。表达式计算中 `VARCHAR` 上限为 32767，不受页大小限制。注意 `CREATE TABLE` 的声明上限按页大小派生（32 KB 页可声明到 32767 字节），建表成功不代表能存满——填充超出行内上限时报「记录超长」。页大小与字符填充探针仅作探索记录，SQL 错误不会导致其失败，因此不能将探针输出中的字节数当作容量回归断言。提供程序的断言证据以 `docs/compatibility.md` 为准。`STORAGE (USING LONG ROW)` 已有真实库断言：写入并读回超过半页大小的三个 VARCHAR 列，且 SYSOBJECTS.INFO3 位 50 置位；`DISABLE USING LONG ROW` 对照表该位为零。该选项允许超长记录的变长数据转为行外存储，独立于 CLUSTERBTR；提供程序目前不能保留此选项，因此反向工程明确拒绝 LONG ROW 表。该证据不代表所有页大小或所有行宽均已验证，也不能用早期不同语法的探索探针推断其支持或拒绝。
 
 中文长度：
 
 - `UNICODE_FLAG=0`：GB18030；`=1`：UTF-8。初始化后不能改。`SELECT UNICODE;` 可查。
 - `LENGTH_IN_CHAR=0`：按字节。UTF-8 下一个汉字约 3 字节，GBK/GB18030 约 2 字节。
 - `LENGTH_IN_CHAR=1`：`CHAR(1)` 可存一个字符。
+
+本仓库参考实例（LENGTH_IN_CHAR=0）已实测 `CHAR/VARCHAR/VARCHAR2(n BYTE)`，
+目录 CHAR_USED=B、DATA_LENGTH=n；反向工程保留该显式限定，提供程序生成的相关 DDL
+带目标模式检查，非 0 或未知模式拒绝。NVARCHAR2/NCHAR 不扩展 BYTE 映射；
+未验证模式 1 实例，不因语法在模式 0 被接受就推断所有模式都保持相同容量。
 
 ```sql
 CREATE TABLE dmhr.char_test (name VARCHAR(3));
