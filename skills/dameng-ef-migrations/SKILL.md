@@ -58,6 +58,7 @@ B 树表的实际存储表空间须匹配模式所属用户的默认数据表空
 字段为 0 时回退到已验证的默认数据空间，非默认或未知位置拒绝，外键 VIRTUAL 索引跳过。
 选中外键若跨模式、主体未选中/不可读或列无法解析，明确拒绝从表，不省略关系。
 反向工程拒绝普通表的加密列（SYSCOLUMNS.INFO2 位 14）和未知加密标记，不读取密钥目录。
+列目录读取 ALL_TAB_COLS；普通表 HIDDEN_COLUMN 必须为 NO，NOT VISIBLE 或未知可见性拒绝，表过滤仍隔离不支持对象。
 外键动作读取 SYSCONS.FACTION：更新仅接受空格 NO ACTION；删除支持空格/C/N，D（SET DEFAULT）及未知动作拒绝。
 不要使用兼容视图 DELETE_RULE 推断 SET DEFAULT；参考实例将其显示为 CASCADE，EF 关系模型也不能完整保留该动作。
 反向工程物理索引必须 STATUS=VALID 且 SYSINDEXES.XTYPE 位 16 未置位；不可见、不可用或未知状态拒绝，

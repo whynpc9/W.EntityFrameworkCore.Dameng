@@ -16,6 +16,23 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData("YES")]
+    [InlineData("UNKNOWN")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void HiddenOrUnknownColumnVisibilityIsRejected(string? hiddenColumn)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateColumnVisibility("T", "Hidden", hiddenColumn));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'Hidden'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("NOT VISIBLE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VisibleColumnsCanBeScaffolded()
+        => DamengDatabaseModelFactory.ValidateColumnVisibility("T", "C", "NO");
+
+    [Theory]
     [InlineData(65537L, "VALID")]
     [InlineData(65553L, "VALID")]
     [InlineData(1L, "UNUSABLE")]

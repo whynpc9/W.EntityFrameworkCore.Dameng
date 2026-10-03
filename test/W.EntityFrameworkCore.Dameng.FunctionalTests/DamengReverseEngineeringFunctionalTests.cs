@@ -23,6 +23,66 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NotVisibleColumnsKeepTheirServerSemanticsAndAreRejected(bool notNull)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_HCOL_" + suffix;
+        var safe = "EF10_HSAFE_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, VISIBLE_VALUE INT, HIDDEN_VALUE INT DEFAULT 7 {(notNull ? "NOT NULL" : "NULL")} NOT VISIBLE)");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
+            created.Add(safe);
+            // Without a column list, the hidden column is omitted and takes its default.
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" VALUES (1, 2)");
+            await using var query = connection.CreateCommand();
+            query.CommandText = $"SELECT * FROM \"{table}\"";
+            await using (var reader = await query.ExecuteReaderAsync())
+            {
+                Assert.Equal(2, reader.FieldCount);
+                Assert.Equal("ID", reader.GetName(0));
+                Assert.Equal("VISIBLE_VALUE", reader.GetName(1));
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(2, Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture));
+            }
+            query.CommandText = $"SELECT HIDDEN_VALUE FROM \"{table}\"";
+            Assert.Equal(7, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT COLUMN_NAME, HIDDEN_COLUMN FROM ALL_TAB_COLS WHERE OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME=:name ORDER BY COLUMN_ID";
+            var name = query.CreateParameter();
+            name.ParameterName = "name";
+            name.Value = table;
+            query.Parameters.Add(name);
+            await using (var reader = await query.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("NO", reader.GetString(1));
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("NO", reader.GetString(1));
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal("HIDDEN_VALUE", reader.GetString(0));
+                Assert.Equal("YES", reader.GetString(1));
+                Assert.False(await reader.ReadAsync());
+            }
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains("HIDDEN_VALUE", error.Message, StringComparison.Ordinal);
+            Assert.Contains("NOT VISIBLE", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
     [InlineData("INVISIBLE")]
     [InlineData("UNUSABLE")]
     public async Task NonDefaultIndexStatesAreRejectedAndRestorationIsObserved(string state)

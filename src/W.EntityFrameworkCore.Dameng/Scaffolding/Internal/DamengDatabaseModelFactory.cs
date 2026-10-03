@@ -325,8 +325,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             connection,
             """
             SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE,
-                   NULLABLE, CHAR_LENGTH, CHAR_USED, DATA_DEFAULT, COLUMN_ID
-            FROM ALL_TAB_COLUMNS
+                   NULLABLE, CHAR_LENGTH, CHAR_USED, DATA_DEFAULT, COLUMN_ID, HIDDEN_COLUMN
+            FROM ALL_TAB_COLS
             WHERE OWNER = :schema
             ORDER BY TABLE_NAME, COLUMN_ID
             """);
@@ -351,6 +351,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             var defaultValue = GetNullableString(reader, 9);
 
             var columnName = reader.GetString(1);
+            if (table is not DatabaseView)
+            {
+                ValidateColumnVisibility(tableName, columnName, GetNullableString(reader, 11));
+            }
             var storeType = BuildStoreType(dataType, dataLength, dataPrecision, dataScale, charLength, charUsed, tableName, columnName);
             ValidateColumnType(tableName, columnName, storeType);
             var column = new DatabaseColumn
@@ -414,6 +418,16 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     $"Dameng table or view '{table}' column '{column}' has an unsupported default referencing local sequence '{name}'. "
                     + "Reverse engineering supports only simple local NEXTVAL defaults; exclude this object.");
             }
+        }
+    }
+
+    internal static void ValidateColumnVisibility(string table, string column, string? hiddenColumn)
+    {
+        if (!string.Equals(hiddenColumn, "NO", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' column '{column}' is NOT VISIBLE or has unknown visibility '{hiddenColumn ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve column visibility; exclude this table.");
         }
     }
 
