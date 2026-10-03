@@ -23,6 +23,60 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengFact]
+    public async Task FactoryRejectsMaterializedViewPrebuiltTableAndPreservesTableFiltering()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var source = "EF10_MVS_" + suffix;
+        var backing = "EF10_MVB_" + suffix;
+        var view = "EF10_MVV_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var tables = new List<string>();
+        var viewCreated = false;
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (ID INT) STORAGE(CLUSTERBTR)");
+            tables.Add(source);
+            await ExecuteAsync(connection, $"INSERT INTO \"{source}\" VALUES(1)");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{backing}\" (ID INT) STORAGE(CLUSTERBTR)");
+            tables.Add(backing);
+            await ExecuteAsync(connection, $"CREATE MATERIALIZED VIEW \"{view}\" FOR \"{backing}\" ON PREBUILT TABLE REFRESH COMPLETE ON DEMAND AS SELECT ID FROM \"{source}\"");
+            viewCreated = true;
+            await ExecuteAsync(connection, $"REFRESH MATERIALIZED VIEW \"{view}\" COMPLETE");
+            await using var query = connection.CreateCommand();
+            query.CommandText = $"SELECT COUNT(*) FROM \"{view}\"";
+            Assert.Equal(1, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            await ExecuteAsync(connection, $"INSERT INTO \"{source}\" VALUES(2)");
+            Assert.Equal(1, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            await ExecuteAsync(connection, $"REFRESH MATERIALIZED VIEW \"{view}\" COMPLETE");
+            Assert.Equal(2, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT O.INFO3 FROM ALL_TABLES T JOIN SYS.SYSOBJECTS O ON O.SCHID=CURRENT_SCHID() AND O.NAME=T.TABLE_NAME AND O.TYPE$='SCHOBJ' AND O.SUBTYPE$='UTAB' WHERE T.OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND T.TABLE_NAME=:name";
+            var name = query.CreateParameter(); name.ParameterName = "name"; name.Value = backing; query.Parameters.Add(name);
+            var flags = Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            Assert.Equal(0L, flags & 0x3FL);
+            Assert.NotEqual(0L, flags & (1L << 57));
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [backing])));
+            Assert.Contains(backing, error.Message, StringComparison.Ordinal);
+            Assert.Contains("materialized view", error.Message, StringComparison.Ordinal);
+            Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions()));
+            Assert.Equal(source, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [source])).Tables).Name);
+        }
+        finally
+        {
+            if (viewCreated) await ExecuteAsync(connection, $"DROP MATERIALIZED VIEW \"{view}\"");
+            foreach (var table in Enumerable.Reverse(tables))
+            {
+                await using var exists = connection.CreateCommand();
+                exists.CommandText = "SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME=:name";
+                var name = exists.CreateParameter(); name.ParameterName = "name"; name.Value = table; exists.Parameters.Add(name);
+                if (Convert.ToInt32(await exists.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 1)
+                    await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            }
+        }
+    }
+
+    [DamengFact]
     public async Task IndexFillFactorsSurviveIndependentAndConstraintIndexRecreation()
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();

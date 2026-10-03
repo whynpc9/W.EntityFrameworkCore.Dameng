@@ -283,6 +283,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 + "Reverse engineering cannot preserve HUGE or other non-ordinary table definitions; exclude this table.");
         }
 
+        // Prebuilt materialized-view tables remain ordinary kind 0, but their data
+        // and refresh lifecycle belong to the view rather than a standalone table.
+        if ((info3 & (1L << 57)) != 0)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' backs a materialized view. "
+                + "Reverse engineering cannot preserve its refresh semantics; exclude this table.");
+        }
+
         // INFO3 bit 50 allows oversized records to move variable-length data out of row.
         // CLUSTERBTR alone does not preserve this independent storage capability.
         if ((info3 & (1L << 50)) != 0)

@@ -440,6 +440,16 @@ public sealed class DamengDatabaseModelFactoryTests
             "T", "C", length is null ? null : new byte[length.Value]));
 
     [Theory]
+    [InlineData(1L << 57)]
+    [InlineData((1L << 57) | 256L)]
+    public void MaterializedViewPrebuiltTablesAreRejected(long info3)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateNativeTableKind("Backing", info3));
+        Assert.Contains("Backing", error.Message, StringComparison.Ordinal);
+        Assert.Contains("materialized view", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(0L)]
     [InlineData(256L)]
     [InlineData(4294967296L)]
