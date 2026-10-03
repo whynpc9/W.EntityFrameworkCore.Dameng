@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -14,6 +15,64 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Theory]
+    [InlineData("  ")]
+    [InlineData(" C")]
+    [InlineData(" N")]
+    [InlineData(" D")]
+    public void DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(string actions)
+        => DamengDatabaseModelFactory.ValidateForeignKeyUpdateAction("T", "FK_T", actions);
+
+    [Theory]
+    [InlineData("  ", ReferentialAction.NoAction)]
+    [InlineData(" C", ReferentialAction.Cascade)]
+    [InlineData(" N", ReferentialAction.SetNull)]
+    public void NativeDeleteActionsRetainTheirSupportedMeaning(string actions, ReferentialAction expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadForeignKeyDeleteAction("T", "FK_T", actions));
+
+    [Theory]
+    [InlineData(16384L)]
+    [InlineData(16385L)]
+    [InlineData(null)]
+    public void EncryptedOrUnknownColumnStorageIsRejected(long? info2)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateColumnEncryptionFlags("T", "Secret", info2));
+        Assert.Contains("T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Secret", error.Message, StringComparison.Ordinal);
+        Assert.Contains("encryption", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(1L)]
+    public void OrdinaryAndIdentityColumnsAreNotMistakenForEncryption(long info2)
+        => DamengDatabaseModelFactory.ValidateColumnEncryptionFlags("T", "C", info2);
+
+    [Theory]
+    [InlineData("C ")]
+    [InlineData("N ")]
+    [InlineData("D ")]
+    [InlineData("AA")]
+    [InlineData("?")]
+    [InlineData(null)]
+    public void UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(string? actions)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateForeignKeyUpdateAction("T", "FK_T", actions));
+        Assert.Contains("FK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ON UPDATE", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(" D")]
+    [InlineData(" X")]
+    [InlineData(null)]
+    public void UnrepresentableDeleteActionsCannotBecomeImplicitNoAction(string? action)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadForeignKeyDeleteAction("T", "FK_T", action));
+        Assert.Contains("FK_T", error.Message, StringComparison.Ordinal);
+        Assert.Contains("ON DELETE", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(4L, 589828L)]
     [InlineData(10L, 589828L)]

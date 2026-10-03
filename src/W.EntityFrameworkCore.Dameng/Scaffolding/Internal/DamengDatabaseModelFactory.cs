@@ -794,10 +794,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         // SYSCOLINFOS.INFO1 marks virtual columns (bit 0), DEFAULT ON NULL (bit 4) and
         // ON UPDATE (bit 6). ALL_TAB_COLUMNS alone cannot preserve these generation rules.
         using var columns = CreateCommand(connection,
-            "SELECT T.NAME, C.NAME, I.INFO1 FROM SYS.SYSCOLINFOS I "
-            + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = I.ID "
+            "SELECT T.NAME, C.NAME, COALESCE(I.INFO1, 0), C.INFO2 FROM SYS.SYSCOLUMNS C "
+            + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = C.ID "
             + "INNER JOIN SYS.SYSOBJECTS S ON S.ID = T.SCHID "
-            + "INNER JOIN SYS.SYSCOLUMNS C ON C.ID = I.ID AND C.COLID = I.COLID "
+            + "LEFT JOIN SYS.SYSCOLINFOS I ON I.ID = C.ID AND I.COLID = C.COLID "
             + "WHERE S.NAME = :schema AND T.TYPE$ = 'SCHOBJ' AND T.SUBTYPE$ = 'UTAB'");
         AddParameter(columns, "schema", schema);
         using var columnReader = columns.ExecuteReader();
@@ -805,6 +805,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         {
             if (tables.ContainsKey(columnReader.GetString(0)))
             {
+                ValidateColumnEncryptionFlags(columnReader.GetString(0), columnReader.GetString(1), GetNullableInt64(columnReader, 3));
                 ValidateColumnGenerationFlags(
                     columnReader.GetString(0), columnReader.GetString(1),
                     Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture));
@@ -814,6 +815,18 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
     internal static bool IsVirtualColumnFlags(long flags)
         => (flags & 1L) != 0;
+
+    internal static void ValidateColumnEncryptionFlags(string table, string column, long? info2)
+    {
+        // Ordinary-table SYSCOLUMNS.INFO2 bit 14 marks encrypted columns. Never read
+        // the encryption key catalog: detecting the unsupported definition is enough.
+        if (info2 is null || (info2 & (1L << 14)) != 0)
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' column '{column}' has encrypted or unknown column storage. "
+                + "Reverse engineering cannot preserve column encryption; exclude this table.");
+        }
+    }
 
     internal static void ValidateColumnGenerationFlags(string table, string column, long flags)
     {
@@ -1195,8 +1208,12 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             """
             SELECT C.CONSTRAINT_NAME, C.TABLE_NAME, P.TABLE_NAME AS PRINCIPAL_TABLE_NAME,
                    C.R_OWNER AS PRINCIPAL_OWNER,
-                   CC.COLUMN_NAME, PC.COLUMN_NAME AS PRINCIPAL_COLUMN_NAME, C.DELETE_RULE
+                   CC.COLUMN_NAME, PC.COLUMN_NAME AS PRINCIPAL_COLUMN_NAME, K.FACTION
             FROM ALL_CONSTRAINTS C
+            LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = C.OWNER AND S.TYPE$ = 'SCH'
+            LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = C.CONSTRAINT_NAME
+                AND O.TYPE$ = 'TABOBJ' AND O.SUBTYPE$ = 'CONS'
+            LEFT JOIN SYS.SYSCONS K ON K.ID = O.ID AND K.TYPE$ = 'F'
             LEFT JOIN ALL_CONSTRAINTS P
                 ON P.OWNER = C.R_OWNER AND P.CONSTRAINT_NAME = C.R_CONSTRAINT_NAME
             LEFT JOIN ALL_CONS_COLUMNS CC
@@ -1232,6 +1249,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             var constraintName = reader.GetString(0);
+            var nativeActions = GetNullableString(reader, 6);
+            ValidateForeignKeyUpdateAction(tableName, constraintName, nativeActions);
             ValidateForeignKeyPrincipalSchema(schema, tableName, constraintName, GetNullableString(reader, 3));
             var principalTableName = GetNullableString(reader, 2);
             if (principalTableName is null || !tables.TryGetValue(principalTableName, out var principalTable))
@@ -1246,7 +1265,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 throw new NotSupportedException($"Dameng table '{tableName}' foreign key '{constraintName}' has incomplete column metadata.");
             }
 
-            var onDelete = MapDeleteRule(GetNullableString(reader, 6));
+            var onDelete = ReadForeignKeyDeleteAction(tableName, constraintName, nativeActions);
 
             var foreignKey = foreignKeys.LastOrDefault()
                 is { } last
@@ -1297,15 +1316,35 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
-    private static ReferentialAction? MapDeleteRule(string? deleteRule)
-        => deleteRule?.ToUpperInvariant() switch
+    internal static void ValidateForeignKeyUpdateAction(string table, string constraint, string? nativeActions)
+    {
+        // SYSCONS.FACTION stores update then delete action. Only NO ACTION updates
+        // are representable by EF's relationship model; physical action loss is not safe.
+        if (nativeActions is not { Length: 2 } || nativeActions[0] != ' ')
         {
-            "CASCADE" => ReferentialAction.Cascade,
-            "SET NULL" => ReferentialAction.SetNull,
-            "NO ACTION" => ReferentialAction.NoAction,
-            "RESTRICT" => ReferentialAction.Restrict,
-            _ => null
-        };
+            throw new NotSupportedException(
+                $"Dameng table '{table}' foreign key '{constraint}' has unsupported ON UPDATE action metadata '{nativeActions ?? "NULL"}'. "
+                + "Reverse engineering cannot preserve this update action; exclude the dependent table.");
+        }
+    }
+
+    internal static ReferentialAction ReadForeignKeyDeleteAction(string table, string constraint, string? nativeActions)
+    {
+        // ALL_CONSTRAINTS.DELETE_RULE can report CASCADE for native SET DEFAULT.
+        // Use the native delete character, and reject actions EF cannot scaffold.
+        return nativeActions is { Length: 2 } ? nativeActions[1] switch
+        {
+            ' ' => ReferentialAction.NoAction,
+            'C' => ReferentialAction.Cascade,
+            'N' => ReferentialAction.SetNull,
+            _ => throw UnsupportedForeignKeyDeleteAction(table, constraint, nativeActions)
+        } : throw UnsupportedForeignKeyDeleteAction(table, constraint, nativeActions);
+    }
+
+    private static NotSupportedException UnsupportedForeignKeyDeleteAction(string table, string constraint, string? nativeActions)
+        => new(
+            $"Dameng table '{table}' foreign key '{constraint}' has unsupported ON DELETE action metadata '{nativeActions ?? "NULL"}'. "
+            + "EF scaffolding cannot preserve SET DEFAULT or unknown delete actions; exclude the dependent table.");
 
     private static void LoadComments(
         DbConnection connection,

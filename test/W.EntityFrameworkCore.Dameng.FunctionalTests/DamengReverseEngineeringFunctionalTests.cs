@@ -23,6 +23,119 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData("ENCRYPT")]
+    [InlineData("ENCRYPT MANUAL")]
+    public async Task EncryptedColumnsAreRejectedBeforeTheirStorageProtectionIsLost(string encryption)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_ENC_" + suffix;
+        var safe = "EF10_ENCSAFE_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, SECRET_VALUE VARCHAR(40) {encryption})");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
+            created.Add(safe);
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" VALUES (1, 'test-value')");
+            await using var query = connection.CreateCommand();
+            query.CommandText = $"SELECT SECRET_VALUE FROM \"{table}\" WHERE ID=1";
+            Assert.Equal("test-value", Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT C.INFO2 FROM SYS.SYSCOLUMNS C JOIN SYS.SYSOBJECTS T ON T.ID=C.ID "
+                + "WHERE T.SCHID=CURRENT_SCHID() AND T.NAME=:name AND T.TYPE$='SCHOBJ' AND T.SUBTYPE$='UTAB' AND C.NAME='SECRET_VALUE'";
+            var name = query.CreateParameter();
+            name.ParameterName = "name";
+            name.Value = table;
+            query.Parameters.Add(name);
+            Assert.NotEqual(0L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture) & (1L << 14));
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains("SECRET_VALUE", error.Message, StringComparison.Ordinal);
+            Assert.Contains("encryption", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(true, "NO ACTION", 2)]
+    [InlineData(true, "CASCADE", 3)]
+    [InlineData(true, "SET NULL", null)]
+    [InlineData(true, "SET DEFAULT", 1)]
+    [InlineData(false, "SET DEFAULT", 1)]
+    public async Task ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(bool update, string action, int? expected)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var parent = "EF10_AP_" + suffix;
+        var child = "EF10_AC_" + suffix;
+        var constraint = "FK_ACT_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{parent}\" (ID INT PRIMARY KEY)");
+            created.Add(parent);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{child}\" (ID INT PRIMARY KEY, PID INT DEFAULT 1, CONSTRAINT \"{constraint}\" FOREIGN KEY(PID) REFERENCES \"{parent}\"(ID) ON {(update ? "UPDATE" : "DELETE")} {action})");
+            created.Add(child);
+            await ExecuteAsync(connection, $"INSERT INTO \"{parent}\" VALUES (1)");
+            await ExecuteAsync(connection, $"INSERT INTO \"{parent}\" VALUES (2)");
+            await ExecuteAsync(connection, $"INSERT INTO \"{child}\" VALUES (1, 2)");
+            var change = update ? $"UPDATE \"{parent}\" SET ID=3 WHERE ID=2" : $"DELETE FROM \"{parent}\" WHERE ID=2";
+            if (action == "NO ACTION") await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection, change));
+            else await ExecuteAsync(connection, change);
+            await using var query = connection.CreateCommand();
+            query.CommandText = $"SELECT PID FROM \"{child}\" WHERE ID=1";
+            var value = await query.ExecuteScalarAsync();
+            if (expected is null) Assert.IsType<DBNull>(value);
+            else Assert.Equal(expected.Value, Convert.ToInt32(value, CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT K.FACTION, C.DELETE_RULE FROM ALL_CONSTRAINTS C "
+                + "JOIN SYS.SYSOBJECTS O ON O.SCHID=CURRENT_SCHID() AND O.NAME=C.CONSTRAINT_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='CONS' "
+                + "JOIN SYS.SYSCONS K ON K.ID=O.ID WHERE C.OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND C.CONSTRAINT_NAME=:name";
+            var name = query.CreateParameter();
+            name.ParameterName = "name";
+            name.Value = constraint;
+            query.Parameters.Add(name);
+            await using (var reader = await query.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                var native = reader.GetString(0);
+                Assert.Equal(2, native.Length);
+                var updateMarker = update ? action switch
+                {
+                    "CASCADE" => 'C',
+                    "SET NULL" => 'N',
+                    "SET DEFAULT" => 'D',
+                    _ => ' '
+                } : ' ';
+                var deleteMarker = update ? ' ' : 'D';
+                Assert.Equal($"{updateMarker}{deleteMarker}", native);
+                if (!update) Assert.True(reader.GetString(1) is "CASCADE" or "SET DEFAULT");
+            }
+            var factory = CreateFactory();
+            var options = new DatabaseModelFactoryOptions(tables: [parent, child]);
+            if (action == "NO ACTION") Assert.Equal(2, factory.Create(connection, options).Tables.Count);
+            else
+            {
+                var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, options));
+                Assert.Contains(constraint, error.Message, StringComparison.Ordinal);
+                Assert.Contains(update ? "ON UPDATE" : "ON DELETE", error.Message, StringComparison.Ordinal);
+            }
+            Assert.Equal(parent, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [parent])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task CyclicSequenceAtBoundaryKeepsItsWrappedContinuation(bool descending)
