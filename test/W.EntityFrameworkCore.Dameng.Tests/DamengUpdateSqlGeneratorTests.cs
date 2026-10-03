@@ -80,6 +80,71 @@ public sealed class DamengUpdateSqlGeneratorTests
             sql);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClientKeysLocateMultipleGeneratedNonKeyValues(bool compositeKey)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IUpdateSqlGenerator>();
+        var columns = new List<ColumnModificationParameters>
+        {
+            Column("Id", value: 7L, write: true, key: true)
+        };
+        if (compositeKey)
+        {
+            columns.Add(Column("TenantId", value: 11, write: true, key: true));
+        }
+        columns.Add(Column("Name", value: "生成值", write: true));
+        columns.Add(Column("DefaultText", read: true));
+        columns.Add(Column("NullableDefault", read: true));
+        columns.Add(Column("Computed", read: true));
+        var sql = new StringBuilder();
+
+        var mapping = generator.AppendInsertOperation(sql, CreateCommand(EntityState.Added, [.. columns]), 0, out var transaction);
+
+        Assert.Equal(ResultSetMapping.LastInResultSet, mapping);
+        Assert.True(transaction);
+        Assert.Contains("SELECT \"DefaultText\", \"NullableDefault\", \"Computed\"", sql.ToString(), StringComparison.Ordinal);
+        Assert.Contains(compositeKey
+            ? "WHERE SQL%ROWCOUNT = 1 AND \"Id\" = :p0 AND \"TenantId\" = :p1;"
+            : "WHERE SQL%ROWCOUNT = 1 AND \"Id\" = :p0;", sql.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("SCOPE_IDENTITY", sql.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("CURRVAL", sql.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GeneratedUpdateUsesOriginalConcurrencyAndReadsByKeyWithZeroRowGuard(bool nullOriginalToken)
+    {
+        using var context = CreateContext();
+        var generator = context.GetService<IUpdateSqlGenerator>();
+        var token = Column("Version", originalValue: nullOriginalToken ? null : 3, value: 4, read: true, condition: true);
+        var command = CreateCommand(EntityState.Modified,
+            Column("Name", value: "new", write: true),
+            Column("Id", originalValue: 7L, value: 7L, key: true, condition: true),
+            token,
+            Column("Computed", read: true));
+        var sql = new StringBuilder();
+
+        var mapping = generator.AppendUpdateOperation(sql, command, 0, out var transaction);
+
+        Assert.Equal(ResultSetMapping.LastInResultSet, mapping);
+        Assert.True(transaction);
+        var text = sql.ToString();
+        Assert.StartsWith("UPDATE \"APP\".\"Widgets\" SET \"Name\" = :p0", text, StringComparison.Ordinal);
+        Assert.Contains(nullOriginalToken
+            ? "WHERE \"Id\" = :p1 AND \"Version\" IS NULL;"
+            : "WHERE \"Id\" = :p1 AND \"Version\" = :p2;", text, StringComparison.Ordinal);
+        Assert.Contains("SELECT \"Version\", \"Computed\"", text, StringComparison.Ordinal);
+        Assert.Contains("WHERE SQL%ROWCOUNT = 1 AND \"Id\" = :p1;", text, StringComparison.Ordinal);
+        var version = command.ColumnModifications.Single(column => column.ColumnName == "Version");
+        Assert.True(version.UseOriginalValueParameter);
+        Assert.False(version.UseCurrentValueParameter);
+        Assert.Equal(nullOriginalToken ? null : 3, version.OriginalValue);
+    }
+
     [Fact]
     public void SequenceGeneratedKeyUsesCurrvalForReadback()
     {
@@ -94,7 +159,9 @@ public sealed class DamengUpdateSqlGeneratorTests
         var command = CreateCommand(
             EntityState.Added,
             Column("Id", property: id, read: true, key: true),
-            Column("Name", value: "序列", write: true));
+            Column("Name", value: "序列", write: true),
+            Column("DefaultText", read: true),
+            Column("Computed", read: true));
         var sql = new StringBuilder();
 
         var mapping = generator.AppendInsertOperation(
@@ -109,7 +176,7 @@ public sealed class DamengUpdateSqlGeneratorTests
             """
             INSERT INTO "APP"."Widgets" ("Name")
             VALUES (:p0);
-            SELECT "Id"
+            SELECT "Id", "DefaultText", "Computed"
             FROM "APP"."Widgets"
             WHERE SQL%ROWCOUNT = 1 AND "Id" = "APP"."WidgetSequence".CURRVAL;
             """,

@@ -133,7 +133,7 @@ dotnet ef database update --context AppDbContext
 
 ## 生成迁移类
 
-模型先限制在[已支持的迁移子集](compatibility.md)。筛选索引、存储计算列、修改标识列和跨模式重命名会在生成 SQL 时抛出 `NotSupportedException`。
+模型先限制在[已支持的迁移子集](compatibility.md)。筛选索引、存储计算列、增加或恢复标识列属性、修改标识列种子/增量和跨模式重命名会在生成 SQL 时抛出 `NotSupportedException`。
 
 ```bash
 dotnet ef migrations add InitialCreate \
@@ -145,6 +145,25 @@ dotnet ef migrations add InitialCreate \
 
 提交前看生成的 `Up`。`Down` 能否生成取决于操作是否落在支持子集内；即便能生成，
 已经执行的达梦 DDL 也不会随事务回滚。
+
+### 移除 IDENTITY
+
+已有自增主键改由应用赋值时，将属性配置改为 `ValueGeneratedNever()`，并移除原来的
+`UseDamengIdentityColumn(...)` 配置。审查模型差异中的 `AlterColumn`：只有自增属性
+发生变化时，提供程序生成表级命令：
+
+```sql
+ALTER TABLE "APP"."Orders" DROP IDENTITY;
+```
+
+此命令保留列和已有数据，不附加 `MODIFY`，并禁止 EF 为其包装事务。它不带列名，
+模式名和表名分别引用。同一 `AlterColumn` 若还改变类型、可空性、默认值、计算列、
+排序规则或其他列注解，提供程序会提前拒绝；切换为序列也不在这项支持范围内。
+应将后续变更单独设计并验证，不要通过修改旧模型信息绕过检查。
+
+移除后应用必须按新模型提供主键。自动生成的 `Down` 通常需要恢复 IDENTITY，
+该方向仍不受支持，生成 SQL 时会明确失败。上线前应另行审查恢复方案；不能依赖
+事务回滚撤销已经执行的 `DROP IDENTITY`，也不要把删列重建当作无损恢复。
 
 ## 导出脚本
 

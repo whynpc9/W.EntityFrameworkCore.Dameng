@@ -10,6 +10,9 @@
 `JSON_MODE=0`、`CLOB_MAX_CALC_LEN=20480`。没有将旧实例版本或构建号套用到新实例。
 工作包、探针与回归结果见[实施台账](query-translation-execution.md)；探针成功执行不等于功能验收。
 
+2026-10-02 的纯移除 IDENTITY 与生成值回读增量见[独立验收记录](stage3-pre-driver-validation.md)。
+该批使用现有测试环境，未重新采集服务器 build/profile，不将既有版本记录套用为本轮新证据。
+
 - **真实环境已验证**：自动化提供程序测试已在达梦服务器上通过。版本标识以文首两轮记录为准。
 - **单元级已验证**：确定性的提供程序测试在无服务器环境下覆盖 SQL、元数据或服务行为。
   这不属于运行时证明。
@@ -41,7 +44,8 @@
 | 跟踪式 CRUD | 真实环境已验证 | Unicode 插入/读取/更新/删除、null、转换器、标识列键回读和受影响行报告 |
 | 标识列 | 真实环境已验证 / 部分方面单元级已验证 | 生成的键及通过 `SCOPE_IDENTITY()` 回读已在服务器执行；约定和显式种子/增量有单元测试覆盖 |
 | 序列 | 真实环境已验证 | `sequence.NEXTVAL` 默认值和通过 `sequence.CURRVAL` 回读生成的键；不使用标准 `NEXT VALUE FOR` |
-| 乐观并发 | 真实环境已验证 | 过期并发标记通过驱动程序已验证的 `SQL%ROWCOUNT` 结果协议抛出异常 |
+| 非键生成值回读 | 真实环境已验证 / 子集 | 2026-10-02 使用现有 DML + SELECT 路径验证：客户端单键/复合键、IDENTITY 和序列键插入后，Unicode/数值/NULL 默认值及虚拟计算列在同步/异步 SaveChanges 返回时已回填；无需 Reload。当前值和原始值、独立查询及外部事务回滚均有回归。其他策略的库端生成键继续拒绝，未引入 RETURNING 或输出参数 |
+| 乐观并发 | 真实环境已验证 / 子集 | 原有应用管理的过期并发标记通过 `SQL%ROWCOUNT` 协议抛出异常。2026-10-02 新增显式配置的 BEFORE UPDATE 行触发器版本标记：更新后回读标记与虚拟计算列、连续两次更新、陈旧标记和已删除行的零行更新均有同步/异步回归；失败方不传播生成值。HasTrigger 只声明元数据，触发器需自行创建；不支持自动生成 SQL Server 风格 rowversion |
 | `ExecuteUpdate` / `ExecuteDelete` | 真实环境已验证 | 受影响行数以及持久化的布尔值/转换值更新 |
 | 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
 | 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`）；`n × 4` 字节预算超出 8188（文档的 32 KB 页字符列上限）时回退 CLOB（定长则拒绝）；显式长度仍受目标实例页大小与整行预算约束。参考实例（页 32768、UTF-8）的断言回归覆盖 n 为 2、3、1000、2047 的 EF 级往返及 2048 回退 CLOB；页大小探针仅记录探索结果，遇到 SQL 错误不会失败，不能作为容量边界验收。建表接受不等于能存满。键/索引字符串默认长度统一为 450 个字符（最坏 1800 字节），在文档表最小 4 KB 页的列上限（1900 字节）内。`NVARCHAR2(n)` 已是字符语义，保持不变 |
@@ -56,13 +60,13 @@
 | 重试执行策略 | 单元级已验证 | 保守的 `DmException.Number` 分类和有界设置；当前没有真实故障注入套件证明每个错误码都可恢复 |
 | DDL 事务性 | 不支持原子迁移 | 达梦 DDL 会隐式提交；生成的 DDL 命令会禁用 EF 事务 |
 | 创建/删除物理数据库 | 不支持 | `Create`/`Delete` 会抛出异常；应连接到现有数据库并管理当前模式中的对象 |
-| 迁移 DDL | 部分支持 / 子集真实环境已验证 | 2026-09-22 已在独立用户模式中执行 `Database.GenerateCreateScript()`、非幂等 `IMigrator.GenerateScript()`、幂等脚本的重复执行，以及 `Database.Migrate()`。覆盖标识列种子与 `SET IDENTITY_INSERT`、序列 `NEXTVAL`、虚拟计算列、主键、唯一约束、检查约束、`ON DELETE CASCADE`、升降序唯一索引、额外模式中的表、列/表/索引重命名、带默认值的非空列（已有行回填为该默认值）和删除列。在第一次 `NEXTVAL` 之前把增量从 3 改成 5 时，第一个值是 43 而不是 41。筛选索引、存储计算列、修改标识列和跨模式重命名仍在生成时拒绝。2026-09-30 起 `HasComment` 经 `COMMENT ON TABLE` / `COMMENT ON COLUMN` 落库（服务器不接受 `IS NULL`，清除生成 `IS ''`），覆盖幂等与非幂等脚本及真实库回读 |
+| 迁移 DDL | 部分支持 / 子集真实环境已验证 | 2026-09-22 已在独立用户模式中执行 `Database.GenerateCreateScript()`、非幂等 `IMigrator.GenerateScript()`、幂等脚本的重复执行，以及 `Database.Migrate()`。覆盖标识列种子与 `SET IDENTITY_INSERT`、序列 `NEXTVAL`、虚拟计算列、主键、唯一约束、检查约束、`ON DELETE CASCADE`、升降序唯一索引、额外模式中的表、列/表/索引重命名、带默认值的非空列（已有行回填为该默认值）和删除列。在第一次 `NEXTVAL` 之前把增量从 3 改成 5 时，第一个值是 43 而不是 41。2026-10-02 增加纯移除 IDENTITY 的生成命令实库回归，边界见下行；筛选索引、存储计算列、其他标识属性变更和跨模式重命名仍在生成时拒绝。2026-09-30 起 `HasComment` 经 `COMMENT ON TABLE` / `COMMENT ON COLUMN` 落库（服务器不接受 `IS NULL`，清除生成 `IS ''`），覆盖幂等与非幂等脚本及真实库回读 |
 | 迁移历史记录 | 真实环境已验证 | 存在性、按需创建、插入、查询和删除路径。存在性查询 `SYS.SYSOBJECTS`。`RESOURCE` 可以执行生成的脚本，但不能做这次查询；2026-09-22 的实例上要再授予 `SOI`，`Database.Migrate()` 才能通过。脚本里的历史插入不经过这次查询 |
 | 迁移锁 | 真实环境已验证 / 服务器特定 | 使用 `DBMS_LOCK`；已在参考非 MPP 服务器上验证。达梦 MPP 不提供相同基线 |
 | 幂等迁移脚本 | 真实环境已验证 / 部分支持 | `IMigrator.GenerateScript(Idempotent)` 在历史表守卫中使用已转义的 `EXECUTE IMMEDIATE`，块以单独一行 `/` 结束。2026-09-22 将 `/` 剔除后，把每个 `BEGIN ... END;` 作为一条命令执行了两遍，Unicode 和引号种子只保留一行，历史记录不重复。`/` 本身不能放进 ADO.NET 命令。自定义 `migrationBuilder.Sql` 匿名块按忽略前导空白、行/块注释与关键字大小写识别 `BEGIN`/`DECLARE`（含关键字边界）并校验外层 END 后没有其他语句再原样透传——服务器拒绝把块包进 `EXECUTE IMMEDIATE`；普通 SQL 按引号/注释之外的分号拆成独立动态语句，避免 CREATE 后续 DML 提前绑定尚不存在的表；保留每条命令的事务抑制标记，忽略空语句。普通 SQL 后混入 BEGIN/DECLARE 或 CREATE [OR REPLACE] PROCEDURE/FUNCTION/TRIGGER/PACKAGE/TYPE 时明确拒绝拆分，匿名块应单独作为操作，存储定义另行执行。转义后 UTF-8 表示超过 32767 字节的单条动态语句字面量会提前失败，必须拆分 |
 | 存储计算列 | 不支持 | 迁移生成支持虚拟计算列并拒绝存储计算列；反向工程选中含虚拟计算列的表时明确拒绝 |
 | 筛选索引 | 不支持 | 提供程序会拒绝迁移索引筛选器，而不是生成其他数据库的语法 |
-| 修改标识列 | 不支持 | 拒绝通过 `ALTER COLUMN` 添加/移除 `IDENTITY`，或修改其种子/增量；应重新创建该列 |
+| 修改标识列 | 部分支持 / 子集真实环境已验证 | 只移除 IDENTITY、其他列定义和语义注解不变时，生成表级 `ALTER TABLE ... DROP IDENTITY`，禁止事务且不附加 MODIFY。真实 EF 模型差异、已有数据/主键保留、目录自增属性消失、显式键插入及缺键失败已验证；限定/转义标识符、幂等动态 SQL 包装具有单元证据。增加/恢复 IDENTITY、修改种子/增量、同次切换序列或改变其他列定义继续拒绝；自动 Down 不保证可执行，参见[迁移说明](migrations.md#移除-identity) |
 | 跨模式重命名 | 不支持 | 不能通过表/序列重命名将对象移动到其他模式 |
 | TPT/TPC 值生成 | 单元级已验证 / 部分支持 | TPT 仅向根表应用标识列/序列生成。由于多个具体表可能发生冲突，因此拒绝 TPC 标识列；可改用共享达梦序列 |
 | 模式创建与不常见 DDL | 部分支持 | 2026-09-22 已执行 `CREATE SCHEMA` 以及该模式中的表。2026-09-30 起 `EnsureSchema` 生成带 `SYS.SYSOBJECTS`（`TYPE$ = 'SCH'`）存在性守卫的匿名块，模式已存在时不重复创建；服务器不支持 `CREATE SCHEMA IF NOT EXISTS`。其余未测试的 DDL 不能据此视为已支持 |

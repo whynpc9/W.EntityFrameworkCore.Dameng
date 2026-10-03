@@ -226,11 +226,30 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
-        if (IsIdentity(operation) != IsIdentity(operation.OldColumn))
+        if (IsIdentity(operation.OldColumn) && !IsIdentity(operation))
+        {
+            if (!IsIdentityRemovalOnly(operation))
+            {
+                throw new NotSupportedException(
+                    "The Dameng provider supports removing IDENTITY only when all other column "
+                    + "definitions and annotations remain unchanged. Split other changes into separate operations.");
+            }
+
+            builder
+                .Append("ALTER TABLE ")
+                .Append(Dependencies.SqlGenerationHelper.DelimitIdentifier(operation.Table, operation.Schema))
+                .Append(" DROP IDENTITY")
+                .AppendLine(Dependencies.SqlGenerationHelper.StatementTerminator);
+            EndStatement(builder);
+            return;
+        }
+
+        if (IsIdentity(operation) && !IsIdentity(operation.OldColumn))
         {
             throw new NotSupportedException(
-                "Dameng cannot add or remove the IDENTITY attribute with ALTER COLUMN. "
-                + "Drop and recreate the column instead.");
+                "The Dameng provider does not support adding or restoring IDENTITY on an existing column. "
+                + "This change requires a reviewed migration plan that preserves existing data. "
+                + "Dropping and recreating a column does not preserve existing data.");
         }
 
         if (IsIdentity(operation)
@@ -238,8 +257,9 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
                 || GetIdentityIncrement(operation) != GetIdentityIncrement(operation.OldColumn)))
         {
             throw new NotSupportedException(
-                "Dameng cannot change an identity column's seed or increment with ALTER COLUMN. "
-                + "Drop and recreate the column instead.");
+                "The Dameng provider does not support changing an identity column's seed or increment with ALTER COLUMN. "
+                + "This change requires a reviewed migration plan that preserves existing data. "
+                + "Dropping and recreating a column does not preserve existing data.");
         }
 
         if (operation.ComputedColumnSql != operation.OldColumn.ComputedColumnSql
@@ -809,6 +829,46 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
                 StringComparison.Ordinal),
             _ => false
         };
+
+    private static bool IsIdentityRemovalOnly(AlterColumnOperation operation)
+    {
+        var old = operation.OldColumn;
+        var strategy = operation[DamengAnnotationNames.ValueGenerationStrategy];
+        if (strategy is not null
+            && !Equals(strategy, DamengValueGenerationStrategy.None)
+            && !Equals(strategy, nameof(DamengValueGenerationStrategy.None)))
+        {
+            return false;
+        }
+
+        // OldColumn's name/table/schema are not populated by EF's model differ.
+        // Compare column facets and semantic annotations, excluding only the removed identity metadata.
+        return operation.ClrType == old.ClrType
+            && operation.ColumnType == old.ColumnType
+            && operation.IsUnicode == old.IsUnicode
+            && operation.IsFixedLength == old.IsFixedLength
+            && operation.MaxLength == old.MaxLength
+            && operation.Precision == old.Precision
+            && operation.Scale == old.Scale
+            && operation.IsRowVersion == old.IsRowVersion
+            && operation.IsNullable == old.IsNullable
+            && Equals(operation.DefaultValue, old.DefaultValue)
+            && operation.DefaultValueSql == old.DefaultValueSql
+            && operation.ComputedColumnSql == old.ComputedColumnSql
+            && operation.IsStored == old.IsStored
+            && operation.Comment == old.Comment
+            && operation.Collation == old.Collation
+            && OtherColumnAnnotations(operation).SequenceEqual(OtherColumnAnnotations(old));
+    }
+
+    private static IEnumerable<(string Name, object? Value)> OtherColumnAnnotations(ColumnOperation operation)
+        => operation.GetAnnotations()
+            .Where(annotation => annotation.Name is not (
+                DamengAnnotationNames.ValueGenerationStrategy
+                or DamengAnnotationNames.IdentitySeed
+                or DamengAnnotationNames.IdentityIncrement))
+            .OrderBy(annotation => annotation.Name, StringComparer.Ordinal)
+            .Select(annotation => (annotation.Name, annotation.Value));
 
     private static bool IsSequence(ColumnOperation operation)
         => operation[DamengAnnotationNames.ValueGenerationStrategy] switch

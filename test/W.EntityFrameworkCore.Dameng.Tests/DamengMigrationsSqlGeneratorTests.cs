@@ -532,7 +532,9 @@ public sealed class DamengMigrationsSqlGeneratorTests
             () => GenerateSql(context, operation));
 
         Assert.Contains("seed or increment", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("Drop and recreate", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("reviewed migration plan that preserves existing data", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Dropping and recreating a column does not preserve existing data", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Drop and recreate the column instead", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
