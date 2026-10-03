@@ -641,8 +641,8 @@ public sealed class DamengMigrationsFunctionalTests
             command => command.CommandText.StartsWith("CREATE TABLE", StringComparison.Ordinal));
         Assert.Contains("\"CODE\" VARCHAR2(3 CHAR)", createTable.CommandText, StringComparison.Ordinal);
         Assert.Contains("\"INITIALS\" CHAR(2 CHAR)", createTable.CommandText, StringComparison.Ordinal);
-        Assert.Contains("\"LONG_CODE\" VARCHAR2(1000 CHAR)", createTable.CommandText, StringComparison.Ordinal);
-        Assert.Contains("\"BOUNDARY_CODE\" VARCHAR2(2047 CHAR)", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"LONG_CODE\" CLOB", createTable.CommandText, StringComparison.Ordinal);
+        Assert.Contains("\"BOUNDARY_CODE\" VARCHAR2(475 CHAR)", createTable.CommandText, StringComparison.Ordinal);
         Assert.Contains("\"OVERSIZE_CODE\" CLOB", createTable.CommandText, StringComparison.Ordinal);
 
         try
@@ -654,8 +654,8 @@ public sealed class DamengMigrationsFunctionalTests
             }
 
             var longCode = new string('中', 1000);
-            var boundaryCode = new string('中', 2047);
-            var oversizeCode = new string('中', 2048);
+            var boundaryCode = new string('中', 475);
+            var oversizeCode = new string('中', 476);
             context.Entities.Add(
                 new AnsiStringEntity
                 {
@@ -724,16 +724,15 @@ public sealed class DamengMigrationsFunctionalTests
                         .HasColumnName("LONG_CODE")
                         .HasMaxLength(1000)
                         .IsUnicode(false);
-                    // 2047 chars (8188 bytes worst case) is the largest CHAR-semantics
-                    // declaration inside the documented 32 KB-page column limit; 2048 falls
-                    // back to CLOB because the server cannot hold it inline.
+                    // A page-independent inferred mapping budgets at most 1900 bytes:
+                    // 475 CHAR characters fit; 476 falls back to CLOB.
                     entity.Property(item => item.BoundaryCode)
                         .HasColumnName("BOUNDARY_CODE")
-                        .HasMaxLength(2047)
+                        .HasMaxLength(475)
                         .IsUnicode(false);
                     entity.Property(item => item.OversizeCode)
                         .HasColumnName("OVERSIZE_CODE")
-                        .HasMaxLength(2048)
+                        .HasMaxLength(476)
                         .IsUnicode(false);
                 });
     }

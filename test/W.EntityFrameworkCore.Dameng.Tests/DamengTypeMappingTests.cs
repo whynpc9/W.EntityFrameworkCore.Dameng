@@ -86,19 +86,16 @@ public sealed class DamengTypeMappingTests
         AssertStringMapping(source, unicode: true, fixedLength: false, 32767, "NVARCHAR2(32767)", DbType.String);
         AssertStringMapping(source, unicode: true, fixedLength: false, 32768, "NCLOB", DbType.String);
         // Non-Unicode character semantics budget four bytes per character against the
-        // documented 32 KB-page column inline limit (8188 bytes): 2047 chars fit, 2048 fall
-        // back to CLOB.
-        AssertStringMapping(source, unicode: false, fixedLength: false, 2047, "VARCHAR2(2047 CHAR)", DbType.AnsiString);
-        AssertStringMapping(source, unicode: false, fixedLength: false, 2048, "CLOB", DbType.AnsiString);
+        // smallest supported page's conservative 1900-byte limit: 475 chars fit, 476 use CLOB.
+        AssertStringMapping(source, unicode: false, fixedLength: false, 475, "VARCHAR2(475 CHAR)", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: true, 475, "CHAR(475 CHAR)", DbType.AnsiStringFixedLength);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 476, "CLOB", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 1000, "CLOB", DbType.AnsiString);
+        AssertStringMapping(source, unicode: false, fixedLength: false, 2047, "CLOB", DbType.AnsiString);
         AssertStringMapping(source, unicode: true, fixedLength: true, 12, "NCHAR(12)", DbType.StringFixedLength);
         AssertStringMapping(source, unicode: false, fixedLength: true, 12, "CHAR(12 CHAR)", DbType.AnsiStringFixedLength);
-        Assert.Throws<NotSupportedException>(
-            () => source.FindMapping(
-                typeof(string),
-                storeTypeName: null,
-                unicode: false,
-                size: 2048,
-                fixedLength: true));
+        Assert.Null(source.FindMapping(
+            typeof(string), storeTypeName: null, unicode: false, size: 476, fixedLength: true));
         Assert.Throws<NotSupportedException>(
             () => source.FindMapping(
                 typeof(string),
@@ -106,6 +103,34 @@ public sealed class DamengTypeMappingTests
                 unicode: true,
                 size: 32768,
                 fixedLength: true));
+    }
+
+    [Fact]
+    public void InferredOversizedFixedAnsiPropertyIsRejectedInsteadOfConvertedToBinary()
+    {
+        var options = new DbContextOptionsBuilder<OversizedFixedAnsiContext>()
+            .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options;
+        using var context = new OversizedFixedAnsiContext(options);
+        Assert.Throws<NotSupportedException>(() => _ = context.Model);
+    }
+
+    private sealed class OversizedFixedAnsiContext(DbContextOptions<OversizedFixedAnsiContext> options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+            => modelBuilder.Entity("TooWide").HasNoKey().Property<string>("Value")
+                .IsUnicode(false).IsFixedLength().HasMaxLength(476);
+    }
+
+    [Theory]
+    [InlineData("VARCHAR2(2047 CHAR)", 2047)]
+    [InlineData("CHAR(476 CHAR)", 476)]
+    public void ExplicitStoreTypesRetainTheirInstanceSpecificCapacity(string storeType, int size)
+    {
+        using var context = CreateContext();
+        var mapping = GetMappingSource(context).FindMapping(storeType);
+        Assert.NotNull(mapping);
+        Assert.Equal(storeType, mapping.StoreType);
+        Assert.Equal(size, mapping.Size);
     }
 
     [Fact]

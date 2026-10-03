@@ -25,6 +25,67 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [DamengTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task MissingCurrentSchemaSequenceDefaultsAreRejected(bool qualified)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_MSEQ_" + suffix;
+        var safe = "EF10_MS_SAFE_" + suffix;
+        var sequence = "EF10_MS_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        await using var query = connection.CreateCommand();
+        query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
+        var schema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        var sql = context.GetService<ISqlGenerationHelper>();
+        var reference = sql.DelimitIdentifier(sequence, qualified ? schema : null);
+        var created = new List<string>();
+        var sequenceCreated = false;
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE SEQUENCE \"{sequence}\" START WITH 41 INCREMENT BY 3 MAXVALUE 1000 NOCACHE NOORDER");
+            sequenceCreated = true;
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N BIGINT DEFAULT {reference}.NEXTVAL)");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
+            created.Add(safe);
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\"(ID) VALUES (1)");
+            query.CommandText = $"SELECT N FROM \"{table}\" WHERE ID=1";
+            Assert.Equal(41L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            var factory = CreateFactory();
+            Assert.Contains(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Sequences, item => item.Name == sequence);
+            await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+            sequenceCreated = false;
+            query.CommandText = "SELECT COUNT(*) FROM ALL_SEQUENCES WHERE SEQUENCE_OWNER=:schema AND SEQUENCE_NAME=:name";
+            var owner = query.CreateParameter();
+            owner.ParameterName = "schema";
+            owner.Value = schema;
+            query.Parameters.Add(owner);
+            var name = query.CreateParameter();
+            name.ParameterName = "name";
+            name.Value = sequence;
+            query.Parameters.Add(name);
+            Assert.Equal(0L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = "SELECT DATA_DEFAULT FROM ALL_TAB_COLS WHERE OWNER=:schema AND TABLE_NAME=:name AND COLUMN_NAME='N'";
+            name.Value = table;
+            Assert.Contains(sequence, Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection, $"INSERT INTO \"{table}\"(ID) VALUES (2)"));
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains(sequence, error.Message, StringComparison.Ordinal);
+            Assert.Contains("local dependency", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            if (sequenceCreated) await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+        }
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task NotVisibleColumnsKeepTheirServerSemanticsAndAreRejected(bool notNull)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();

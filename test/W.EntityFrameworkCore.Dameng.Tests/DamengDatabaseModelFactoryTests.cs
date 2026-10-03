@@ -15,6 +15,24 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void MissingLocalSequenceMetadataRejectsTheOwningColumn()
+    {
+        var column = new DatabaseColumn { Name = "N", Table = new DatabaseTable { Name = "T" } };
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.RequireLocalSequence(column, "APP", "MISSING", []));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'N'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("APP.MISSING", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LocalSequenceResolutionReusesTheCatalogDefinition()
+    {
+        var sequence = new DatabaseSequence { Name = "Seq", Schema = "APP", StartValue = 41, IncrementBy = 3 };
+        var column = new DatabaseColumn { Name = "N", Table = new DatabaseTable { Name = "T" } };
+        Assert.Same(sequence, DamengDatabaseModelFactory.RequireLocalSequence(column, "APP", "Seq", new Dictionary<string, DatabaseSequence>(StringComparer.Ordinal) { ["Seq"] = sequence }));
+    }
+
     [Theory]
     [InlineData("YES")]
     [InlineData("UNKNOWN")]

@@ -132,6 +132,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 await using var createStandalone = connection.CreateCommand();
                 createStandalone.CommandText = $"CREATE SEQUENCE \"{standaloneSequenceName}\" START WITH 73 INCREMENT BY 5 MINVALUE 1 MAXVALUE 1000 NOCACHE NOORDER";
                 await createStandalone.ExecuteNonQueryAsync();
+                createStandalone.CommandText = $"ALTER TABLE \"{tableName}\" ADD EXPLICIT_WIDE CHAR(476 CHAR)";
+                await createStandalone.ExecuteNonQueryAsync();
                 Assert.Equal(
                     "命令行订单表",
                     await ScalarStringAsync(
@@ -209,6 +211,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClusterBtree\", true)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("HasColumnType(\"CHAR(476 CHAR)\")", scaffoldedContext, StringComparison.Ordinal);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
                 ["build", "--no-restore", "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false", "--disable-build-servers"]);
             await RunDotNetEfAsync(dotnetEf, projectDirectory, connectionString,

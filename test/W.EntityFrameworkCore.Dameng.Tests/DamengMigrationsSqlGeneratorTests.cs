@@ -10,6 +10,16 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengMigrationsSqlGeneratorTests
 {
+    [Fact]
+    public void UnspecifiedStoreTypeCannotTurnOversizedFixedAnsiIntoBinary()
+    {
+        using var context = CreateContext();
+        var error = Assert.Throws<NotSupportedException>(() => GenerateSql(context,
+            new AddColumnOperation { Table = "T", Name = "Wide", ClrType = typeof(string), IsUnicode = false, IsFixedLength = true, MaxLength = 476 }));
+        Assert.Contains("T.Wide", error.Message, StringComparison.Ordinal);
+        Assert.Contains("fixed-length ANSI", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

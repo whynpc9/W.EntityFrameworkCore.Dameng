@@ -728,6 +728,14 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             return;
         }
 
+        if (operation.ColumnType is null && operation.ClrType == typeof(string)
+            && DamengTypeMappingSource.RequiresExplicitFixedAnsiStoreType(operation.IsUnicode, operation.IsFixedLength, operation.MaxLength))
+        {
+            throw new NotSupportedException(
+                $"Dameng column '{table}.{name}' exceeds the portable fixed-length ANSI character limit. "
+                + "Configure an explicit instance-specific store type or use a variable-length column.");
+        }
+
         var columnType = operation.ColumnType
             ?? GetColumnType(schema, table, name, operation, model);
         var isIdentity = IsIdentity(operation);

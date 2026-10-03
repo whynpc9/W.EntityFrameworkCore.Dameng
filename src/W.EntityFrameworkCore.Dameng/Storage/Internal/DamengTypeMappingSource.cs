@@ -16,7 +16,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     // Conservative character-column generation budget from the documented 32 KB-page
     // reference. Actual capacity also depends on the target page size and total row size;
     // declaration success alone is not evidence that the declared length can be filled.
-    internal const int MaxCharSemanticsBytes = 8188;
+    internal const int MaxCharSemanticsBytes = 1900;
 
     private static readonly Regex LengthSemanticsStoreTypePattern = new(
         @"^(?<name>.+?)\(\s*(?<size>\d+)\s+(?<unit>CHAR|BYTE)\s*\)$",
@@ -166,6 +166,27 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         : base(dependencies, relationalDependencies)
     {
     }
+
+    public override RelationalTypeMapping? FindMapping(
+        Type type,
+        string? storeTypeName,
+        bool keyOrIndex = false,
+        bool? unicode = null,
+        int? size = null,
+        bool? rowVersion = null,
+        bool? fixedLength = null,
+        int? precision = null,
+        int? scale = null)
+    {
+        // Scaffolding probes this CLR/facet overload before retaining an explicit store
+        // type. Do not throw for that probe or allow EF's string-to-bytes fallback.
+        if (type == typeof(string) && storeTypeName is null
+            && RequiresExplicitFixedAnsiStoreType(unicode, fixedLength, size)) return null;
+        return base.FindMapping(type, storeTypeName, keyOrIndex, unicode, size, rowVersion, fixedLength, precision, scale);
+    }
+
+    internal static bool RequiresExplicitFixedAnsiStoreType(bool? unicode, bool? fixedLength, int? size)
+        => unicode == false && fixedLength == true && size * 4L > MaxCharSemanticsBytes;
 
     protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
@@ -396,7 +417,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         // Non-Unicode declarations are byte-sized unless qualified with CHAR, which truncates
         // multi-byte text on byte-semantics instances. The qualifier makes the server budget
         // four bytes per character (UTF-8), so only lengths whose worst-case byte count stays
-        // inside the documented 32 KB-page column limit (8188 bytes) are declared with CHAR;
+        // inside the smallest supported page's conservative 1900-byte column limit use CHAR;
         // larger ones fall back to CLOB instead of declaring a length the server cannot hold.
         if (!unicode && size.Value * 4L > MaxCharSemanticsBytes)
         {
@@ -404,7 +425,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             {
                 throw new NotSupportedException(
                     $"Dameng fixed-length character semantics cannot hold {size} characters "
-                    + $"within the {MaxCharSemanticsBytes}-byte inline limit; use a variable-length column.");
+                    + $"within the portable {MaxCharSemanticsBytes}-byte inline limit; configure an explicit instance-specific store type or use a variable-length column.");
             }
 
             return new DamengStringTypeMapping(

@@ -446,7 +446,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     // A NEXTVAL default becomes a sequence strategy only when the referenced sequence is read
     // from the catalog with its real facets; otherwise the model would scaffold an EF sequence
     // with invented default facets and recreate a different sequence on migration. Cross-schema
-    // or unreadable references remain explicit external dependencies via their raw SQL.
+    // references remain explicit external dependencies via their raw SQL; missing local dependencies fail.
     private void ResolveSequenceDefaults(
         string schema,
         Dictionary<string, DatabaseSequence> facets,
@@ -461,14 +461,17 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
-            if (!facets.TryGetValue(entry.SequenceName, out var sequence))
-            {
-                entry.Column.DefaultValueSql = entry.RawDefault;
-                continue;
-            }
-
-            ApplyLocalSequenceDefault(entry.Column, sequence);
+            ApplyLocalSequenceDefault(entry.Column, RequireLocalSequence(entry.Column, schema, entry.SequenceName, facets));
         }
+    }
+
+    internal static DatabaseSequence RequireLocalSequence(
+        DatabaseColumn column, string schema, string sequenceName, Dictionary<string, DatabaseSequence> facets)
+    {
+        if (facets.TryGetValue(sequenceName, out var sequence)) return sequence;
+        throw new NotSupportedException(
+            $"Dameng table or view '{column.Table.Name}' column '{column.Name}' references current-schema sequence '{schema}.{sequenceName}', "
+            + "but its metadata is missing or inaccessible. Reverse engineering cannot recreate this local dependency; exclude this object.");
     }
 
     internal void ApplyLocalSequenceDefault(DatabaseColumn column, DatabaseSequence sequence)
