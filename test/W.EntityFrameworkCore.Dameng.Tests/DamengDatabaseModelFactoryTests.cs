@@ -15,6 +15,22 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void UnlimitedTableSpaceIsAccepted()
+        => DamengDatabaseModelFactory.ValidateTableSpaceLimit("T", 0);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(-1L)]
+    [InlineData(1L)]
+    [InlineData(128L)]
+    public void LimitedOrUnknownTableSpaceIsRejected(long? limitPages)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateTableSpaceLimit("Limited", limitPages));
+        Assert.Contains("Limited", error.Message, StringComparison.Ordinal);
+        Assert.Contains("DISKSPACE LIMIT", error.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(256L, 100)]
     [InlineData(341L, 85)]

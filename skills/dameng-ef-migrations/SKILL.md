@@ -63,6 +63,7 @@ BYTE 仅支持 CHAR/VARCHAR/VARCHAR2，
 反向工程表保留 Dameng:TableFillFactor 注解并生成显式 FILLFACTOR，0 规范为 100；非默认值保留，变更须重建。
 反向工程的 B 树表保留 Dameng:IsClusterBtree 注解并生成 STORAGE(CLUSTERBTR)，
 堆表/未知存储拒绝，存储变更须重建；未设置注解的手写模型保持原行为。
+表对象 INFO2 的页数配额仅接受 0（无限制）；非零或未知 DISKSPACE LIMIT 明确拒绝，不静默去掉表空间上限。
 B 树表的实际存储表空间须匹配模式所属用户的默认数据表空间；非默认或未知放置明确拒绝。
 默认空间从原生用户 INFO3 低 16 位读取，实际空间从聚集存储索引 GROUPID 读取，不要求 DBA_USERS 权限。
 其余 NORMAL 物理索引（包括约束后备索引）按 INFO3 第 16–31 位核对默认索引空间；

@@ -22,6 +22,50 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengFact]
+    public async Task FactoryRejectsTableSpaceLimitsAfterVerifyingTheirWriteCeiling()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var limited = "EF10_SLL_" + suffix;
+        var ordinary = "EF10_SLU_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var tables = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{limited}\" (ID INT, V VARCHAR(4000)) DISKSPACE LIMIT 4 STORAGE(CLUSTERBTR)");
+            tables.Add(limited);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{ordinary}\" (ID INT, V VARCHAR(4000)) DISKSPACE UNLIMITED STORAGE(CLUSTERBTR)");
+            tables.Add(ordinary);
+            await using var query = connection.CreateCommand();
+            query.CommandText = "SELECT PAGE() FROM dual";
+            var pageSize = Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+            query.CommandText = "SELECT INFO2 FROM SYS.SYSOBJECTS WHERE SCHID=CURRENT_SCHID() AND NAME=:name AND TYPE$='SCHOBJ' AND SUBTYPE$='UTAB'";
+            var name = query.CreateParameter(); name.ParameterName = "name"; name.Value = limited; query.Parameters.Add(name);
+            Assert.Equal(4 * 1024 * 1024 / pageSize, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            name.Value = ordinary;
+            Assert.Equal(0L, Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            await ExecuteAsync(connection, $"INSERT INTO \"{limited}\" VALUES(0,'initial')");
+            var quotaError = await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection, $"INSERT INTO \"{limited}\" SELECT LEVEL, RPAD('x',4000,'x') FROM DUAL CONNECT BY LEVEL <= 2000"));
+            Assert.Contains("空间限制", quotaError.Message, StringComparison.Ordinal);
+            await ExecuteAsync(connection, $"INSERT INTO \"{ordinary}\" SELECT LEVEL, RPAD('x',4000,'x') FROM DUAL CONNECT BY LEVEL <= 2000");
+            query.Parameters.Clear();
+            query.CommandText = $"SELECT COUNT(*) FROM \"{ordinary}\"";
+            Assert.Equal(2000, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            query.CommandText = $"SELECT COUNT(*) FROM \"{limited}\"";
+            Assert.Equal(1, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            var factory = CreateFactory();
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [limited])));
+            Assert.Contains(limited, error.Message, StringComparison.Ordinal);
+            Assert.Contains("DISKSPACE LIMIT", error.Message, StringComparison.Ordinal);
+            Assert.Equal(ordinary, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [ordinary])).Tables).Name);
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(tables)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+        }
+    }
+
     [DamengTheory]
     [InlineData("")]
     [InlineData("MATCH SIMPLE")]

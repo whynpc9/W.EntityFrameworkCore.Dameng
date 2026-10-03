@@ -184,7 +184,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT T.TABLE_NAME, T.TEMPORARY, T.PARTITIONED, O.INFO3, O.INFO1 FROM ALL_TABLES T "
+            "SELECT T.TABLE_NAME, T.TEMPORARY, T.PARTITIONED, O.INFO3, O.INFO1, O.INFO2 FROM ALL_TABLES T "
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = T.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = T.TABLE_NAME "
             + "AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
@@ -203,12 +203,22 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             ValidateTableKind(name, GetNullableString(reader, 1), GetNullableString(reader, 2));
             ValidateNativeTableKind(name, GetNullableInt64(reader, 3));
+            ValidateTableSpaceLimit(name, GetNullableInt64(reader, 5));
             var table = new DatabaseTable { Name = name, Schema = schema };
             table[DamengAnnotationNames.TableFillFactor] = ReadTableFillFactor(name, GetNullableInt64(reader, 4));
             tables.Add(table);
         }
 
         return tables;
+    }
+
+    internal static void ValidateTableSpaceLimit(string table, long? limitPages)
+    {
+        // SYSOBJECTS.INFO2 stores the table quota in pages; zero means unlimited.
+        if (limitPages != 0)
+            throw new NotSupportedException(
+                $"Dameng table '{table}' has a nonzero or unreadable DISKSPACE LIMIT '{limitPages?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}' pages. "
+                + "Reverse engineering cannot preserve its storage ceiling; exclude this table.");
     }
 
     internal static int ReadTableFillFactor(string table, long? info1)
