@@ -11,6 +11,30 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengMigrationsSqlGeneratorTests
 {
     [Theory]
+    [InlineData(0, 100)]
+    [InlineData(70, 70)]
+    [InlineData(85, 85)]
+    public void IndexFillFactorIsGeneratedExplicitly(int configured, int expected)
+    {
+        using var context = CreateContext();
+        var operation = new CreateIndexOperation { Name = "IX_T", Table = "T", Columns = ["N"] };
+        operation["Dameng:IndexFillFactor"] = configured;
+        Assert.Contains($"STORAGE(FILLFACTOR {expected})", GenerateSql(context, operation), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    [InlineData("70")]
+    public void InvalidIndexFillFactorsAreRejected(object configured)
+    {
+        using var context = CreateContext();
+        var operation = new CreateIndexOperation { Name = "IX_T", Table = "T", Columns = ["N"] };
+        operation["Dameng:IndexFillFactor"] = configured;
+        Assert.Throws<NotSupportedException>(() => GenerateSql(context, operation));
+    }
+
+    [Theory]
     [InlineData(false, 85, "STORAGE(FILLFACTOR 85)")]
     [InlineData(true, 85, "STORAGE(CLUSTERBTR, FILLFACTOR 85)")]
     [InlineData(true, 0, "STORAGE(CLUSTERBTR, FILLFACTOR 100)")]
@@ -90,6 +114,8 @@ public sealed class DamengMigrationsSqlGeneratorTests
         var model = context.GetService<IDesignTimeModel>().Model;
         Assert.Equal(true, Assert.Single(model.GetRelationalModel().Tables)["Dameng:IsClusterBtree"]);
         Assert.Equal(85, Assert.Single(model.GetRelationalModel().Tables)["Dameng:TableFillFactor"]);
+        Assert.Equal(70, Assert.Single(Assert.Single(model.GetRelationalModel().Tables).Indexes)["Dameng:IndexFillFactor"]);
+        Assert.Contains("STORAGE(FILLFACTOR 70)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
         Assert.Contains("STORAGE(CLUSTERBTR, FILLFACTOR 85)", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
     }
 
@@ -102,6 +128,7 @@ public sealed class DamengMigrationsSqlGeneratorTests
             entity.HasKey("Id");
             entity.HasAnnotation("Dameng:IsClusterBtree", true);
             entity.HasAnnotation("Dameng:TableFillFactor", 85);
+            entity.HasIndex("Id").HasAnnotation("Dameng:IndexFillFactor", 70);
         }
     }
 

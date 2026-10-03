@@ -16,6 +16,27 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(256L, 100)]
+    [InlineData(341L, 85)]
+    [InlineData(356L, 100)]
+    public void IndexFillFactorUsesItsOwnLowByte(long info1, int expected)
+        => Assert.Equal(expected, DamengDatabaseModelFactory.ReadIndexFillFactor("T", "IX", info1));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(511L)]
+    public void UnknownIndexFillFactorIsRejected(long? info1)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ReadIndexFillFactor("T", "IX", info1));
+
+    [Fact]
+    public void InheritedConstraintFillFactorMustMatchItsTable()
+    {
+        DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, 85);
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, 100));
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateInheritedIndexFillFactor("T", "PK_T", 85, null));
+    }
+
+    [Theory]
     [InlineData(2097152L, 100)]
     [InlineData(1679818752L, 100)]
     [InlineData(1428160512L, 85)]

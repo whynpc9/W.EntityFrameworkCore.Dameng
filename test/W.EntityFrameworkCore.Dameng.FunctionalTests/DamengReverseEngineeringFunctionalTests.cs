@@ -22,6 +22,61 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengFact]
+    public async Task IndexFillFactorsSurviveIndependentAndConstraintIndexRecreation()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_IFS_" + suffix;
+        var copy = "EF10_IFC_" + suffix;
+        var index = "IX_IF_" + suffix;
+        var unique = "UQ_IF_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT NOT CLUSTER PRIMARY KEY, U INT, V INT, CONSTRAINT \"{unique}\" UNIQUE(U)) STORAGE(CLUSTERBTR, FILLFACTOR 85)");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE INDEX \"{index}\" ON \"{table}\"(V) STORAGE(FILLFACTOR 70)");
+            var model = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
+            Assert.Equal(70, Assert.Single(model.Indexes)[DamengAnnotationNames.IndexFillFactor]);
+            Assert.Equal(85, Assert.Single(model.UniqueConstraints)[DamengAnnotationNames.IndexFillFactor]);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            var create = new CreateTableOperation { Name = copy };
+            create.AddAnnotations(model.GetAnnotations());
+            foreach (var column in new[] { "ID", "U", "V" }) create.Columns.Add(new AddColumnOperation { Table = copy, Name = column, ClrType = typeof(int), ColumnType = "INT", IsNullable = column != "ID" });
+            create.PrimaryKey = new AddPrimaryKeyOperation { Table = copy, Name = "PK_" + copy, Columns = ["ID"] };
+            create.PrimaryKey[DamengAnnotationNames.IsClustered] = false;
+            foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate([create])) await ExecuteAsync(connection, command.CommandText);
+            created.Add(copy);
+            var normal = new CreateIndexOperation { Table = copy, Name = "IX_" + copy, Columns = ["V"] };
+            normal.AddAnnotations(Assert.Single(model.Indexes).GetAnnotations());
+            var uniqueIndex = new CreateIndexOperation { Table = copy, Name = "UQ_" + copy, Columns = ["U"], IsUnique = true };
+            uniqueIndex.AddAnnotations(Assert.Single(model.UniqueConstraints).GetAnnotations());
+            foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate([normal, uniqueIndex])) await ExecuteAsync(connection, command.CommandText);
+            await using var query = connection.CreateCommand();
+            query.CommandText = "SELECT I.INDEX_NAME, O.INFO1, K.TYPE$ FROM ALL_INDEXES I JOIN SYS.SYSOBJECTS O ON O.SCHID=CURRENT_SCHID() AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' LEFT JOIN SYS.SYSCONS K ON K.INDEXID=O.ID AND K.TABLEID=O.PID AND K.TYPE$='P' WHERE I.OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND I.TABLE_NAME=:name AND I.INDEX_TYPE='NORMAL'";
+            var parameter = query.CreateParameter(); parameter.ParameterName = "name"; parameter.Value = copy; query.Parameters.Add(parameter);
+            var count = 0;
+            await using (var reader = await query.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    var expected = reader.GetString(0) == normal.Name ? 70 : 85;
+                    Assert.Equal(expected, Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture) & 0xFFL);
+                    count++;
+                }
+            }
+            Assert.Equal(3, count);
+            await ExecuteAsync(connection, $"INSERT INTO \"{copy}\" VALUES(1,2,3)");
+            await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection, $"INSERT INTO \"{copy}\" VALUES(2,2,4)"));
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
     [DamengTheory]
     [InlineData(0, 100)]
     [InlineData(85, 85)]

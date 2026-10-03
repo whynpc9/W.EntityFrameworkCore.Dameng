@@ -42,6 +42,20 @@ internal sealed class DamengRelationalAnnotationProvider(
         }
     }
 
+    public override IEnumerable<IAnnotation> For(ITableIndex index, bool designTime)
+    {
+        if (!designTime) yield break;
+        var annotations = index.MappedIndexes.Select(mapped => mapped.FindAnnotation(DamengAnnotationNames.IndexFillFactor))
+            .Where(annotation => annotation is not null).ToList();
+        if (annotations.Count == 0) yield break;
+        if (annotations.Any(annotation => annotation!.Value is not int or < 0 or > 100))
+            throw new NotSupportedException("Dameng index fill factor must be an integer from 0 to 100.");
+        var values = annotations.Select(annotation => (int)annotation!.Value!).Select(value => value == 0 ? 100 : value).Distinct().ToList();
+        if (values.Count != 1)
+            throw new NotSupportedException("Mapped indexes must agree on the Dameng index fill factor.");
+        yield return new Annotation(DamengAnnotationNames.IndexFillFactor, values[0]);
+    }
+
     public override IEnumerable<IAnnotation> For(IUniqueConstraint constraint, bool designTime)
     {
         if (designTime

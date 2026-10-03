@@ -325,6 +325,10 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             throw new NotSupportedException("Dameng does not support filtered indexes.");
         }
 
+        var fillFactor = operation[DamengAnnotationNames.IndexFillFactor];
+        if (fillFactor is not null && fillFactor is not (int and >= 0 and <= 100))
+            throw new NotSupportedException("Dameng index fill factor must be an integer from 0 to 100.");
+
         builder.Append("CREATE ");
 
         if (operation.IsUnique)
@@ -341,6 +345,8 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
 
         GenerateIndexColumnList(operation, model, builder);
         builder.Append(")");
+        if (fillFactor is int fill)
+            builder.Append(" STORAGE(FILLFACTOR ").Append((fill == 0 ? 100 : fill).ToString(CultureInfo.InvariantCulture)).Append(")");
 
         if (terminate)
         {

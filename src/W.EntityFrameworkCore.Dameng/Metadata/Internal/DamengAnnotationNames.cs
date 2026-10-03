@@ -18,4 +18,5 @@ internal static class DamengAnnotationNames
 
     public const string IsClusterBtree = Prefix + nameof(IsClusterBtree);
     public const string TableFillFactor = Prefix + nameof(TableFillFactor);
+    public const string IndexFillFactor = Prefix + nameof(IndexFillFactor);
 }

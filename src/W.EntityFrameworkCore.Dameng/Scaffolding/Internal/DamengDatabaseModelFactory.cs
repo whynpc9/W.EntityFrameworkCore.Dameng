@@ -1058,9 +1058,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
 
         var skippedIndexNames = new HashSet<string>(StringComparer.Ordinal);
+        var indexFillFactors = new Dictionary<string, int>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,
-            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3, X.XTYPE, I.STATUS "
+            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3, X.XTYPE, I.STATUS, O.INFO1, KN.NAME "
             + "FROM ALL_INDEXES I "
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME "
@@ -1068,6 +1069,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             + "LEFT JOIN SYS.SYSINDEXES X ON X.ID = O.ID "
             + "LEFT JOIN SYS.SYSOBJECTS U ON U.ID = S.PID AND U.TYPE$ = 'UR' AND U.SUBTYPE$ = 'USER' "
             + "LEFT JOIN SYS.SYSCONS K ON K.INDEXID = O.ID AND K.TABLEID = O.PID AND K.TYPE$ IN ('P', 'U', 'F') "
+            + "LEFT JOIN SYS.SYSOBJECTS KN ON KN.ID = K.ID "
             + "WHERE I.OWNER = :schema"))
         {
             AddParameter(command, "schema", schema);
@@ -1089,6 +1091,22 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 if (GetNullableString(reader, 2) is "NORMAL" or "CLUSTER")
                 {
                     ValidateIndexState(table, name, GetNullableInt64(reader, 6), GetNullableString(reader, 7));
+                    var fill = ReadIndexFillFactor(table, name, GetNullableInt64(reader, 8));
+                    if (GetNullableString(reader, 2) == "CLUSTER" || GetNullableString(reader, 3) == "P")
+                    {
+                        ValidateInheritedIndexFillFactor(table, name, fill, (int?)tables[table][DamengAnnotationNames.TableFillFactor]);
+                    }
+                    else if (GetNullableString(reader, 3) == "U")
+                    {
+                        var constraintName = GetNullableString(reader, 9);
+                        var unique = tables[table].UniqueConstraints.SingleOrDefault(constraint => constraint.Name == constraintName)
+                            ?? throw new NotSupportedException($"Dameng index '{name}' on table '{table}' has unreadable unique-constraint metadata.");
+                        unique[DamengAnnotationNames.IndexFillFactor] = fill;
+                    }
+                    else
+                    {
+                        indexFillFactors[name] = fill;
+                    }
                 }
                 if (GetNullableString(reader, 2) == "CLUSTER")
                 {
@@ -1193,6 +1211,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 continue;
             }
 
+            if (!indexFillFactors.TryGetValue(name, out var fill))
+                throw new NotSupportedException($"Dameng index '{name}' on table '{table.Name}' has unreadable fill-factor metadata.");
+            databaseIndex[DamengAnnotationNames.IndexFillFactor] = fill;
+
             foreach (var isDescending in descending)
             {
                 databaseIndex.IsDescending.Add(isDescending);
@@ -1200,6 +1222,23 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             table.Indexes.Add(databaseIndex);
         }
+    }
+
+    internal static int ReadIndexFillFactor(string table, string index, long? info1)
+    {
+        // Index objects use INFO1's low byte, unlike table objects' high byte.
+        if (info1 is null)
+            throw new NotSupportedException($"Dameng index '{index}' on table '{table}' has unreadable fill-factor metadata.");
+        var fill = info1.Value & 0xFFL;
+        if (fill > 100)
+            throw new NotSupportedException($"Dameng index '{index}' on table '{table}' has unsupported fill factor '{fill}'.");
+        return fill == 0 ? 100 : (int)fill;
+    }
+
+    internal static void ValidateInheritedIndexFillFactor(string table, string index, int fill, int? tableFill)
+    {
+        if (fill != tableFill)
+            throw new NotSupportedException($"Dameng clustered or primary-key index '{index}' on table '{table}' has fill factor '{fill}' independent of its table. Reverse engineering cannot preserve this constraint-index storage; exclude this table.");
     }
 
     internal static void ValidateIndexState(string table, string index, long? nativeType, string? status)

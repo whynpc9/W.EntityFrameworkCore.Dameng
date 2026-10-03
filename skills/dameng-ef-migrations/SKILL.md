@@ -55,6 +55,8 @@ CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设�
 提供程序生成的建表/加列/改列 DDL 先检查 SF_GET_LENGTH_IN_CHAR()=0，否则拒绝；
 不要把模式 0 真库中的守卫分支测试描述为模式 1 实例验证。
 
+普通索引和唯一约束后备索引保留 Dameng:IndexFillFactor，生成 CREATE INDEX STORAGE(FILLFACTOR n)，0 规范为 100。
+唯一约束经 EF 脚手架转成唯一索引；聚集存储/主键后备索引的有效填充因子必须与表一致，否则拒绝。
 反向工程表保留 Dameng:TableFillFactor 注解并生成显式 FILLFACTOR，0 规范为 100；非默认值保留，变更须重建。
 反向工程的 B 树表保留 Dameng:IsClusterBtree 注解并生成 STORAGE(CLUSTERBTR)，
 堆表/未知存储拒绝，存储变更须重建；未设置注解的手写模型保持原行为。

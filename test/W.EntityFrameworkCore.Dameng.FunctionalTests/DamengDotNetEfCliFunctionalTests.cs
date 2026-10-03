@@ -211,6 +211,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("HasAnnotation(\"Dameng:IsClustered\", false)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:IsClusterBtree\", true)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasAnnotation(\"Dameng:TableFillFactor\", 85)", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains("HasAnnotation(\"Dameng:IndexFillFactor\", 70)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"CHAR(476 CHAR)\")", scaffoldedContext, StringComparison.Ordinal);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
@@ -219,6 +220,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 ["dbcontext", "script", "--context", "ScaffoldedCliContext", "--no-build", "--output", "scaffolded-create.sql"]);
             Assert.Contains("NOT CLUSTER PRIMARY KEY", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("STORAGE(CLUSTERBTR, FILLFACTOR 85)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
+            Assert.Contains("STORAGE(FILLFACTOR 70)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("VARCHAR2(40 BYTE)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("CHAR(476 CHAR)", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
             Assert.Contains("SF_GET_LENGTH_IN_CHAR()", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
@@ -337,6 +339,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                             .HasColumnType("VARCHAR2(40 BYTE)");
                         entity.HasIndex(item => item.Code)
                             .HasDatabaseName("IDX_CLI_{{suffix}}")
+                            .HasAnnotation("Dameng:IndexFillFactor", 70)
                             .IsDescending();
                     });
                 }
