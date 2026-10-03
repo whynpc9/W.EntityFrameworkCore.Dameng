@@ -22,6 +22,61 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengReverseEngineeringFunctionalTests
 {
+    [DamengTheory]
+    [InlineData("")]
+    [InlineData("MATCH SIMPLE")]
+    [InlineData("MATCH FULL")]
+    [InlineData("MATCH PARTIAL")]
+    public async Task ForeignKeyMatchSyntaxUsesDefaultSemanticsOnReferenceServer(string matchClause)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var principal = "EF10_FMP_" + suffix;
+        var source = "EF10_FMS_" + suffix;
+        var copy = "EF10_FMC_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var tables = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{principal}\" (A INT, B INT, NOT CLUSTER PRIMARY KEY(A,B)) STORAGE(CLUSTERBTR)");
+            tables.Add(principal);
+            await ExecuteAsync(connection, $"INSERT INTO \"{principal}\" VALUES(1,2)");
+            await ExecuteAsync(connection, $"CREATE TABLE \"{source}\" (A INT, B INT, CONSTRAINT \"FK_{source}\" FOREIGN KEY(A,B) REFERENCES \"{principal}\"(A,B) {matchClause}) STORAGE(CLUSTERBTR)");
+            tables.Add(source);
+            await using (var query = connection.CreateCommand())
+            {
+                query.CommandText = "SELECT TABLEDEF(SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()), :name) FROM dual";
+                var parameter = query.CreateParameter(); parameter.ParameterName = "name"; parameter.Value = source; query.Parameters.Add(parameter);
+                var definition = Assert.IsType<string>(await query.ExecuteScalarAsync());
+                Assert.DoesNotContain("MATCH", definition, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var model = CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [source, principal]));
+            var foreignKey = Assert.Single(model.Tables.Single(table => table.Name == source).ForeignKeys);
+            Assert.Equal("A,B", string.Join(",", foreignKey.Columns.Select(column => column.Name)));
+            Assert.Equal(ReferentialAction.NoAction, foreignKey.OnDelete);
+            var create = new CreateTableOperation { Name = copy };
+            foreach (var column in new[] { "A", "B" }) create.Columns.Add(new AddColumnOperation { Name = column, Table = copy, ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
+            create.ForeignKeys.Add(new AddForeignKeyOperation { Name = "FK_" + copy, Table = copy, Columns = foreignKey.Columns.Select(column => column.Name).ToArray(), PrincipalTable = principal, PrincipalColumns = foreignKey.PrincipalColumns.Select(column => column.Name).ToArray(), OnDelete = foreignKey.OnDelete!.Value });
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate([create])) await ExecuteAsync(connection, command.CommandText);
+            tables.Add(copy);
+            foreach (var table in new[] { source, copy })
+            {
+                foreach (var tuple in new[] { "1,2", "1,NULL", "999,NULL", "NULL,999", "NULL,NULL" })
+                    await ExecuteAsync(connection, $"INSERT INTO \"{table}\" VALUES({tuple})");
+                await Assert.ThrowsAsync<DmException>(() => ExecuteAsync(connection, $"INSERT INTO \"{table}\" VALUES(999,999)"));
+                await using var count = connection.CreateCommand();
+                count.CommandText = $"SELECT COUNT(*) FROM \"{table}\"";
+                Assert.Equal(5, Convert.ToInt32(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+            }
+        }
+        finally
+        {
+            foreach (var table in Enumerable.Reverse(tables)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+        }
+    }
+
     [DamengFact]
     public async Task FactoryRejectsMaterializedViewPrebuiltTableAndPreservesTableFiltering()
     {

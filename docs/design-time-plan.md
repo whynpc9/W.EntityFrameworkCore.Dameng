@@ -200,3 +200,6 @@ D1/D2 与 D0 互不阻塞，可并行；D3 依赖 D0 的目录结论；D6 依赖
 
 
 - 合并前长度限定类型复审（2026-10-03）：ParseStoreTypeName 的 CHAR 与 BYTE 两种单位统一只解析 CHAR/VARCHAR/VARCHAR2，其余类型返回不可识别的完整声明，不能把 INT(9 CHAR) 降成 INT 后继续生成非法 DDL。补存储类型和 CLR+存储类型两种查找断言，以及非法整数配置的 GenerateCreateScript 拒绝。测试同时捕获非法字符串类型进入 EF 集合映射回退的空引用异常，现将 string 与 byte[] 一样排除集合映射，保持无匹配结果。初轮单元 674/677 的三项异常保留在 `artifacts/query-translation/local-test/20261003T053858639Z-528d5370/unit.trx`；最终完整单元 677/677 为 `20261003T053948674Z-d20a6244/unit.trx`，format 通过。最终受影响字符单位/多字节容量/CLI 真库 8/8 为 `20261003T054050990Z-8af52b02/functional.trx`，覆盖三类字符的两种单位、空白声明与 CLI 重建。回退保护加入前的中间切片 8/8 为 `20261003T053917541Z-df84b68b/functional.trx`，不作为最终候选证据。未重跑不受影响的管理员及生成值回读路径，前轮结果独立保留。
+
+
+- 合并前 MATCH 反馈核验（2026-10-03）：[官方 DDL 语法](https://eco.dameng.com/document/dm/zh-cn/pm/definition-statement.html)列出 MATCH FULL/PARTIAL/SIMPLE，但[SYSCONS 目录说明](https://eco.dameng.com/document/dm/zh-cn/pm/dm8-admin-manual-appendix1.html)没有独立匹配模式字段，不能据语法列表推断行为。新增四组有断言的真实回归（未指定/SIMPLE/FULL/PARTIAL）逐一检查 TABLEDEF 不保留 MATCH、复合外键允许匹配元组/半空元组（含另一分量无主体）/全空元组、拒绝完整无主体元组；然后从工厂返回的列和删除动作构建新表外键，并再次执行相同断言，源表和重建表各为 5 行。四组全部通过，说明审查所述 FULL 拒绝半空元组在当前参考服务器不成立，不虚构目录标记或任意拒绝普通外键，不外推到所有版本。最终 4/4 TRX 为 `artifacts/query-translation/local-test/20261003T055129926Z-5e8f1c6c/functional.trx`；初次夹具编译的 Task 返回值与分析器要求已修正，该次没有 TRX、不算测试通过。本轮仅新增测试与边界说明，生产代码与 1dbde59 相同；不重标前轮单元 677/677 和字符/CLI 真库 8/8 为本轮执行。
