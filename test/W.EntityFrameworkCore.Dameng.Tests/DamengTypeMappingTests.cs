@@ -241,6 +241,39 @@ public sealed class DamengTypeMappingTests
         Assert.Null(GetMappingSource(context).FindMapping(storeType));
     }
 
+    [Theory]
+    [InlineData("INT(9 CHAR)", typeof(int))]
+    [InlineData("int (9 char)", typeof(int))]
+    [InlineData("DECIMAL(9 CHAR)", typeof(decimal))]
+    [InlineData("VARBINARY(9 CHAR)", typeof(byte[]))]
+    [InlineData("CLOB(9 CHAR)", typeof(string))]
+    [InlineData("NVARCHAR2(9 CHAR)", typeof(string))]
+    [InlineData("NCHAR(9 CHAR)", typeof(string))]
+    public void CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(string storeType, Type clrType)
+    {
+        using var context = CreateContext();
+        var source = GetMappingSource(context);
+        Assert.Null(source.FindMapping(storeType));
+        Assert.Null(source.FindMapping(clrType, storeType));
+    }
+
+    [Fact]
+    public void InvalidIntegerCharacterQualifierCannotGenerateMigrationSql()
+    {
+        using var context = new InvalidLengthUnitContext(new DbContextOptionsBuilder().UseDameng("Server=localhost;User Id=test;Password=test;").Options);
+        Assert.Throws<InvalidOperationException>(() => context.Database.GenerateCreateScript());
+    }
+
+    private sealed class InvalidLengthUnitContext(DbContextOptions options) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>("InvalidUnit");
+            entity.Property<int>("Id").HasColumnType("INT(9 CHAR)");
+            entity.HasKey("Id");
+        }
+    }
+
     [Fact]
     public void BinaryFacetsSwitchToBlobOnlyAboveTheInlineLimit()
     {

@@ -53,7 +53,8 @@ CREATE SEQUENCE 显式生成 NOCACHE NOORDER，ALTER 不重置缓存/排序设�
 自动推导的非 Unicode CHAR 语义按 1900 字节/475 字符的最小页保守预算；更大变长映射 CLOB，定长推导拒绝。
 显式存储类型保留，其容量由实际实例与整行预算决定，不代表已验证所有页大小。
 
-反向工程按目录保留显式 CHAR/BYTE 单位。BYTE 仅支持 CHAR/VARCHAR/VARCHAR2，
+反向工程按目录保留显式 CHAR/BYTE 单位。两种显式单位限定均仅支持 CHAR/VARCHAR/VARCHAR2；其他类型不解析该限定，非法配置无映射。
+BYTE 仅支持 CHAR/VARCHAR/VARCHAR2，
 提供程序生成的建表/加列/改列 DDL 先检查 SF_GET_LENGTH_IN_CHAR()=0，否则拒绝；
 不要把模式 0 真库中的守卫分支测试描述为模式 1 实例验证。
 

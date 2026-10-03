@@ -202,7 +202,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         Type modelType,
         Type? providerType,
         CoreTypeMapping? elementMapping)
-        => modelType == typeof(byte[])
+        => modelType == typeof(byte[]) || modelType == typeof(string)
             ? null
             : base.FindCollectionMapping(info, modelType, providerType, elementMapping);
 
@@ -229,8 +229,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
         var charSemanticsMatch = LengthSemanticsStoreTypePattern.Match(trimmedStoreType);
         if (charSemanticsMatch.Success)
         {
-            if (charSemanticsMatch.Groups["unit"].Value.Equals("BYTE", StringComparison.OrdinalIgnoreCase)
-                && !RequiresByteLengthSemantics(trimmedStoreType))
+            if (charSemanticsMatch.Groups["name"].Value.Trim().ToUpperInvariant() is not ("CHAR" or "VARCHAR" or "VARCHAR2"))
             {
                 return trimmedStoreType;
             }
