@@ -23,6 +23,61 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 public sealed class DamengReverseEngineeringFunctionalTests
 {
     [DamengTheory]
+    [InlineData("INVISIBLE")]
+    [InlineData("UNUSABLE")]
+    public async Task NonDefaultIndexStatesAreRejectedAndRestorationIsObserved(string state)
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var table = "EF10_IST_" + suffix;
+        var safe = "EF10_ISF_" + suffix;
+        var index = "IX_ST_" + suffix;
+        await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        await connection.OpenAsync();
+        var created = new List<string>();
+        try
+        {
+            await ExecuteAsync(connection, $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N INT)");
+            created.Add(table);
+            await ExecuteAsync(connection, $"CREATE TABLE \"{safe}\" (ID INT PRIMARY KEY)");
+            created.Add(safe);
+            await ExecuteAsync(connection, $"CREATE INDEX \"{index}\" ON \"{table}\"(N)");
+            var factory = CreateFactory();
+            Assert.Equal(index, Assert.Single(Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables).Indexes).Name);
+            await ExecuteAsync(connection, $"ALTER INDEX \"{index}\" {state}");
+            await ExecuteAsync(connection, $"INSERT INTO \"{table}\" VALUES (1, 7)");
+            await using var query = connection.CreateCommand();
+            query.CommandText = "SELECT I.STATUS, X.XTYPE FROM ALL_INDEXES I "
+                + "JOIN SYS.SYSOBJECTS O ON O.SCHID=CURRENT_SCHID() AND O.NAME=I.INDEX_NAME AND O.TYPE$='TABOBJ' AND O.SUBTYPE$='INDEX' "
+                + "JOIN SYS.SYSINDEXES X ON X.ID=O.ID WHERE I.OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND I.INDEX_NAME=:name";
+            var name = query.CreateParameter();
+            name.ParameterName = "name";
+            name.Value = index;
+            query.Parameters.Add(name);
+            await using (var reader = await query.ExecuteReaderAsync())
+            {
+                Assert.True(await reader.ReadAsync());
+                Assert.Equal(state == "UNUSABLE" ? "UNUSABLE" : "VALID", reader.GetString(0));
+                var invisible = (Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture) & 65536L) != 0;
+                Assert.Equal(state == "INVISIBLE", invisible);
+            }
+            var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])));
+            Assert.Contains(table, error.Message, StringComparison.Ordinal);
+            Assert.Contains(index, error.Message, StringComparison.Ordinal);
+            Assert.Contains("index state", error.Message, StringComparison.Ordinal);
+            Assert.Equal(safe, Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [safe])).Tables).Name);
+            await ExecuteAsync(connection, $"ALTER INDEX \"{index}\" {(state == "INVISIBLE" ? "VISIBLE" : "REBUILD")}");
+            Assert.Equal(index, Assert.Single(Assert.Single(factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables).Indexes).Name);
+            query.Parameters.Clear();
+            query.CommandText = $"SELECT N FROM \"{table}\" WHERE ID=1";
+            Assert.Equal(7, Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+        }
+    }
+
+    [DamengTheory]
     [InlineData("ENCRYPT")]
     [InlineData("ENCRYPT MANUAL")]
     public async Task EncryptedColumnsAreRejectedBeforeTheirStorageProtectionIsLost(string encryption)

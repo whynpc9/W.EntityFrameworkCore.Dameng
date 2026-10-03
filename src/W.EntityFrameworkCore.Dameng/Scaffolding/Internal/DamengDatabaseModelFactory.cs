@@ -1034,7 +1034,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         var skippedIndexNames = new HashSet<string>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,
-            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3 "
+            "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3, X.XTYPE, I.STATUS "
             + "FROM ALL_INDEXES I "
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = I.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = I.INDEX_NAME "
@@ -1060,6 +1060,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 // supplies FK index ownership that ALL_CONSTRAINTS.INDEX_NAME omits.
                 var readColumns = ShouldReadIndexColumns(
                     table, name, GetNullableString(reader, 2), GetNullableString(reader, 3));
+                if (GetNullableString(reader, 2) is "NORMAL" or "CLUSTER")
+                {
+                    ValidateIndexState(table, name, GetNullableInt64(reader, 6), GetNullableString(reader, 7));
+                }
                 if (GetNullableString(reader, 2) == "CLUSTER")
                 {
                     ValidateTableTablespace(table, GetNullableInt64(reader, 4), GetNullableInt64(reader, 5));
@@ -1169,6 +1173,20 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             table.Indexes.Add(databaseIndex);
+        }
+    }
+
+    internal static void ValidateIndexState(string table, string index, long? nativeType, string? status)
+    {
+        // SYSINDEXES.XTYPE bit 16 marks invisibility; STATUS exposes unusable indexes.
+        // Only physical indexes reach this check. Virtual FK indexes have no B-tree state.
+        if (nativeType is null || (nativeType & 65536L) != 0
+            || !string.Equals(status, "VALID", StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Dameng table '{table}' index '{index}' has invisible, unusable, or unknown index state "
+                + $"(XTYPE={nativeType?.ToString(CultureInfo.InvariantCulture) ?? "NULL"}, STATUS={status ?? "NULL"}). "
+                + "Reverse engineering cannot preserve this index state; exclude this table.");
         }
     }
 

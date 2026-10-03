@@ -16,6 +16,28 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 public sealed class DamengDatabaseModelFactoryTests
 {
     [Theory]
+    [InlineData(65537L, "VALID")]
+    [InlineData(65553L, "VALID")]
+    [InlineData(1L, "UNUSABLE")]
+    [InlineData(1L, "UNKNOWN")]
+    [InlineData(null, "VALID")]
+    [InlineData(1L, null)]
+    public void UnrepresentablePhysicalIndexStateIsRejected(long? nativeType, string? status)
+    {
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateIndexState("T", "IX_T", nativeType, status));
+        Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'IX_T'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("index state", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(1L)]
+    [InlineData(17L)]
+    public void VisibleValidPhysicalIndexesCanBeScaffolded(long nativeType)
+        => DamengDatabaseModelFactory.ValidateIndexState("T", "IX_T", nativeType, "VALID");
+
+    [Theory]
     [InlineData("  ")]
     [InlineData(" C")]
     [InlineData(" N")]
