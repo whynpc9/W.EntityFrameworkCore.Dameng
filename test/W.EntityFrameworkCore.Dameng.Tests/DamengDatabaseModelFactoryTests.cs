@@ -781,4 +781,39 @@ public sealed class DamengDatabaseModelFactoryTests
         Assert.Equal(expectedSchema, schema);
         Assert.Equal(expectedName, name);
     }
+
+    [Fact]
+    public void BuildTableFilterReturnsNullWithoutEntries()
+        => Assert.Null(DamengDatabaseModelFactory.BuildTableFilter([], "APP"));
+
+    [Fact]
+    public void BuildTableFilterAcceptsUnqualifiedAndCurrentSchemaEntries()
+    {
+        var filter = DamengDatabaseModelFactory.BuildTableFilter(["users", "APP.\"A.B\"", "app.orders"], "APP");
+
+        Assert.NotNull(filter);
+        Assert.True(filter.SetEquals(["USERS", "A.B", "ORDERS"]));
+    }
+
+    [Fact]
+    public void BuildTableFilterRejectsEachEntryQualifiedWithAnotherSchema()
+    {
+        var single = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.BuildTableFilter(["OTHER.USERS"], "APP"));
+        Assert.Contains("OTHER.USERS", single.Message, StringComparison.Ordinal);
+
+        var mixed = Assert.Throws<NotSupportedException>(
+            () => DamengDatabaseModelFactory.BuildTableFilter(["USERS", "\"Other\".ORDERS"], "APP"));
+        Assert.Contains("\"Other\".ORDERS", mixed.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void MissingCurrentSchemaNameIsRejected(string? schema)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.RequireCurrentSchemaName(schema));
+
+    [Fact]
+    public void CurrentSchemaNameKeepsCatalogSpelling()
+        => Assert.Equal("app", DamengDatabaseModelFactory.RequireCurrentSchemaName("app"));
 }

@@ -2298,6 +2298,21 @@ public sealed class DamengReverseEngineeringFunctionalTests
     }
 
     [DamengFact]
+    public void FactoryRejectsTableFiltersQualifiedWithAnotherSchema()
+    {
+        using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+        var factory = CreateFactory();
+
+        var single = Assert.Throws<NotSupportedException>(() => factory.Create(
+            connection, new DatabaseModelFactoryOptions(tables: ["SYSDBA.USERS"])));
+        Assert.Contains("SYSDBA.USERS", single.Message, StringComparison.Ordinal);
+
+        var mixed = Assert.Throws<NotSupportedException>(() => factory.Create(
+            connection, new DatabaseModelFactoryOptions(tables: ["USERS", "SYSDBA.ORDERS"])));
+        Assert.Contains("SYSDBA.ORDERS", mixed.Message, StringComparison.Ordinal);
+    }
+
+    [DamengFact]
     public async Task FactoryReadsTablesColumnsConstraintsIndexesCommentsAndValueGeneration()
     {
         var suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12].ToUpperInvariant();

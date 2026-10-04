@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Dm;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -625,8 +626,10 @@ public sealed class DamengMigrationsFunctionalTests
         var options = new DbContextOptionsBuilder<AnsiStringContext>()
             .UseDameng(connectionString)
             .ReplaceService<IModelCacheKeyFactory, AnsiStringModelCacheKeyFactory>()
-            // 此测试的专用模型服务使用独立容器，避免受全套测试的缓存容器数量影响。
+            // 此测试的专用模型服务使用独立容器，避免受全套测试的缓存容器数量影响；
+            // 警告阈值按全局缓存计数，缓存禁用时仍会触发，因此显式改为记录日志。
             .EnableServiceProviderCaching(false)
+            .ConfigureWarnings(warnings => warnings.Log(CoreEventId.ManyServiceProvidersCreatedWarning))
             .EnableDetailedErrors()
             .Options;
 

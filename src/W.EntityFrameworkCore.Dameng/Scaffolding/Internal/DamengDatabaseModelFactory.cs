@@ -138,10 +138,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var command = CreateCommand(
             connection,
             "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual");
-        return Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture)!;
+        return RequireCurrentSchemaName(Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture));
     }
 
-    private static HashSet<string>? BuildTableFilter(List<string> tables, string currentSchema)
+    // Every catalog query binds the session schema; a missing result would bind null and
+    // silently scan nothing.
+    internal static string RequireCurrentSchemaName(string? currentSchema)
+        => string.IsNullOrEmpty(currentSchema)
+            ? throw new NotSupportedException(
+                "Dameng reverse engineering could not determine the session's current schema: "
+                + "SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) returned no value.")
+            : currentSchema;
+
+    internal static HashSet<string>? BuildTableFilter(List<string> tables, string currentSchema)
     {
         if (tables.Count == 0)
         {
@@ -152,26 +161,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         foreach (var entry in tables)
         {
             var (entrySchema, entryName) = SplitQualifiedName(entry);
-            if (entrySchema is not null)
+            if (entrySchema is not null
+                && !string.Equals(entrySchema, currentSchema, StringComparison.Ordinal))
             {
-                if (!string.Equals(entrySchema, currentSchema, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                filter.Add(entryName);
+                throw new NotSupportedException(
+                    "Dameng reverse engineering reads only the session's current schema; "
+                    + $"the table filter entry '{entry}' is qualified with a different schema.");
             }
-            else
-            {
-                filter.Add(entryName);
-            }
-        }
 
-        if (filter.Count == 0)
-        {
-            throw new NotSupportedException(
-                "Dameng reverse engineering reads only the session's current schema; "
-                + "all requested tables were qualified with a different schema.");
+            filter.Add(entryName);
         }
 
         return filter;
