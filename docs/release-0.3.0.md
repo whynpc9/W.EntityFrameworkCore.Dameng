@@ -1,10 +1,10 @@
-# 0.3.0 发布准备
+# 0.3.0 发布记录
 
 检查日期：2026-10-04。候选版本：`0.3.0`。
-状态：**本地发布门禁通过，候选版本准备完成**。发布流程由 `v0.3.0` 标签触发；公共发布结果须另行核验。
+状态：**已发布，CI、GitHub Release、NuGet 版本页及公共包下载已验证**。
 
 源代码基线：`dd046370513f769d97439b432f69b7f4f2e5dff8`（PR #3 已合并的 `main`）。
-本文件记录本地候选验收，不表示版本已发布；当前公共 NuGet 基线为 `0.2.0`。
+本地验收基线为已发布的 `0.2.0`；最终发布提交为 `e14e9fd473002e1799404d1e3e518fd8d4f8b594`，附注标签为 `v0.3.0`。
 
 ## 相对 0.2.0 的变化
 
@@ -68,3 +68,18 @@
 2. 发布时推送主分支，并在最终提交上创建、推送附注标签 `v0.3.0`。
 3. 标签工作流重新构建、测试、打包和推送 NuGet，随后创建 GitHub Release。
 4. 分别验证标签 CI、GitHub Release 与 NuGet 版本页/包下载；本地真实库结果不能替代这三层证据。
+
+## 公共发布验证
+
+- 发布日期：2026-10-04（Asia/Shanghai）。发布提交及附注标签已推送。
+- [标签 CI](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/37172053951)
+  两个任务均成功；Release 单元 682/682，NuGet 推送日志为 `Your package was pushed.`。
+- [GitHub Release v0.3.0](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/v0.3.0)
+  已公开，不是草稿或 prerelease。
+- [NuGet 版本页](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng/0.3.0)
+  已公开，安装命令及 PackageReference 显示 0.3.0。
+- 从 NuGet 公共 CDN 下载正式包，ZIP 完整性、net10.0 程序集/XML、README、第三方声明均通过检查。
+  nuspec 版本为 0.3.0，repository commit 与标签提交一致，依赖范围与候选包一致。
+  SHA-256：`734fe627695e0f27867c1ae47f0241f2ee522e3f8fc1cfc7be815b6236f52d19`。
+- 发布初期 NuGet v3 索引与下载接口暂返回旧索引/404；版本页及公共 CDN 随后可用。
+  没有重复推送包或移动标签。
