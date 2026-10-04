@@ -625,6 +625,8 @@ public sealed class DamengMigrationsFunctionalTests
         var options = new DbContextOptionsBuilder<AnsiStringContext>()
             .UseDameng(connectionString)
             .ReplaceService<IModelCacheKeyFactory, AnsiStringModelCacheKeyFactory>()
+            // 此测试的专用模型服务使用独立容器，避免受全套测试的缓存容器数量影响。
+            .EnableServiceProviderCaching(false)
             .EnableDetailedErrors()
             .Options;
 
