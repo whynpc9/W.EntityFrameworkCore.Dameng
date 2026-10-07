@@ -1,3 +1,5 @@
+using System.Data.Common;
+using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -15,6 +17,121 @@ namespace W.EntityFrameworkCore.Dameng.Tests;
 
 public sealed class DamengDatabaseModelFactoryTests
 {
+    [Fact]
+    public void IdentityFacetBatchBindsFullyDelimitedNamesAndBoundsTheBatchSize()
+    {
+        using var connection = new DmConnection("Server=database.example;Port=5236;User Id=app;Password=example");
+        using var command = DamengDatabaseModelFactory.CreateIdentityFacetCommand(connection, "Quoted\"Schema", ["Table.With.Dot", "O'Reilly"]);
+        Assert.Equal(4, command.Parameters.Count);
+        Assert.DoesNotContain("Quoted", command.CommandText, StringComparison.Ordinal);
+        Assert.DoesNotContain("O'Reilly", command.CommandText, StringComparison.Ordinal);
+        Assert.Equal("\"Quoted\"\"Schema\".\"Table.With.Dot\"", command.Parameters[1].Value);
+        Assert.Equal("\"Quoted\"\"Schema\".\"O'Reilly\"", command.Parameters[3].Value);
+        Assert.Contains(" UNION ALL ", command.CommandText, StringComparison.Ordinal);
+        Assert.Throws<ArgumentOutOfRangeException>(() => DamengDatabaseModelFactory.CreateIdentityFacetCommand(connection, "APP", []));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DamengDatabaseModelFactory.CreateIdentityFacetCommand(connection, "APP", Enumerable.Range(0, 65).Select(index => "T" + index).ToArray()));
+    }
+
+    [Fact]
+    public void VirtualColumnsPreserveExpressionsWithoutBecomingInsertDefaults()
+    {
+        var table = new DatabaseTable { Name = "T" };
+        var column = new DatabaseColumn { Table = table, Name = "Computed", StoreType = "INT", DefaultValueSql = "old" };
+        DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "Computed", 1);
+        DamengDatabaseModelFactory.ApplyVirtualColumn(column, "(\"n.lower\" + 1)");
+        Assert.Equal("(\"n.lower\" + 1)", column.ComputedColumnSql);
+        Assert.False(column.IsStored);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, column.ValueGenerated);
+        Assert.Null(column.DefaultValueSql);
+        table.PrimaryKey = new DatabasePrimaryKey { Table = table, Name = "PK_T" };
+        table.PrimaryKey.Columns.Add(column);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(table));
+        Assert.Contains("computed generated key", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void MissingVirtualExpressionsAreRejected(string? expression)
+        => Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ApplyVirtualColumn(
+            new DatabaseColumn { Table = new DatabaseTable { Name = "T" }, Name = "Computed" }, expression));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(128)]
+    [InlineData(129)]
+    public void CatalogTablePredicatesAreBoundAndLargeSelectionsKeepTheirFullScan(int count)
+    {
+        using var connection = new DmConnection("Server=database.example;Port=5236;User Id=app;Password=example");
+        var names = Enumerable.Range(0, count).Select(index => $"Table'{index}").ToArray();
+        using var command = DamengDatabaseModelFactory.CreateCommand(connection,
+            "SELECT TABLE_NAME FROM ALL_TABLES WHERE OWNER = :schema ORDER BY TABLE_NAME", names, "TABLE_NAME");
+        Assert.DoesNotContain("Table'", command.CommandText, StringComparison.Ordinal);
+        Assert.Equal(count <= 128 ? count : 0, command.Parameters.Count);
+        if (count == 0) Assert.Contains("AND 1 = 0", command.CommandText, StringComparison.Ordinal);
+        if (count is > 0 and <= 128)
+        {
+            Assert.Contains("TABLE_NAME IN (:table0", command.CommandText, StringComparison.Ordinal);
+            Assert.True(command.CommandText.IndexOf(" IN (", StringComparison.Ordinal) < command.CommandText.IndexOf("ORDER BY", StringComparison.Ordinal));
+            Assert.Equal(names.Order(StringComparer.Ordinal), command.Parameters.Cast<DbParameter>().Select(parameter => parameter.Value));
+        }
+        if (count > 128) Assert.DoesNotContain(" IN (", command.CommandText, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NullablePrincipalColumnsAreRejectedOnlyWhenSelectedRelationshipsUseThem(bool composite)
+    {
+        var parent = new DatabaseTable { Name = "Parent" };
+        var nullable = new DatabaseColumn { Table = parent, Name = "NullableCode", StoreType = "INT", IsNullable = true };
+        parent.Columns.Add(nullable);
+        DamengDatabaseModelFactory.ValidateKeyGeneration(parent);
+        var child = new DatabaseTable { Name = "Child" };
+        var foreignKey = new DatabaseForeignKey { Name = "FK_Child", Table = child, PrincipalTable = parent };
+        if (composite) foreignKey.PrincipalColumns.Add(new DatabaseColumn { Table = parent, Name = "Tenant", StoreType = "INT" });
+        foreignKey.PrincipalColumns.Add(nullable);
+        child.ForeignKeys.Add(foreignKey);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateKeyGeneration(child));
+        Assert.Contains("FK_Child", error.Message, StringComparison.Ordinal);
+        Assert.Contains("Parent.NullableCode", error.Message, StringComparison.Ordinal);
+        nullable.IsNullable = false;
+        DamengDatabaseModelFactory.ValidateKeyGeneration(child);
+    }
+
+    [Fact]
+    public void TableSelectionRequiresEveryRequestedTableOrView()
+    {
+        DamengDatabaseModelFactory.ValidateSelectedTables(null, []);
+        DamengDatabaseModelFactory.ValidateSelectedTables(new HashSet<string>(StringComparer.Ordinal) { "Table", "View" }, ["View", "Table"]);
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.ValidateSelectedTables(
+            new HashSet<string>(StringComparer.Ordinal) { "FOUND", "MISSING", "lower" }, ["FOUND", "LOWER"]));
+        Assert.Contains("'MISSING'", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'lower'", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("'FOUND'", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("PK_T")]
+    [InlineData("UQ_T")]
+    [InlineData("IX_T")]
+    [InlineData("FK_T")]
+    public void IncompleteConstraintAndIndexColumnsAreRejectedBeforeMutatingTheTarget(string name)
+    {
+        var column = new DatabaseColumn { Name = "A" };
+        var columns = new Dictionary<string, DatabaseColumn>(StringComparer.Ordinal) { ["A"] = column };
+        var target = new List<DatabaseColumn>();
+        var error = Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.AddColumnsByName("T", name, columns, ["A", "Missing"], target));
+        Assert.Contains(name, error.Message, StringComparison.Ordinal);
+        Assert.Contains("Missing", error.Message, StringComparison.Ordinal);
+        Assert.Empty(target);
+        Assert.Throws<NotSupportedException>(() => DamengDatabaseModelFactory.AddColumnsByName("T", name, columns, [], target));
+        DamengDatabaseModelFactory.AddColumnsByName("T", name, columns, ["A"], target);
+        Assert.Same(column, Assert.Single(target));
+    }
+
     [Fact]
     public void UnlimitedTableSpaceIsAccepted()
         => DamengDatabaseModelFactory.ValidateTableSpaceLimit("T", 0);
@@ -565,7 +682,6 @@ public sealed class DamengDatabaseModelFactoryTests
         => DamengDatabaseModelFactory.ValidateColumnGenerationFlags("T", "C", flags);
 
     [Theory]
-    [InlineData(1, "virtual computed column")]
     [InlineData(16, "DEFAULT ON NULL")]
     [InlineData(48, "DEFAULT ON NULL")]
     [InlineData(64, "ON UPDATE")]

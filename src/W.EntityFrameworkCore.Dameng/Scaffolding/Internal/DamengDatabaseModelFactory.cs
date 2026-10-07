@@ -90,17 +90,19 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 databaseModel.Sequences.Add(sequence);
             }
 
+            ValidateSelectedTables(tableFilter, tables.Select(table => table.Name));
+
             if (tables.Count == 0)
             {
                 return databaseModel;
             }
 
             var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
-            ValidateUnsupportedTableStructures(connection, currentSchema, tableLookup);
+            var computedColumns = ValidateUnsupportedTableStructures(connection, currentSchema, tableLookup);
             ValidateConstraintStates(connection, currentSchema, tableLookup);
 
             var pendingSequenceDefaults = new List<PendingSequenceDefault>();
-            LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults);
+            LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults, computedColumns);
             var columnLookup = tables.ToDictionary(
                 table => table,
                 table => table.Columns.ToDictionary(column => column.Name, StringComparer.Ordinal));
@@ -175,6 +177,17 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         return filter;
     }
 
+    internal static void ValidateSelectedTables(HashSet<string>? requested, IEnumerable<string> found)
+    {
+        if (requested is null) return;
+        var missing = requested.Except(found, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (missing.Length != 0)
+            throw new NotSupportedException(
+                "Dameng reverse engineering could not find the requested tables or views in the current schema: "
+                + string.Join(", ", missing.Select(name => $"'{name}'"))
+                + ". Check identifier spelling, quoting and catalog visibility; no partial model was returned.");
+    }
+
     private static List<DatabaseTable> GetTables(
         DbConnection connection,
         string schema,
@@ -186,7 +199,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             + "LEFT JOIN SYS.SYSOBJECTS S ON S.NAME = T.OWNER AND S.TYPE$ = 'SCH' "
             + "LEFT JOIN SYS.SYSOBJECTS O ON O.SCHID = S.ID AND O.NAME = T.TABLE_NAME "
             + "AND O.TYPE$ = 'SCHOBJ' AND O.SUBTYPE$ = 'UTAB' "
-            + "WHERE T.OWNER = :schema ORDER BY T.TABLE_NAME");
+            + "WHERE T.OWNER = :schema ORDER BY T.TABLE_NAME", tableFilter, "T.TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var tables = new List<DatabaseTable>();
@@ -317,7 +330,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         using var command = CreateCommand(
             connection,
-            "SELECT VIEW_NAME FROM ALL_VIEWS WHERE OWNER = :schema ORDER BY VIEW_NAME");
+            "SELECT VIEW_NAME FROM ALL_VIEWS WHERE OWNER = :schema ORDER BY VIEW_NAME", tableFilter, "VIEW_NAME");
         AddParameter(command, "schema", schema);
 
         var views = new List<DatabaseTable>();
@@ -345,7 +358,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         DbConnection connection,
         string schema,
         Dictionary<string, DatabaseTable> tables,
-        List<PendingSequenceDefault> pendingSequenceDefaults)
+        List<PendingSequenceDefault> pendingSequenceDefaults,
+        Dictionary<(string Table, string Column), string> computedColumns)
     {
         using var command = CreateCommand(
             connection,
@@ -355,7 +369,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             FROM ALL_TAB_COLS
             WHERE OWNER = :schema
             ORDER BY TABLE_NAME, COLUMN_ID
-            """);
+            """, tables.Keys, "TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         using var reader = command.ExecuteReader();
@@ -391,7 +405,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 IsNullable = nullable
             };
 
-            if (defaultValue is not null
+            if (computedColumns.TryGetValue((tableName, columnName), out var computedSql))
+            {
+                ApplyVirtualColumn(column, computedSql);
+            }
+            else if (defaultValue is not null
                 && TryParseSequenceDefault(defaultValue, out var sequenceName, out var sequenceSchema))
             {
                 // Facets are resolved against the catalog after all columns are read; only then
@@ -407,6 +425,20 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             table.Columns.Add(column);
         }
+
+        foreach (var (table, column) in computedColumns.Keys)
+            if (!tables[table].Columns.Any(candidate => candidate.Name == column))
+                throw new NotSupportedException($"Dameng table '{table}' virtual column '{column}' has missing column metadata.");
+    }
+
+    internal static void ApplyVirtualColumn(DatabaseColumn column, string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+            throw new NotSupportedException($"Dameng table '{column.Table.Name}' virtual column '{column.Name}' has an unreadable computed expression.");
+        column.ComputedColumnSql = expression;
+        column.IsStored = false;
+        column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
+        column.DefaultValueSql = null;
     }
 
     internal static void ValidateCompoundSequenceDefault(string table, string column, string sql, string schema)
@@ -530,6 +562,13 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         // Unreferenced unique indexes do not have that key readback requirement.
         foreach (var foreignKey in table.ForeignKeys)
         {
+            foreach (var column in foreignKey.PrincipalColumns.Where(column => column.IsNullable))
+            {
+                throw new NotSupportedException(
+                    $"Dameng table '{table.Name}' foreign key '{foreignKey.Name}' references nullable principal column "
+                    + $"'{foreignKey.PrincipalTable.Name}.{column.Name}'. EF requires non-nullable alternate keys; "
+                    + "reverse engineering cannot preserve this nullability. Exclude the dependent table.");
+            }
             ValidateGeneratedKeyColumns(foreignKey.PrincipalTable, foreignKey.PrincipalColumns);
         }
     }
@@ -538,6 +577,10 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         foreach (var column in columns)
         {
+            if (column.ComputedColumnSql is not null)
+                throw new NotSupportedException(
+                    $"Dameng table '{table.Name}' key column '{column.Name}' is virtual computed. "
+                    + "The provider cannot read back a computed generated key; exclude this table from reverse engineering.");
             if (column.DefaultValueSql is not null
                 && column[DamengAnnotationNames.ValueGenerationStrategy]
                     is not (DamengValueGenerationStrategy.IdentityColumn or DamengValueGenerationStrategy.Sequence))
@@ -674,9 +717,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         Dictionary<string, DatabaseTable> tables,
         Dictionary<DatabaseTable, Dictionary<string, DatabaseColumn>> columnLookup)
     {
-        var identityColumns = new List<(string Table, string Column)>();
-        using (var command = CreateCommand(
-            connection,
+        var identityColumns = new Dictionary<string, List<DatabaseColumn>>(StringComparer.Ordinal);
+        using (var command = CreateCommand(connection,
             """
             SELECT O.NAME AS TABLE_NAME, C.NAME AS COLUMN_NAME, O.INFO6
             FROM SYS.SYSCOLUMNS C
@@ -686,49 +728,65 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
               AND O.TYPE$ = 'SCHOBJ'
               AND O.SUBTYPE$ = 'UTAB'
               AND (C.INFO2 & 1) = 1
-            """))
+            """, tables.Keys, "O.NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var table = reader.GetString(0);
-                if (tables.ContainsKey(table))
+                var tableName = reader.GetString(0);
+                if (!tables.TryGetValue(tableName, out var table)) continue;
+                var columnName = reader.GetString(1);
+                ValidateIdentityType(tableName, columnName, reader.GetValue(2) as byte[]);
+                if (!columnLookup[table].TryGetValue(columnName, out var column))
+                    throw new NotSupportedException($"Dameng table '{tableName}' IDENTITY column '{columnName}' has missing column metadata.");
+                ValidateIdentityColumn(column);
+                if (!identityColumns.TryGetValue(tableName, out var columns))
+                    identityColumns.Add(tableName, columns = []);
+                columns.Add(column);
+            }
+        }
+
+        // Confirm the native generation type before invoking IDENTITY functions:
+        // AUTO_INCREMENT shares the column marker but those functions reject it.
+        foreach (var batch in identityColumns.Keys.Order(StringComparer.Ordinal).Chunk(64))
+        {
+            using var command = CreateIdentityFacetCommand(connection, schema, batch);
+            using var reader = command.ExecuteReader();
+            var remaining = new HashSet<string>(batch, StringComparer.Ordinal);
+            while (reader.Read())
+            {
+                var tableName = reader.GetString(0);
+                if (!remaining.Remove(tableName)
+                    || !TryReadInt64Facet(reader, 1, out var seed)
+                    || !TryReadInt64Facet(reader, 2, out var increment)
+                    || increment is < int.MinValue or > int.MaxValue or 0)
+                    throw new NotSupportedException($"Dameng table '{tableName}' has unreadable or unrepresentable IDENTITY seed/increment.");
+                foreach (var column in identityColumns[tableName])
                 {
-                    var column = reader.GetString(1);
-                    ValidateIdentityType(table, column, reader.GetValue(2) as byte[]);
-                    identityColumns.Add((table, column));
+                    column[DamengAnnotationNames.ValueGenerationStrategy] = DamengValueGenerationStrategy.IdentityColumn;
+                    column[DamengAnnotationNames.IdentitySeed] = seed;
+                    column[DamengAnnotationNames.IdentityIncrement] = (int)increment;
+                    column.ValueGenerated = ValueGenerated.OnAdd;
                 }
             }
+            if (remaining.Count != 0)
+                throw new NotSupportedException($"Dameng did not return IDENTITY facets for '{string.Join("', '", remaining)}'.");
         }
+    }
 
-        var seedIncrementByTable = new Dictionary<string, (long Seed, int Increment)>(StringComparer.Ordinal);
-        foreach (var (tableName, columnName) in identityColumns)
+    internal static DbCommand CreateIdentityFacetCommand(DbConnection connection, string schema, IReadOnlyList<string> tables)
+    {
+        if (tables.Count is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(tables));
+        var command = CreateCommand(connection, string.Join(" UNION ALL ",
+            tables.Select((_, index) => $"SELECT :table{index}, IDENT_SEED(:qualified{index}), IDENT_INCR(:qualified{index}) FROM dual")));
+        for (var index = 0; index < tables.Count; index++)
         {
-            if (!tables.TryGetValue(tableName, out var table))
-            {
-                continue;
-            }
-
-            if (!columnLookup[table].TryGetValue(columnName, out var column))
-            {
-                continue;
-            }
-
-            ValidateIdentityColumn(column);
-
-            if (!seedIncrementByTable.TryGetValue(tableName, out var seedIncrement))
-            {
-                seedIncrement = GetIdentitySeedIncrement(connection, schema, tableName);
-                seedIncrementByTable[tableName] = seedIncrement;
-            }
-
-            column[DamengAnnotationNames.ValueGenerationStrategy]
-                = DamengValueGenerationStrategy.IdentityColumn;
-            column[DamengAnnotationNames.IdentitySeed] = seedIncrement.Seed;
-            column[DamengAnnotationNames.IdentityIncrement] = seedIncrement.Increment;
-            column.ValueGenerated = ValueGenerated.OnAdd;
+            AddParameter(command, $"table{index}", tables[index]);
+            AddParameter(command, $"qualified{index}", "\"" + schema.Replace("\"", "\"\"", StringComparison.Ordinal)
+                + "\".\"" + tables[index].Replace("\"", "\"\"", StringComparison.Ordinal) + "\"");
         }
+        return command;
     }
 
     internal void ValidateIdentityColumn(DatabaseColumn column)
@@ -755,40 +813,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
-    private static (long Seed, int Increment) GetIdentitySeedIncrement(
-        DbConnection connection,
-        string schema,
-        string tableName)
-    {
-        // IDENT_SEED/IDENT_INCR take a name string and split it themselves: delimit each
-        // component independently so legal names containing dots still resolve ('a.b' alone
-        // is rejected by the server as too many name prefixes), then escape the whole
-        // literal. A catalog-confirmed identity column whose facets cannot be read is an
-        // error, not a (1,1) default.
-        var qualifiedName = "\""
-            + schema.Replace("\"", "\"\"", StringComparison.Ordinal)
-            + "\".\""
-            + tableName.Replace("\"", "\"\"", StringComparison.Ordinal)
-            + "\"";
-        var literal = "'" + qualifiedName.Replace("'", "''", StringComparison.Ordinal) + "'";
-        using var command = CreateCommand(
-            connection,
-            $"SELECT IDENT_SEED({literal}), IDENT_INCR({literal}) FROM dual");
-
-        using var reader = command.ExecuteReader();
-        if (!reader.Read() || reader.IsDBNull(0) || reader.IsDBNull(1))
-        {
-            throw new InvalidOperationException(
-                $"Dameng did not return identity facets for '{qualifiedName}' "
-                + "even though the catalog marks one of its columns as IDENTITY.");
-        }
-
-        return (
-            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
-            Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture));
-    }
-
-    private static void ValidateUnsupportedTableStructures(
+    private static Dictionary<(string Table, string Column), string> ValidateUnsupportedTableStructures(
         DbConnection connection,
         string schema,
         Dictionary<string, DatabaseTable> tables)
@@ -797,7 +822,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         // belong to another schema. Disabled triggers still have semantics to preserve.
         using (var command = CreateCommand(connection,
             "SELECT TABLE_NAME, TRIGGER_NAME FROM ALL_TRIGGERS "
-            + "WHERE TABLE_OWNER = :schema AND TABLE_NAME IS NOT NULL"))
+            + "WHERE TABLE_OWNER = :schema AND TABLE_NAME IS NOT NULL", tables.Keys, "TABLE_NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
@@ -819,7 +844,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             + "INNER JOIN SYS.SYSOBJECTS C ON C.ID = K.ID "
             + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = K.TABLEID "
             + "INNER JOIN SYS.SYSOBJECTS S ON S.ID = T.SCHID "
-            + "WHERE S.NAME = :schema AND K.TYPE$ = 'C'"))
+            + "WHERE S.NAME = :schema AND K.TYPE$ = 'C'", tables.Keys, "T.NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
@@ -835,13 +860,15 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
 
         // SYSCOLINFOS.INFO1 marks virtual columns (bit 0), DEFAULT ON NULL (bit 4) and
-        // ON UPDATE (bit 6). ALL_TAB_COLUMNS alone cannot preserve these generation rules.
+        // ON UPDATE (bit 6). For virtual columns DEFVAL is the computed expression,
+        // not an insert default; keep it separate from ALL_TAB_COLS.DATA_DEFAULT.
+        var computedColumns = new Dictionary<(string Table, string Column), string>();
         using var columns = CreateCommand(connection,
-            "SELECT T.NAME, C.NAME, COALESCE(I.INFO1, 0), C.INFO2 FROM SYS.SYSCOLUMNS C "
+            "SELECT T.NAME, C.NAME, COALESCE(I.INFO1, 0), C.INFO2, C.DEFVAL FROM SYS.SYSCOLUMNS C "
             + "INNER JOIN SYS.SYSOBJECTS T ON T.ID = C.ID "
             + "INNER JOIN SYS.SYSOBJECTS S ON S.ID = T.SCHID "
             + "LEFT JOIN SYS.SYSCOLINFOS I ON I.ID = C.ID AND I.COLID = C.COLID "
-            + "WHERE S.NAME = :schema AND T.TYPE$ = 'SCHOBJ' AND T.SUBTYPE$ = 'UTAB'");
+            + "WHERE S.NAME = :schema AND T.TYPE$ = 'SCHOBJ' AND T.SUBTYPE$ = 'UTAB'", tables.Keys, "T.NAME");
         AddParameter(columns, "schema", schema);
         using var columnReader = columns.ExecuteReader();
         while (columnReader.Read())
@@ -849,11 +876,18 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             if (tables.ContainsKey(columnReader.GetString(0)))
             {
                 ValidateColumnEncryptionFlags(columnReader.GetString(0), columnReader.GetString(1), GetNullableInt64(columnReader, 3));
-                ValidateColumnGenerationFlags(
-                    columnReader.GetString(0), columnReader.GetString(1),
-                    Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture));
+                var flags = Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture);
+                ValidateColumnGenerationFlags(columnReader.GetString(0), columnReader.GetString(1), flags);
+                if (IsVirtualColumnFlags(flags))
+                {
+                    var expression = GetNullableString(columnReader, 4);
+                    if (string.IsNullOrWhiteSpace(expression))
+                        throw new NotSupportedException($"Dameng table '{columnReader.GetString(0)}' virtual column '{columnReader.GetString(1)}' has an unreadable computed expression.");
+                    computedColumns.Add((columnReader.GetString(0), columnReader.GetString(1)), expression);
+                }
             }
         }
+        return computedColumns;
     }
 
     internal static bool IsVirtualColumnFlags(long flags)
@@ -873,8 +907,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
     internal static void ValidateColumnGenerationFlags(string table, string column, long flags)
     {
-        var unsupported = IsVirtualColumnFlags(flags) ? "virtual computed column"
-            : (flags & 16L) != 0 ? "DEFAULT ON NULL"
+        var unsupported = (flags & 16L) != 0 ? "DEFAULT ON NULL"
             : (flags & 64L) != 0 ? "ON UPDATE"
             : null;
         if (unsupported is not null)
@@ -893,7 +926,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var command = CreateCommand(
             connection,
             "SELECT TABLE_NAME, CONSTRAINT_NAME, STATUS, DEFERRABLE, DEFERRED, VALIDATED FROM ALL_CONSTRAINTS "
-            + "WHERE OWNER = :schema AND CONSTRAINT_TYPE IN ('P', 'U', 'R')");
+            + "WHERE OWNER = :schema AND CONSTRAINT_TYPE IN ('P', 'U', 'R')", tables.Keys, "TABLE_NAME");
         AddParameter(command, "schema", schema);
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -939,7 +972,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             SELECT C.CONSTRAINT_NAME, C.CONSTRAINT_TYPE, C.TABLE_NAME, CC.COLUMN_NAME, CC.POSITION,
                    I.INDEX_TYPE
             FROM ALL_CONSTRAINTS C
-            INNER JOIN ALL_CONS_COLUMNS CC
+            LEFT JOIN ALL_CONS_COLUMNS CC
                 ON CC.OWNER = C.OWNER
                 AND CC.CONSTRAINT_NAME = C.CONSTRAINT_NAME
                 AND CC.TABLE_NAME = C.TABLE_NAME
@@ -948,7 +981,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             WHERE C.OWNER = :schema
               AND C.CONSTRAINT_TYPE IN ('P', 'U')
             ORDER BY C.TABLE_NAME, C.CONSTRAINT_NAME, CC.POSITION
-            """);
+            """, tables.Keys, "C.TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var constraints = new List<(
@@ -969,7 +1002,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
             var constraintName = reader.GetString(0);
             var constraintType = reader.GetString(1);
-            var columnName = reader.GetString(3);
+            var columnName = GetNullableString(reader, 3)
+                ?? throw new NotSupportedException($"Dameng table '{tableName}' constraint '{constraintName}' has incomplete column metadata.");
 
             var constraint = constraints.LastOrDefault()
                 is { } last
@@ -997,7 +1031,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     Name = name
                 };
                 primaryKey[DamengAnnotationNames.IsClustered] = ReadPrimaryKeyClustering(indexType);
-                AddColumnsByName(columnLookup[table], columns, primaryKey.Columns);
+                AddColumnsByName(table.Name, name, columnLookup[table], columns, primaryKey.Columns);
                 table.PrimaryKey = primaryKey;
             }
             else
@@ -1014,7 +1048,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     Table = table,
                     Name = name
                 };
-                AddColumnsByName(columnLookup[table], columns, uniqueConstraint.Columns);
+                AddColumnsByName(table.Name, name, columnLookup[table], columns, uniqueConstraint.Columns);
                 table.UniqueConstraints.Add(uniqueConstraint);
             }
         }
@@ -1029,18 +1063,23 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 $"Cannot preserve Dameng primary-key clustering for backing index type '{indexType ?? "NULL"}'.")
         };
 
-    private static void AddColumnsByName(
+    internal static void AddColumnsByName(
+        string table,
+        string metadataObject,
         Dictionary<string, DatabaseColumn> columns,
         IEnumerable<string> columnNames,
         IList<DatabaseColumn> target)
     {
-        foreach (var columnName in columnNames)
+        var names = columnNames.ToArray();
+        var missing = names.Where(name => !columns.ContainsKey(name)).ToArray();
+        if (names.Length == 0 || missing.Length != 0)
         {
-            if (columns.TryGetValue(columnName, out var column))
-            {
-                target.Add(column);
-            }
+            throw new NotSupportedException(
+                $"Dameng table '{table}' constraint or index '{metadataObject}' has incomplete column metadata"
+                + (missing.Length == 0 ? "." : $": {string.Join(", ", missing.Select(name => $"'{name}'"))}.")
+                + " Reverse engineering cannot preserve this definition; exclude this table.");
         }
+        foreach (var name in names) target.Add(columns[name]);
     }
 
     private static void LoadIndexes(
@@ -1058,7 +1097,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             + "INNER JOIN SYS.SYSINDEXES X ON X.ID = O.ID "
             + "WHERE I.OWNER = :schema AND I.INDEX_TYPE = 'CLUSTER' "
             + "AND NOT EXISTS (SELECT 1 FROM ALL_CONSTRAINTS C WHERE C.OWNER = I.OWNER "
-            + "AND C.TABLE_NAME = I.TABLE_NAME AND C.INDEX_NAME = I.INDEX_NAME AND C.CONSTRAINT_TYPE = 'P')"))
+            + "AND C.TABLE_NAME = I.TABLE_NAME AND C.INDEX_NAME = I.INDEX_NAME AND C.CONSTRAINT_TYPE = 'P')", tables.Keys, "I.TABLE_NAME"))
         {
             AddParameter(clusterCommand, "schema", schema);
             using var reader = clusterCommand.ExecuteReader();
@@ -1076,6 +1115,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 
         var skippedIndexNames = new HashSet<string>(StringComparer.Ordinal);
         var indexFillFactors = new Dictionary<string, int>(StringComparer.Ordinal);
+        var indexTables = new Dictionary<string, string>(StringComparer.Ordinal);
         using (var command = CreateCommand(
             connection,
             "SELECT I.INDEX_NAME, I.TABLE_NAME, I.INDEX_TYPE, K.TYPE$, X.GROUPID, U.INFO3, X.XTYPE, I.STATUS, O.INFO1, KN.NAME "
@@ -1087,7 +1127,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             + "LEFT JOIN SYS.SYSOBJECTS U ON U.ID = S.PID AND U.TYPE$ = 'UR' AND U.SUBTYPE$ = 'USER' "
             + "LEFT JOIN SYS.SYSCONS K ON K.INDEXID = O.ID AND K.TABLEID = O.PID AND K.TYPE$ IN ('P', 'U', 'F') "
             + "LEFT JOIN SYS.SYSOBJECTS KN ON KN.ID = K.ID "
-            + "WHERE I.OWNER = :schema"))
+            + "WHERE I.OWNER = :schema", tables.Keys, "I.TABLE_NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
@@ -1123,6 +1163,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                     else
                     {
                         indexFillFactors[name] = fill;
+                        indexTables[name] = table;
                     }
                 }
                 if (GetNullableString(reader, 2) == "CLUSTER")
@@ -1165,7 +1206,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             WHERE I.OWNER = :schema
               AND I.INDEX_TYPE <> 'CLUSTER'
             ORDER BY I.TABLE_NAME, I.INDEX_NAME, IC.COLUMN_POSITION
-            """);
+            """, tables.Keys, "I.TABLE_NAME");
         AddParameter(indexCommand, "schema", schema);
 
         var indexes = new List<(
@@ -1214,6 +1255,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             index.Descending.Add(descending);
         }
 
+        foreach (var name in indexFillFactors.Keys.Except(indexes.Select(index => index.Name), StringComparer.Ordinal))
+            throw new NotSupportedException($"Dameng table '{indexTables[name]}' index '{name}' has no readable column metadata.");
+
         foreach (var (name, table, isUnique, columns, descending) in indexes)
         {
             var databaseIndex = new DatabaseIndex
@@ -1222,11 +1266,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 Name = name,
                 IsUnique = isUnique
             };
-            AddColumnsByName(columnLookup[table], columns, databaseIndex.Columns);
-            if (databaseIndex.Columns.Count != columns.Count)
-            {
-                continue;
-            }
+            AddColumnsByName(table.Name, name, columnLookup[table], columns, databaseIndex.Columns);
 
             if (!indexFillFactors.TryGetValue(name, out var fill))
                 throw new NotSupportedException($"Dameng index '{name}' on table '{table.Name}' has unreadable fill-factor metadata.");
@@ -1328,7 +1368,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             WHERE C.OWNER = :schema
               AND C.CONSTRAINT_TYPE = 'R'
             ORDER BY C.TABLE_NAME, C.CONSTRAINT_NAME, CC.POSITION
-            """);
+            """, tables.Keys, "C.TABLE_NAME");
         AddParameter(command, "schema", schema);
 
         var foreignKeys = new List<(
@@ -1392,8 +1432,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 Name = name,
                 OnDelete = onDelete
             };
-            AddColumnsByName(columnLookup[table], columns, databaseForeignKey.Columns);
-            AddColumnsByName(columnLookup[principalTable], principalColumns, databaseForeignKey.PrincipalColumns);
+            AddColumnsByName(table.Name, name, columnLookup[table], columns, databaseForeignKey.Columns);
+            AddColumnsByName(principalTable.Name, name, columnLookup[principalTable], principalColumns, databaseForeignKey.PrincipalColumns);
 
             // A partially resolved key must not become a different or missing relationship.
             if (databaseForeignKey.Columns.Count != columns.Count
@@ -1458,7 +1498,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             SELECT TABLE_NAME, COMMENTS
             FROM ALL_TAB_COMMENTS
             WHERE OWNER = :schema AND TABLE_TYPE = 'TABLE'
-            """))
+            """, tables.Keys, "TABLE_NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
@@ -1477,7 +1517,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             SELECT TABLE_NAME, COLUMN_NAME, COMMENTS
             FROM ALL_COL_COMMENTS
             WHERE OWNER = :schema
-            """))
+            """, tables.Keys, "TABLE_NAME"))
         {
             AddParameter(command, "schema", schema);
             using var reader = command.ExecuteReader();
@@ -1666,10 +1706,29 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             : value.ToUpperInvariant();
     }
 
-    private static DbCommand CreateCommand(DbConnection connection, string commandText)
+    // Bound the extra bind count. Larger selections retain the complete schema scan
+    // and existing in-memory filtering instead of risking a server parameter limit.
+    internal static DbCommand CreateCommand(
+        DbConnection connection,
+        string commandText,
+        IEnumerable<string>? selectedTables = null,
+        string? tableNameColumn = null)
     {
         var command = connection.CreateCommand();
         command.CommandText = commandText;
+        if (selectedTables is not null && tableNameColumn is not null)
+        {
+            var names = selectedTables.Order(StringComparer.Ordinal).Take(129).ToArray();
+            if (names.Length <= 128)
+            {
+                var predicate = names.Length == 0 ? " AND 1 = 0" : " AND " + tableNameColumn + " IN ("
+                    + string.Join(", ", names.Select((_, index) => $":table{index}")) + ")";
+                var orderBy = commandText.LastIndexOf("ORDER BY", StringComparison.Ordinal);
+                command.CommandText = orderBy < 0 ? commandText + predicate
+                    : commandText.Insert(orderBy, predicate + " ");
+                for (var index = 0; index < names.Length; index++) AddParameter(command, $"table{index}", names[index]);
+            }
+        }
         return command;
     }
 

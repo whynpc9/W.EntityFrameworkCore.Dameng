@@ -2085,7 +2085,6 @@ public sealed class DamengReverseEngineeringFunctionalTests
     [InlineData("check")]
     [InlineData("check_not_null")]
     [InlineData("disabled_check")]
-    [InlineData("virtual")]
     public async Task FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(string kind)
     {
         var suffix = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
@@ -2101,7 +2100,6 @@ public sealed class DamengReverseEngineeringFunctionalTests
             created.Add(safe);
             var extra = kind switch
             {
-                "virtual" => "CALC AS (N + 1)",
                 "check_not_null" => $"CONSTRAINT \"{constraint}\" CHECK (N IS NOT NULL)",
                 _ => $"CONSTRAINT \"{constraint}\" CHECK (N > 0)"
             };
@@ -2115,7 +2113,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             var factory = CreateFactory();
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(
                 connection, new DatabaseModelFactoryOptions(tables: [table])));
-            Assert.Contains(kind == "virtual" ? "virtual computed column" : "CHECK constraint", error.Message, StringComparison.Ordinal);
+            Assert.Contains("CHECK constraint", error.Message, StringComparison.Ordinal);
             var selected = Assert.Single(factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [safe])).Tables);
             Assert.Equal(safe, selected.Name);
@@ -2518,7 +2516,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             await ExecuteAsync(
                 setup,
-                $"CREATE TABLE \"{parentTable}\" (\"ID\" INT PRIMARY KEY, \"CODE\" INT UNIQUE, \"NAME\" NVARCHAR2(20))");
+                $"CREATE TABLE \"{parentTable}\" (\"ID\" INT PRIMARY KEY, \"CODE\" INT NOT NULL UNIQUE, \"NAME\" NVARCHAR2(20))");
             parentCreated = true;
             await ExecuteAsync(
                 setup,
