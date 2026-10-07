@@ -86,13 +86,16 @@ public sealed class DamengNumericAggregateFunctionalTests
     }
 
     [DamengFact]
-    public async Task DateStringGroupingFailsBeforeCommandExecution()
+    public async Task DateStringGroupingExecutesWithoutChangingGranularity()
     {
         await using var store = await AggregateStore.CreateAsync(false);
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            NumericAggregateQueryCases.Query(store.Context.Rows, "DateString").ToListAsync());
-        Assert.Contains("DateTime.ToString", error.Message, StringComparison.Ordinal);
-        Assert.Empty(store.Commands);
+        var actual = await NumericAggregateQueryCases.Query(store.Context.Rows, "DateString").ToListAsync();
+        var expected = NumericAggregateQueryCases.Query(store.Seed.AsQueryable(), "DateString").ToList();
+        Assert.Equal(Normalize(expected), Normalize(actual));
+        var sql = Assert.Single(store.Commands);
+        Assert.Contains("VARCHAR(100)", sql, StringComparison.Ordinal);
+        Assert.Contains("GROUP BY", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("TRUNC(", sql, StringComparison.Ordinal);
     }
 
     [DamengFact]

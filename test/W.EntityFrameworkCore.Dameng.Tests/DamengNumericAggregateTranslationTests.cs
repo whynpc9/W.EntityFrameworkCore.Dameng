@@ -38,12 +38,13 @@ public sealed class DamengNumericAggregateTranslationTests
     }
 
     [Fact]
-    public void DateStringGroupingRejectsUntranslatedDateConversion()
+    public void DateStringGroupingUsesBoundedServerConversion()
     {
         using var context = CreateContext();
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            NumericAggregateQueryCases.Query(context.Rows, "DateString").ToQueryString());
-        Assert.Contains("DateTime.ToString", error.Message, StringComparison.Ordinal);
+        var sql = NumericAggregateQueryCases.Query(context.Rows, "DateString").ToQueryString();
+        Assert.Contains("VARCHAR(100)", sql, StringComparison.Ordinal);
+        Assert.Contains("GROUP BY", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("TRUNC(", sql, StringComparison.Ordinal);
     }
 
     [Fact]
