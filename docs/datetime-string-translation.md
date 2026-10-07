@@ -99,3 +99,13 @@ scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTime
 Convert、ConvertChecked、TypeAs 到 object 的日期调用，直接 nullable 调用保持空串回退。
 该修复的全单元 737/737、日期真实库 9/9 和完整格式验证通过；新提交的完整验收另外执行，
 不能沿用 c9f7df0 的完整状态。
+
+提交 8803805 的统一 test all 完成：单元 737/737、真实库功能 292/292、规范冒烟 4/4、
+管理员脚本 7/7，全部 Completed、无失败或跳过；证据目录为
+`artifacts/query-translation/local-test/20261007T214005130Z-a33697fc/`。
+
+第二轮审查进一步发现 object 类型条件表达式和空值合并可隐藏装箱。守卫现改为原始接收者类型
+白名单，只允许 DateTime / DateTime? 进入 object.ToString 的服务器日期转换路径。
+条件表达式、同列/两个独立查询源的 Coalesce 已补齐回归，直接 nullable 条件调用仍可执行。
+修复版全单元 738/738、日期真实库 10/10、两源补强的聚焦回归及完整格式验证通过。
+最新提交的完整验收独立执行，不继承 8803805 的完整检查状态。
