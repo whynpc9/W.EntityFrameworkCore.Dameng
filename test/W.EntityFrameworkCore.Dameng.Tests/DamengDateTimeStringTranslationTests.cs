@@ -55,6 +55,25 @@ public sealed class DamengDateTimeStringTranslationTests
             .Where(r => (r.At as object)!.ToString() == "").ToQueryString());
     }
 
+    [Fact]
+    public void ObjectValuedConditionalAndCoalesceCannotHideDateTimeBoxing()
+    {
+        using var context = CreateContext();
+        Assert.Throws<InvalidOperationException>(() => context.Rows
+            .GroupBy(r => (r.Id > 0 ? (object?)r.At : (object?)r.At)!.ToString())
+            .Select(g => g.Count()).ToQueryString());
+        Assert.Throws<InvalidOperationException>(() => context.Rows
+            .Where(r => ((object?)r.At ?? (object?)r.At)!.ToString() == "").ToQueryString());
+        var twoSources = from left in context.Rows
+                         from right in context.Rows
+                         where ((object?)left.At ?? (object?)right.At)!.ToString() == ""
+                         select left.Id;
+        Assert.Throws<InvalidOperationException>(() => twoSources.ToQueryString());
+        var directNullable = context.Rows.GroupBy(r => r.Id > 0 ? r.At : null)
+            .Select(g => g.Key.ToString()).ToQueryString();
+        Assert.Contains("COALESCE(CAST(", directNullable, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("yyyy", "YYYY")]
     [InlineData("yyyy-MM", "YYYY-MM")]

@@ -11,22 +11,17 @@ internal sealed class DamengSqlTranslatingExpressionVisitor(
 {
     protected override Expression VisitMethodCall(MethodCallExpression methodCallExpression)
     {
-        // Relational translation removes boxing conversions before method translators
-        // receive their SQL operand. Preserve the distinction from Nullable<T>.ToString:
-        // boxing null and calling object.ToString throws instead of returning empty text.
+        // Preserve the original CLR receiver type before SQL translation erases
+        // object-valued branches and boxing. Only native temporal receivers have
+        // the documented DateTime/Nullable<DateTime> text conversion semantics.
+        var receiverType = methodCallExpression.Object?.Type;
         if (methodCallExpression.Method.DeclaringType == typeof(object)
             && methodCallExpression.Method.Name == nameof(object.ToString)
             && methodCallExpression.Arguments.Count == 0
-            && methodCallExpression.Object is UnaryExpression
-            {
-                NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked or ExpressionType.TypeAs,
-                Type: var targetType,
-                Operand: var operand
-            }
-            && targetType == typeof(object)
-            && (Nullable.GetUnderlyingType(operand.Type) ?? operand.Type) == typeof(DateTime))
+            && receiverType != typeof(DateTime)
+            && receiverType != typeof(DateTime?))
         {
-            AddTranslationErrorDetails("Dameng does not translate boxed DateTime.ToString calls.");
+            AddTranslationErrorDetails("Dameng does not translate boxed DateTime.ToString or object-valued ToString calls.");
             return QueryCompilationContext.NotTranslatedExpression;
         }
 

@@ -88,6 +88,28 @@ public sealed class DamengDateTimeStringFunctionalTests
         AssertExecuted(store, "COALESCE(CAST(");
     }
 
+    [DamengFact]
+    public async Task ObjectValuedExpressionsCannotChangeNullBoxingSemantics()
+    {
+        await using var store = await DateStringStore.CreateAsync();
+        store.Commands.Clear();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.Context.Rows
+            .GroupBy(r => (r.Id > 0 ? (object?)r.OptionalStamp : (object?)r.OptionalStamp)!.ToString())
+            .Select(g => g.Count()).ToListAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.Context.Rows
+            .Where(r => ((object?)r.OptionalStamp ?? (object?)r.OptionalStamp)!.ToString() == "").ToListAsync());
+        var twoSources = from left in store.Context.Rows
+                         from right in store.Context.Rows
+                         where ((object?)left.OptionalStamp ?? (object?)right.OptionalStamp)!.ToString() == ""
+                         select left.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => twoSources.ToListAsync());
+        Assert.Empty(store.Commands);
+        Assert.Equal([6], await store.Context.Rows
+            .Where(r => (r.Id > 0 ? r.OptionalStamp : null).ToString() == "")
+            .Select(r => r.Id).ToListAsync());
+        AssertExecuted(store, "COALESCE(CAST(");
+    }
+
     [DamengTheory]
     [InlineData("yyyy")]
     [InlineData("yyyy-MM")]
