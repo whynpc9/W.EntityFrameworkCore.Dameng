@@ -87,3 +87,14 @@ scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTime
 没有在产品中关闭警告。连接超时另行聚焦复测，不据失败所在套件归因于日期字符串翻译。
 原始失败保留在本地 `artifacts/query-translation/local-test/20261007T203612304Z-a005ccf0/functional.trx`；
 该轮全套回归没有被视为通过。最终主分支基线上的结果另行记录。
+
+## 后续验收记录
+
+提交 c9f7df0 在服务缓存隔离修复后完成统一 test all：单元 736/736、真实库功能 291/291、
+规范冒烟 4/4、管理员脚本 7/7，全部宿主 Completed，失败和跳过均为 0。
+本地证据目录为 `artifacts/query-translation/local-test/20261007T211254437Z-e508db79/`。
+
+随后审查发现装箱 nullable DateTime 调用的语义边界，已在 SQL 表达式访问器中提前拒绝
+Convert、ConvertChecked、TypeAs 到 object 的日期调用，直接 nullable 调用保持空串回退。
+该修复的全单元 737/737、日期真实库 9/9 和完整格式验证通过；新提交的完整验收另外执行，
+不能沿用 c9f7df0 的完整状态。
