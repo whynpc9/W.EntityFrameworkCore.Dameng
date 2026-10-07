@@ -30,12 +30,40 @@ group row by row.Other;
 """
         self.assertEqual(scanner.find_hits(source), {"query_group": [1, 4]})
 
+    def test_group_variables_and_comments_do_not_replace_the_real_clause_line(self):
+        prefixes = [
+            "var group = rows;\n",
+            "foreach (var group in rows)\n{\n",
+            "// group contains the previous result\n",
+            "/* group helper\n   from an earlier query */\n",
+        ]
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                source = prefix + "from row in group\n    group row\n    by row.Name;\n"
+                self.assertEqual(scanner.find_hits(source), {"query_group": [prefix.count("\n") + 2]})
+
+    def test_contextual_keyword_identifiers_remain_valid_group_elements(self):
+        source = """group group
+    by group.Name;
+group row.group
+    by row.by;
+group by by by.Name;
+"""
+        self.assertEqual(scanner.find_hits(source), {"query_group": [1, 3, 5]})
+
+    def test_nested_queries_and_literal_keywords_keep_each_real_clause(self):
+        source = '''group new { Text = "group x by fake", Rows = (
+    from nested in rows group nested by nested.Key) }
+    by /* group comment */ row.Key;
+'''
+        self.assertEqual(scanner.find_hits(source), {"query_group": [1, 2]})
+
     def test_cli_prefilter_finds_files_with_only_multiline_clauses_at_pinned_commit(self):
         with tempfile.TemporaryDirectory(prefix="aggregate-scan-test-") as directory:
             repository = Path(directory)
             subprocess.run(["git", "init", "-q", directory], check=True)
             source = repository / "Query.cs"
-            source.write_text("from row in rows\n    group row\n    by row.Key;\n")
+            source.write_text("var group = rows;\nfrom row in group\n    group row\n    by row.Key;\n")
             method = repository / "Method.cs"
             method.write_text("var result = rows.Sum\n    (row => row.Amount);\n")
             subprocess.run(["git", "-C", directory, "add", "."], check=True)
@@ -44,7 +72,7 @@ group row by row.Other;
             source.write_text("working tree only")
             result = subprocess.check_output(["python3", str(SCRIPT), directory, "--ref", commit], text=True)
             self.assertIn("# commit=" + commit, result)
-            self.assertIn("Query.cs\tquery_group:2", result)
+            self.assertIn("Query.cs\tquery_group:3", result)
             self.assertIn("Method.cs\tSum:1", result)
             self.assertEqual(result, subprocess.check_output(["python3", str(SCRIPT), directory, "--ref", commit], text=True))
 
