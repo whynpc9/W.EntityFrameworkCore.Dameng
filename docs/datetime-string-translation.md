@@ -47,7 +47,9 @@ DateTime 经值转换器存成 ticks 或文本时，不应用原生日期函数�
 ## 服务器证据
 
 使用已有持久测试用户验证原生转换以及 EF 查询。
-参考环境为 DM8；单一实例不能建立所有达梦版本或兼容模式的最低支持保证。
+2026-10-08 的只读 info 返回 DM Database Server 64 V8 / DM Database Server x64 V8、
+PAGE=32768、COMPATIBLE_MODE=0、LENGTH_IN_CHAR=0、GLOBAL_CHARSET=1、CALC_AS_DECIMAL=0。
+单一实例不能建立所有达梦版本或兼容模式的最低支持保证。
 SQL 能力依据[达梦官方函数手册](https://eco.dameng.com/document/dm/zh-cn/pm/function.html)
 中的 CAST 与 TO_CHAR 语义，支持声明以真实回归为准。
 
@@ -74,3 +76,12 @@ scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTime
 ```
 
 探针执行通过只表明测量已完成，不代表所有候选都支持。最终验收结果另行记录。
+
+## 验证过程中的失败与修复
+
+在同步主分支前的完整回归中，单元 721/721、功能 285/287、规范冒烟 4/4、管理员脚本 7/7。
+功能失败包括一项既有字符串聚合连接超时（6001），以及新增数值聚合夹具越过内部服务容器缓存
+数量阈值后引发的 LOB 用例 ManyServiceProvidersCreatedWarning。新增夹具现关闭内部服务容器缓存，
+没有在产品中关闭警告。连接超时另行聚焦复测，不据失败所在套件归因于日期字符串翻译。
+原始失败保留在本地 `artifacts/query-translation/local-test/20261007T203612304Z-a005ccf0/functional.trx`；
+该轮全套回归没有被视为通过。最终主分支基线上的结果另行记录。

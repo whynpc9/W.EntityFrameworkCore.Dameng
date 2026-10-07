@@ -205,6 +205,7 @@ public sealed class DamengNumericAggregateFunctionalTests
                 store.Context = new NumericAggregateContext(new DbContextOptionsBuilder<NumericAggregateContext>()
                     .UseDameng(store._connectionString)
                     .ReplaceService<IModelCacheKeyFactory, NumericAggregateModelCacheKeyFactory>()
+                    .EnableServiceProviderCaching(false)
                     .AddInterceptors(new CommandCapture(store.Commands)).Options, store._tableName);
                 store.Seed = empty ? [] : NumericAggregateQueryCases.Rows();
                 store.Context.Rows.AddRange(store.Seed);
