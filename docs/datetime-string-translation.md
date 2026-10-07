@@ -5,7 +5,15 @@
 本提供程序将无参数 `DateTime.ToString()` 翻译为达梦的
 `CAST(value AS VARCHAR(100))`，输出采用**服务器默认日期时间文本**。
 不按客户端 `CurrentCulture` 格式化，不承诺与 CLR 上的无参数 ToString 文本相同。
-实际格式由服务器设置和原始 SQL 类型决定。
+实际格式由服务器设置和原始 SQL 类型决定。该契约由维护者明确选定：无参数服务器
+转换不会因无法复现客户端文化格式而被拒绝。它与 EF 提供程序常见的原生文本转换策略一致，
+例如[SQL Server 官方函数映射](https://learn.microsoft.com/en-us/ef/core/providers/sql-server/functions#conversion-functions)
+将 DateTime.ToString 映射为 CONVERT(varchar(100), value)。
+
+比较对象必须符合所选契约：`column.ToString()` 在 SQL 中采用服务器文本，而先在 CLR 上
+对 DateTime 执行无参数 ToString 得到的字符串仍采用客户端文化。两者直接比较可能不匹配；
+需要时间相等语义时直接比较日期字段，或使用受支持的明确格式。默认文本的排序和 Parse
+也不能被当成日期排序或客户端文化往返保证。
 
 `Nullable<DateTime>.ToString()` 在转换外加 `COALESCE(..., '')`，NULL 返回空串；
 `nullable.Value.ToString()` 继续采用 SQL NULL 传播，不人为改为空串。

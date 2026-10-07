@@ -110,6 +110,45 @@ public sealed class DamengDateTimeStringFunctionalTests
         AssertExecuted(store, "COALESCE(CAST(");
     }
 
+    [DamengFact]
+    public async Task DefaultServerTextDoesNotFollowClientCulture()
+    {
+        await using var store = await DateStringStore.CreateAsync();
+        var oracle = await store.NativeTextAsync();
+        var savedCulture = CultureInfo.CurrentCulture;
+        var savedUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            foreach (var name in new[] { "en-US", "zh-CN", "tr-TR" })
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(name);
+                CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(name);
+                store.Commands.Clear();
+                var actual = await store.Context.Rows.OrderBy(r => r.Id).Select(r => r.Stamp.ToString()).ToListAsync();
+                Assert.Equal(oracle.Select(r => r.Stamp), actual);
+                AssertExecuted(store, "VARCHAR(100)");
+                Assert.NotEqual(DateStringStore.Seed()[2].Stamp.ToString(), actual[2]);
+
+                store.Commands.Clear();
+                var key = oracle[2].Stamp;
+                Assert.Equal([3], await store.Context.Rows.Where(r => r.Stamp.ToString() == key)
+                    .Select(r => r.Id).ToListAsync());
+                AssertExecuted(store, "VARCHAR(100)", "WHERE");
+
+                store.Commands.Clear();
+                var groups = await store.Context.Rows.GroupBy(r => r.Stamp.ToString())
+                    .Select(g => new TextCount { Key = g.Key, Count = g.Count() }).ToListAsync();
+                AssertCounts(oracle.Select(r => r.Stamp), groups);
+                AssertExecuted(store, "VARCHAR(100)", "GROUP BY");
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = savedCulture;
+            CultureInfo.CurrentUICulture = savedUiCulture;
+        }
+    }
+
     [DamengTheory]
     [InlineData("yyyy")]
     [InlineData("yyyy-MM")]
