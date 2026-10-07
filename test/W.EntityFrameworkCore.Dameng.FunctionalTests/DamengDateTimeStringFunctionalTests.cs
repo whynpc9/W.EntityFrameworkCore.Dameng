@@ -70,6 +70,24 @@ public sealed class DamengDateTimeStringFunctionalTests
         AssertExecuted(store, "COALESCE(CAST(", "GROUP BY");
     }
 
+    [DamengFact]
+    public async Task BoxedNullableDateTimeFailsBeforeSqlWhileDirectNullableStillWorks()
+    {
+        await using var store = await DateStringStore.CreateAsync();
+        store.Commands.Clear();
+        var groupError = await Assert.ThrowsAsync<InvalidOperationException>(() => store.Context.Rows
+            .GroupBy(r => ((object?)r.OptionalStamp)!.ToString()).Select(g => g.Count()).ToListAsync());
+        var filterError = await Assert.ThrowsAsync<InvalidOperationException>(() => store.Context.Rows
+            .Where(r => ((object?)r.OptionalStamp)!.ToString() == "").ToListAsync());
+        Assert.Contains("boxed DateTime.ToString", groupError.Message, StringComparison.Ordinal);
+        Assert.Contains("boxed DateTime.ToString", filterError.Message, StringComparison.Ordinal);
+        Assert.Empty(store.Commands);
+
+        Assert.Equal([6], await store.Context.Rows.Where(r => r.OptionalStamp.ToString() == "")
+            .Select(r => r.Id).ToListAsync());
+        AssertExecuted(store, "COALESCE(CAST(");
+    }
+
     [DamengTheory]
     [InlineData("yyyy")]
     [InlineData("yyyy-MM")]

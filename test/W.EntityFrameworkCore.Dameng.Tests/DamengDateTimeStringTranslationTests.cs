@@ -39,6 +39,22 @@ public sealed class DamengDateTimeStringTranslationTests
         Assert.DoesNotContain("CLOB", sql, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BoxedNullableDateTimeDoesNotAcquireEmptyStringSemantics()
+    {
+        using var context = CreateContext();
+        DateTime? empty = null;
+        Assert.Throws<NullReferenceException>(() => ((object?)empty)!.ToString());
+        var groupError = Assert.Throws<InvalidOperationException>(() => context.Rows
+            .GroupBy(r => ((object?)r.At)!.ToString()).Select(g => g.Count()).ToQueryString());
+        var filterError = Assert.Throws<InvalidOperationException>(() => context.Rows
+            .Where(r => ((object?)r.At)!.ToString() == "").ToQueryString());
+        Assert.Contains("boxed DateTime.ToString", groupError.Message, StringComparison.Ordinal);
+        Assert.Contains("boxed DateTime.ToString", filterError.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() => context.Rows
+            .Where(r => (r.At as object)!.ToString() == "").ToQueryString());
+    }
+
     [Theory]
     [InlineData("yyyy", "YYYY")]
     [InlineData("yyyy-MM", "YYYY-MM")]
