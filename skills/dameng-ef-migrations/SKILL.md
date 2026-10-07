@@ -29,7 +29,18 @@ metadata:
 
 三条脚本都不会让 DDL 变成事务。`CREATE` / `ALTER` / `DROP` 会隐式提交。失败后按对象名清理，不要指望 `ROLLBACK` 收回已执行的 DDL。
 
-`dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。选中表/视图的列必须可由注册的提供程序类型映射源按存储类型映射，否则点名对象、列和类型并明确拒绝，避免脚手架静默丢列。HUGE 等非普通原生表类型、LONG ROW 表（SYSOBJECTS.INFO3 位 50）、全局临时表、分区表与选中表上的表达式/函数索引、位图等专用索引、表/视图触发器（含禁用）、用户 CHECK、AUTO_INCREMENT、虚拟计算列、DEFAULT ON NULL、ON UPDATE、禁用或延迟/未验证主键/唯一/外键、独立用户聚集索引和聚集唯一约束在反向工程时明确拒绝；这不影响显式模型生成 CHECK 或虚拟列迁移 DDL。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
+`dotnet ef dbcontext scaffold` 已实现：注册 `IDatabaseModelFactory`，反向工程当前模式的表、视图、列、默认值、注释、主键、唯一约束、索引（含升降序）与外键。只扫 `SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 判定的当前模式。选中表/视图的列必须可由注册的提供程序类型映射源按存储类型映射，否则点名对象、列和类型并明确拒绝，避免脚手架静默丢列。HUGE 等非普通原生表类型、LONG ROW 表（SYSOBJECTS.INFO3 位 50）、全局临时表、分区表与选中表上的表达式/函数索引、位图等专用索引、表/视图触发器（含禁用）、用户 CHECK、AUTO_INCREMENT、DEFAULT ON NULL、ON UPDATE、禁用或延迟/未验证主键/唯一/外键、独立用户聚集索引和聚集唯一约束在反向工程时明确拒绝；这不影响显式模型生成 CHECK 或虚拟列迁移 DDL。命令行回归使用 `artifacts/dotnet-ef-tool` 下与锁定 EF Core 版本匹配的 dotnet-ef 本地工具，并在 `dotnet test` 宿主内以显式 `dotnet restore` + `dotnet build` + `--no-build` 驱动（ef 的进程内构建在测试宿主下不可靠）。
+
+虚拟计算列由 SYSCOLINFOS.INFO1 位 0 识别，并从 SYSCOLUMNS.DEFVAL 保留表达式到
+ComputedColumnSql；设置 IsStored=false、ValueGenerated.OnAddOrUpdate，不作为插入默认值。
+表达式缺失、虚拟列参与主键或被选中外键引用为候选键时明确拒绝。表达式中的外部函数依赖
+由目标环境提供。源表/重建表及 CLI 生成代码重新编译后的模型行为已有真实回归。
+
+显式 --table 请求必须全部命中当前模式的表或视图，未命中逐项点名拒绝，不返回部分模型。
+选中外键的主体列若可空，明确拒绝，避免 EF 候选键改变可空性；未被选中关系引用的
+可空唯一列继续支持。主键、唯一约束、索引和外键缺失列元数据时同样拒绝。
+最多 128 个表名以参数下推到目录查询；更大选择回退完整扫描及内存过滤，序列不受此筛选限制。
+IDENTITY 先确认原生类型，再每批最多 64 张表读取分面，不再逐表发出 IDENT_SEED/IDENT_INCR 查询；不能对 AUTO_INCREMENT 调用这些 IDENTITY 函数。
 
 物化视图预建表（SYSOBJECTS.INFO3 位 57）不能按普通表重建，选中时明确拒绝；表过滤可排除此类表。
 

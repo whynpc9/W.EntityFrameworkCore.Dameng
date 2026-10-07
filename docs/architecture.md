@@ -85,7 +85,7 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 使用已转义的动态 SQL，并以 DIsql `/` 终止块；执行前要去掉 `/`，并把每个 `BEGIN ... END;` 作为一条命令
 （块可以嵌套：历史记录守卫内的 `EnsureSchema` 守卫块是一个整体命令）。它们不会使达梦 DDL 具备事务性。
 给人看的 `dotnet ef` 步骤见 [迁移操作说明](migrations.md)；代理执行细节见 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。
-反向工程覆盖当前模式的表、视图、列、默认值、注释、约束、索引与外键，见[兼容性矩阵](compatibility.md)。
+反向工程覆盖当前模式的表、视图、列、默认值、虚拟计算列、注释、约束、索引与外键，见[兼容性矩阵](compatibility.md)。
 
 ## ADO.NET 边界
 

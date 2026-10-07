@@ -19,4 +19,7 @@
   <ItemGroup>
     <Compile Include="../Shared/QueryTranslationCases.cs" Link="QueryTranslationCases.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/NumericAggregateQueryCases.cs" Link="NumericAggregateQueryCases.cs" />
+  </ItemGroup>
 </Project>

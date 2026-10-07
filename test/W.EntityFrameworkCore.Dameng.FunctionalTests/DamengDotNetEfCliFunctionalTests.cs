@@ -37,6 +37,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         var sequenceName = $"EF10_CLISQ_{suffix}";
         var standaloneSequenceName = $"EF10_CLISO_{suffix}";
         var historyTableName = $"EF10_CLIH_{suffix}";
+        var principalTableName = $"EF10_CLIP_{suffix}";
+        var dependentTableName = $"EF10_CLIC_{suffix}";
+        var viewName = $"EF10_CLIV_{suffix}";
 
         var repoRoot = FindRepositoryRoot();
         var (efCoreVersion, dmProviderVersion) = ResolveLockedPackageVersions(repoRoot);
@@ -132,6 +135,14 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 await using var createStandalone = connection.CreateCommand();
                 createStandalone.CommandText = $"CREATE SEQUENCE \"{standaloneSequenceName}\" START WITH 73 INCREMENT BY 5 MINVALUE 1 MAXVALUE 1000 NOCACHE NOORDER";
                 await createStandalone.ExecuteNonQueryAsync();
+                createStandalone.CommandText = $"CREATE TABLE \"{principalTableName}\" (ID INT NOT NULL, TENANT INT NOT NULL, CODE INT NOT NULL, NAME NVARCHAR2(20), CONSTRAINT \"PK_CLIP_{suffix}\" NOT CLUSTER PRIMARY KEY(ID), CONSTRAINT \"UQ_CLIP_{suffix}\" UNIQUE(TENANT,CODE)) STORAGE(CLUSTERBTR, FILLFACTOR 85)";
+                await createStandalone.ExecuteNonQueryAsync();
+                createStandalone.CommandText = $"CREATE TABLE \"{dependentTableName}\" (ID INT NOT NULL, TENANT INT, CODE INT, PARENT_ID INT, CONSTRAINT \"PK_CLIC_{suffix}\" NOT CLUSTER PRIMARY KEY(ID), CONSTRAINT \"FK_CLIC_{suffix}\" FOREIGN KEY(TENANT,CODE) REFERENCES \"{principalTableName}\"(TENANT,CODE) ON DELETE CASCADE, CONSTRAINT \"FK_SELF_{suffix}\" FOREIGN KEY(PARENT_ID) REFERENCES \"{dependentTableName}\"(ID)) STORAGE(CLUSTERBTR)";
+                await createStandalone.ExecuteNonQueryAsync();
+                createStandalone.CommandText = $"CREATE VIEW \"{viewName}\" AS SELECT ID,CODE FROM \"{principalTableName}\"";
+                await createStandalone.ExecuteNonQueryAsync();
+                createStandalone.CommandText = $"ALTER TABLE \"{tableName}\" ADD COMPUTED_CODE AS (UPPER(CODE))";
+                await createStandalone.ExecuteNonQueryAsync();
                 createStandalone.CommandText = $"ALTER TABLE \"{tableName}\" ADD EXPLICIT_WIDE CHAR(476 CHAR)";
                 await createStandalone.ExecuteNonQueryAsync();
                 Assert.Equal(
@@ -168,6 +179,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                     "W.EntityFrameworkCore.Dameng",
                     "--no-build",
                     "--table", tableName,
+                    "--table", principalTableName,
+                    "--table", dependentTableName,
+                    "--table", viewName,
                     "--context", "ScaffoldedCliContext",
                     "--output-dir", "Scaffolded",
                     "--force"
@@ -214,8 +228,10 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("HasAnnotation(\"Dameng:IndexFillFactor\", 70)", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"CHAR(476 CHAR)\")", scaffoldedContext, StringComparison.Ordinal);
+            WriteScaffoldModelAssertions(projectDirectory, tableName, principalTableName, dependentTableName, viewName);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
                 ["build", "--no-restore", "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false", "--disable-build-servers"]);
+            await RunDotNetAsync(dotnetHost, projectDirectory, connectionString, ["run", "--no-build"]);
             await RunDotNetEfAsync(dotnetEf, projectDirectory, connectionString,
                 ["dbcontext", "script", "--context", "ScaffoldedCliContext", "--no-build", "--output", "scaffolded-create.sql"]);
             Assert.Contains("NOT CLUSTER PRIMARY KEY", File.ReadAllText(Path.Combine(projectDirectory, "scaffolded-create.sql")), StringComparison.Ordinal);
@@ -231,7 +247,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             var scaffoldedEntity = File.ReadAllText(
                 Assert.Single(
                     Directory.GetFiles(Path.Combine(projectDirectory, "Scaffolded"), "*.cs"),
-                    path => !path.EndsWith("ScaffoldedCliContext.cs", StringComparison.Ordinal)));
+                    path => !path.EndsWith("ScaffoldedCliContext.cs", StringComparison.Ordinal)
+                        && File.ReadAllText(path).Contains("public long Id", StringComparison.Ordinal)));
             Assert.Contains("public long Id", scaffoldedEntity, StringComparison.Ordinal);
             Assert.Contains("public string Code", scaffoldedEntity, StringComparison.Ordinal);
             Assert.Contains("public decimal Amount", scaffoldedEntity, StringComparison.Ordinal);
@@ -242,6 +259,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             await using (var connection = new DmConnection(connectionString))
             {
                 await connection.OpenAsync();
+                await DropIfExistsAsync(connection, "USER_VIEWS", "VIEW_NAME", viewName);
+                await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", dependentTableName);
+                await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", principalTableName);
                 await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", tableName);
                 await DropIfExistsAsync(connection, "USER_TABLES", "TABLE_NAME", historyTableName);
                 await DropIfExistsAsync(connection, "USER_SEQUENCES", "SEQUENCE_NAME", sequenceName);
@@ -251,6 +271,47 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             TryDeleteDirectory(projectDirectory);
         }
     }
+
+    private static void WriteScaffoldModelAssertions(string directory, string table, string principal, string dependent, string view)
+        => File.WriteAllText(Path.Combine(directory, "Program.cs"), $$"""
+            using Microsoft.EntityFrameworkCore;
+            using Microsoft.EntityFrameworkCore.Infrastructure;
+            using Microsoft.EntityFrameworkCore.Metadata;
+            using CliRoundtrip.Scaffolded;
+
+            using var context = new ScaffoldedCliContext();
+            var model = context.GetService<IDesignTimeModel>().Model;
+            var source = model.GetEntityTypes().Single(entity => entity.GetTableName() == "{{table}}");
+            var parent = model.GetEntityTypes().Single(entity => entity.GetTableName() == "{{principal}}");
+            var child = model.GetEntityTypes().Single(entity => entity.GetTableName() == "{{dependent}}");
+            var projection = model.GetEntityTypes().Single(entity => entity.GetViewName() == "{{view}}");
+            void Require(bool condition, string message)
+            {
+                if (!condition) throw new InvalidOperationException(message);
+            }
+            Require(!parent.FindProperty("Code")!.IsNullable, "Principal nullability changed.");
+            Require(parent.FindProperty("Name")!.IsNullable, "Nullable text changed.");
+            Require(child.FindProperty("Code")!.IsNullable, "Dependent nullability changed.");
+            var composite = child.GetForeignKeys().Single(key => key.PrincipalEntityType == parent);
+            Require(composite.Properties.Select(property => property.Name).SequenceEqual(new[] { "Tenant", "Code" }), "Dependent column order changed.");
+            Require(composite.PrincipalKey.Properties.Select(property => property.Name).SequenceEqual(new[] { "Tenant", "Code" }), "Principal column order changed.");
+            Require(composite.DeleteBehavior == DeleteBehavior.Cascade, "Delete action changed.");
+            Require(child.GetForeignKeys().Count(key => key.PrincipalEntityType == child) == 1, "Self reference lost.");
+            Require(projection.FindPrimaryKey() is null, "View must remain keyless.");
+            Require((bool?)source.FindPrimaryKey()!["Dameng:IsClustered"] == false, "Clustering annotation lost.");
+            Require((bool?)source["Dameng:IsClusterBtree"] == true, "Storage annotation lost.");
+            Require((int?)source["Dameng:TableFillFactor"] == 85, "Table fill factor lost.");
+            Require(source.GetIndexes().Any(index => (int?)index["Dameng:IndexFillFactor"] == 70), "Index fill factor lost.");
+            Require((long?)source.FindProperty("Id")!["Dameng:IdentitySeed"] == 5L, "Identity seed lost.");
+            Require((int?)source.FindProperty("Id")!["Dameng:IdentityIncrement"] == 2, "Identity increment lost.");
+            var computed = source.GetProperties().Single(property => property.GetColumnName() == "COMPUTED_CODE");
+            Require(computed.GetComputedColumnSql()!.Contains("UPPER", StringComparison.Ordinal), "Computed expression lost.");
+            Require(computed.GetDefaultValueSql() is null, "Computed expression became an insert default.");
+            Require(computed.GetIsStored() == false, "Virtual computed column became stored.");
+            Require(computed.ValueGenerated == ValueGenerated.OnAddOrUpdate, "Computed generation behavior changed.");
+            Require(source.FindProperty("Note")!.GetColumnType() == "VARCHAR2(40 BYTE)", "Byte length semantics changed.");
+            Console.WriteLine("Scaffolded model assertions passed.");
+            """);
 
     // A project reference would drag the repository's lock-file props into the temp project
     // graph and break NuGet asset resolution; reference the built provider assembly instead.
@@ -615,7 +676,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             }
         }
 
-        var objectType = catalogView.Contains("SEQUENCE", StringComparison.Ordinal) ? "SEQUENCE" : "TABLE";
+        var objectType = catalogView.Contains("SEQUENCE", StringComparison.Ordinal) ? "SEQUENCE"
+            : catalogView.Contains("VIEW", StringComparison.Ordinal) ? "VIEW" : "TABLE";
         await using var drop = connection.CreateCommand();
         drop.CommandText = $"DROP {objectType} \"{objectName}\"";
         await drop.ExecuteNonQueryAsync();
