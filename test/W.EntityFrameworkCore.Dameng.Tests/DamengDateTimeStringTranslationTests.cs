@@ -105,6 +105,25 @@ public sealed class DamengDateTimeStringTranslationTests
     }
 
     [Fact]
+    public void EnumToStringStillUsesTheExistingRelationalTranslator()
+    {
+        using var context = new EnumContext(new DbContextOptionsBuilder<EnumContext>()
+            .UseDameng("Server=localhost;User=TEST;Password=unused").Options);
+        var numberSql = context.Rows.Where(r => r.Status.ToString() == "Complete").ToQueryString();
+        var textSql = context.Rows.Where(r => r.TextStatus.ToString() == "Complete").ToQueryString();
+        var nullableSql = context.Rows.Where(r => r.OptionalStatus.ToString() == "Complete").ToQueryString();
+        var nullableTextSql = context.Rows.Where(r => r.OptionalTextStatus.ToString() == "Complete").ToQueryString();
+        Assert.Contains("CASE", numberSql, StringComparison.Ordinal);
+        Assert.Contains("Complete", numberSql, StringComparison.Ordinal);
+        Assert.Contains("TextStatus", textSql, StringComparison.Ordinal);
+        Assert.Contains("CASE", nullableSql, StringComparison.Ordinal);
+        Assert.Contains("OptionalTextStatus", nullableTextSql, StringComparison.Ordinal);
+        var groupError = Assert.Throws<InvalidOperationException>(() => context.Rows
+            .GroupBy(r => r.OptionalTextStatus.ToString()).Select(g => g.Count()).ToQueryString());
+        Assert.Contains("LOB", groupError.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnsupportedFormatsCultureAndRuntimeFormatsRemainExplicitTranslationBoundaries()
     {
         using var context = CreateContext();
@@ -124,6 +143,27 @@ public sealed class DamengDateTimeStringTranslationTests
         var call = System.Linq.Expressions.Expression.Call(value, nameof(DateTime.ToString), Type.EmptyTypes,
             System.Linq.Expressions.Expression.Constant(format));
         return System.Linq.Expressions.Expression.Lambda<Func<NumericAggregateRow, string>>(call, row);
+    }
+
+    private enum EnumStatus { Pending, Complete }
+
+    private sealed class EnumRow
+    {
+        public int Id { get; set; }
+        public EnumStatus Status { get; set; }
+        public EnumStatus TextStatus { get; set; }
+        public EnumStatus? OptionalStatus { get; set; }
+        public EnumStatus? OptionalTextStatus { get; set; }
+    }
+
+    private sealed class EnumContext(DbContextOptions<EnumContext> options) : DbContext(options)
+    {
+        public DbSet<EnumRow> Rows => Set<EnumRow>();
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<EnumRow>().Property(r => r.TextStatus).HasConversion<string>().HasMaxLength(16);
+            modelBuilder.Entity<EnumRow>().Property(r => r.OptionalTextStatus).HasConversion<string>().HasMaxLength(16);
+        }
     }
 
     private sealed class ConvertedRow

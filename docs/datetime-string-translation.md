@@ -46,9 +46,10 @@ query.GroupBy(x => x.Timestamp.ToString())
 显式格式仅支持上表中的**常量格式字符串**，按服务器公历和数字字段格式化，不读取客户端文化或日历设置。
 格式参数、来自列的动态格式、其他自定义/标准格式、`IFormatProvider` 重载以及
 `DateTimeOffset`、`DateOnly`、`TimeOnly` 的 ToString 不在本轮支持范围内。
-原始接收者类型不是 DateTime/DateTime? 的 object.ToString 不提供服务器翻译，
+日期转换不为引用类型接收者（例如 object、ValueType、接口）的 object.ToString 提供服务器翻译，
 包含装箱、object 类型条件表达式、空值合并等形式；特别是 nullable 装箱后为 null 时，
 CLR 的 object.ToString 调用会抛异常，不能被当成 Nullable<DateTime>.ToString 的空串回退。
+原生枚举等值类型接收者继续交给既有关系方法翻译器，此守卫不替换其已有支持范围。
 例如 `O` 包含 DateTimeKind/时区语义，不能据日期列的格式化函数猜测实现。
 DateTime 经值转换器存成 ticks 或文本时，不应用原生日期函数或把 ticks 当日期字符串。
 
