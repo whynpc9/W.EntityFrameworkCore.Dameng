@@ -45,6 +45,11 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 - 达梦公共模型 API 必须带有提供程序前缀（`UseDameng...`、`GetDameng...`、
   `SetDameng...`），以确保多提供程序使用方可以正常编译。
 - 明确拒绝不支持或会造成信息损失的结构；不得生成其他数据库的语法，也不得静默截断值。
+- 日期字符串转换采用明确的服务器契约：SQL 中无参数 `DateTime.ToString()` 使用达梦默认
+  日期时间文本，不复现客户端 `CurrentCulture`。这是维护者选定的映射语义，不因文化格式
+  差异撤回该重载。投影、谓词、排序和分组采用同一转换；不得为 `GroupBy` 推断或补做
+  业务时间粒度截断。CLR 上的格式化、比较和解析不受该 SQL 契约改变；具体边界见
+  `docs/datetime-string-translation.md`。
 - 达梦 DDL 会隐式提交。生成 DDL 时应正确禁止事务，为测试对象使用唯一名称，并在
   `finally` 中精确清理对象。
 - 驱动程序没有提供程序专用的 `DbBatch`；在真实证据支持其他策略之前，保持单命令修改批次。
