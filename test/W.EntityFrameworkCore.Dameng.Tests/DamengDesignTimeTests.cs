@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using W.EntityFrameworkCore.Dameng.Design.Internal;
+using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
 
@@ -53,7 +54,7 @@ public sealed class DamengDesignTimeTests
     [Fact]
     public void ProviderCodeGeneratorEmitsUseDameng()
     {
-        var generator = new DamengCodeGenerator(new ProviderCodeGeneratorDependencies([]));
+        var generator = new DamengCodeGenerator(new ProviderCodeGeneratorDependencies([]), DamengOfficialDriver.Instance);
 
         var result = generator.GenerateUseProvider(
             "Server=database.example;Port=5236;User Id=app",

@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
 
@@ -3058,7 +3059,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
-        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), context.GetService<DamengDriver>());
     }
 
     private static async Task ExecuteAsync(DbConnection connection, string sql)

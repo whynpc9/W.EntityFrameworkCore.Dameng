@@ -1,12 +1,12 @@
 using System.Data;
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
-internal sealed class DamengStringTypeMapping : StringTypeMapping
+internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriverBoundMapping
 {
     private readonly bool _isLob;
 
@@ -32,14 +32,27 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping
         _isLob = lob;
     }
 
-    private DamengStringTypeMapping(RelationalTypeMappingParameters parameters)
+    private DamengStringTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
         : base(parameters)
     {
         _isLob = IsLobStoreType(parameters.StoreType);
+        Driver = driver;
+    }
+
+    public DamengDriver? Driver { get; }
+
+    public RelationalTypeMapping WithDriver(DamengDriver driver)
+        => driver.Equals(Driver) ? this : new DamengStringTypeMapping(Parameters, driver, _isLob);
+
+    private DamengStringTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver driver, bool isLob)
+        : base(parameters)
+    {
+        _isLob = isLob;
+        Driver = driver;
     }
 
     protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
-        => new DamengStringTypeMapping(parameters);
+        => new DamengStringTypeMapping(parameters, Driver);
 
     protected override void ConfigureParameter(DbParameter parameter)
     {
@@ -48,10 +61,7 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping
         var valueLength = parameter.Value is string value ? value.Length : 0;
         if (_isLob || IsLobStoreType(StoreType))
         {
-            if (parameter is DmParameter dmParameter)
-            {
-                dmParameter.DmSqlType = DmDbType.Clob;
-            }
+            this.RequireDriver().SetParameterType(parameter, DamengParameterType.Clob);
 
             parameter.Size = valueLength > DamengTypeMappingSource.MaxInlineLength
                 ? -1

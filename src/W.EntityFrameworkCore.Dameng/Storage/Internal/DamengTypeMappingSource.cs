@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.Json;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
@@ -60,10 +61,10 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     private static readonly RelationalTypeMapping TimeOnlyStoreType =
         new DamengTimeOnlyTypeMapping("TIME");
     private static readonly RelationalTypeMapping DateTime =
-        new DateTimeTypeMapping("TIMESTAMP(7)", DbType.DateTime2)
+        new DamengDateTimeTypeMapping("TIMESTAMP(7)", DbType.DateTime2)
             .WithPrecisionAndScale(7, scale: null);
     private static readonly RelationalTypeMapping DateTimeStoreType =
-        new DateTimeTypeMapping("TIMESTAMP", DbType.DateTime2);
+        new DamengDateTimeTypeMapping("TIMESTAMP", DbType.DateTime2);
     private static readonly RelationalTypeMapping DateTimeOffset =
         new DamengDateTimeOffsetTypeMapping("DATETIME(7) WITH TIME ZONE")
             .WithPrecisionAndScale(7, scale: null);
@@ -146,7 +147,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ["BLOB"] = [CreateStoreBinary("BLOB", lob: true)],
             ["IMAGE"] = [CreateStoreBinary("IMAGE", lob: true)],
             ["LONGVARBINARY"] = [CreateStoreBinary("LONGVARBINARY", lob: true)],
-            ["DATE"] = [DateOnly, new DateTimeTypeMapping("DATE", DbType.Date)],
+            ["DATE"] = [DateOnly, new DamengDateTimeTypeMapping("DATE", DbType.Date)],
             ["TIME"] = [TimeOnlyStoreType, new TimeSpanTypeMapping("TIME", DbType.Time)],
             ["DATETIME"] = [DateTimeStoreType],
             ["DATETIME2"] = [DateTimeStoreType],
@@ -160,11 +161,15 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ["JSONB"] = [JsonElement, StructuralJson, CreateStoreString("JSONB", unicode: true, lob: true)]
         };
 
+    private readonly DamengDriver _driver;
+
     public DamengTypeMappingSource(
         TypeMappingSourceDependencies dependencies,
-        RelationalTypeMappingSourceDependencies relationalDependencies)
+        RelationalTypeMappingSourceDependencies relationalDependencies,
+        DamengDriver driver)
         : base(dependencies, relationalDependencies)
     {
+        _driver = driver;
     }
 
     public override RelationalTypeMapping? FindMapping(
@@ -191,6 +196,10 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
         var mapping = base.FindMapping(mappingInfo) ?? FindRawMapping(mappingInfo);
+        if (mapping is IDamengDriverBoundMapping driverBoundMapping)
+        {
+            mapping = driverBoundMapping.WithDriver(_driver);
+        }
 
         return mappingInfo.StoreTypeName is null
             ? mapping
@@ -353,7 +362,7 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
 
         if (clrType == typeof(DateTime) && mappingInfo.Precision is int dateTimePrecision)
         {
-            return new DateTimeTypeMapping(
+            return new DamengDateTimeTypeMapping(
                     $"TIMESTAMP({dateTimePrecision})",
                     DbType.DateTime2)
                 .WithPrecisionAndScale(dateTimePrecision, scale: null);

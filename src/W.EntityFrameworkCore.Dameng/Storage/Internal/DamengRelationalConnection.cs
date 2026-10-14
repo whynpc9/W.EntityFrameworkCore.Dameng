@@ -1,16 +1,21 @@
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
 internal sealed class DamengRelationalConnection : RelationalConnection
 {
-    public DamengRelationalConnection(RelationalConnectionDependencies dependencies)
+    private readonly DamengDriver _driver;
+
+    public DamengRelationalConnection(
+        RelationalConnectionDependencies dependencies,
+        DamengDriver driver)
         : base(dependencies)
     {
+        _driver = driver;
     }
 
     protected override DbConnection CreateDbConnection()
-        => new DmConnection(ConnectionString);
+        => _driver.CreateConnection(ConnectionString!);
 }

@@ -2,23 +2,30 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
-internal sealed class DamengTimeOnlyTypeMapping : TimeOnlyTypeMapping
+internal sealed class DamengTimeOnlyTypeMapping : TimeOnlyTypeMapping, IDamengDriverBoundMapping
 {
     public DamengTimeOnlyTypeMapping(string storeType)
         : base(storeType, System.Data.DbType.Time)
     {
     }
 
-    private DamengTimeOnlyTypeMapping(RelationalTypeMappingParameters parameters)
+    private DamengTimeOnlyTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
         : base(parameters)
     {
+        Driver = driver;
     }
 
+    public DamengDriver? Driver { get; }
+
+    public RelationalTypeMapping WithDriver(DamengDriver driver)
+        => driver.Equals(Driver) ? this : new DamengTimeOnlyTypeMapping(Parameters, driver);
+
     protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
-        => new DamengTimeOnlyTypeMapping(parameters);
+        => new DamengTimeOnlyTypeMapping(parameters, Driver);
 
     protected override void ConfigureParameter(DbParameter parameter)
     {
@@ -28,7 +35,9 @@ internal sealed class DamengTimeOnlyTypeMapping : TimeOnlyTypeMapping
         }
 
         base.ConfigureParameter(parameter);
-        parameter.Scale = checked((byte)GetFractionalSecondPrecision());
+        var fractionalSecondPrecision = GetFractionalSecondPrecision();
+        parameter.Scale = checked((byte)fractionalSecondPrecision);
+        this.RequireDriver().ConfigureTemporalParameter(parameter, fractionalSecondPrecision);
     }
 
     protected override string GenerateNonNullSqlLiteral(object value)

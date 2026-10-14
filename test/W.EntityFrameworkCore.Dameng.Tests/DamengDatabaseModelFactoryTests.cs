@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 using Xunit;
@@ -288,7 +289,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), DamengOfficialDriver.Instance);
         var column = new DatabaseColumn { Table = new DatabaseTable { Name = "T" }, Name = "ID", StoreType = storeType };
         if (supported)
         {
@@ -359,7 +360,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), DamengOfficialDriver.Instance);
         var column = new DatabaseColumn { Name = "C", StoreType = storeType };
         factory.ApplyLocalSequenceDefault(column, new DatabaseSequence { Name = "Seq\"X", Schema = "Other.Schema" });
         if (usesStrategy)
@@ -398,7 +399,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), DamengOfficialDriver.Instance);
         var error = Assert.Throws<NotSupportedException>(() => factory.ValidateColumnType("T", "C", storeType));
         Assert.Contains("'T'", error.Message, StringComparison.Ordinal);
         Assert.Contains("'C'", error.Message, StringComparison.Ordinal);
@@ -417,7 +418,7 @@ public sealed class DamengDatabaseModelFactoryTests
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
             .UseDameng("Server=localhost;Port=5236;User=test;Password=test").Options);
-        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), DamengOfficialDriver.Instance);
         factory.ValidateColumnType("T", "C", storeType);
     }
 

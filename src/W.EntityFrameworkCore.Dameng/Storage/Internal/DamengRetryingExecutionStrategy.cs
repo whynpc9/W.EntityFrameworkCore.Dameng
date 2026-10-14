@@ -1,7 +1,8 @@
 using System.Collections.Frozen;
-using Dm;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using W.EntityFrameworkCore.Dameng.Storage.Internal;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
+using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,8 @@ namespace Microsoft.EntityFrameworkCore;
 /// </summary>
 /// <remarks>
 /// The strategy is scoped to a <see cref="DbContext" /> and is not required to be thread-safe.
+/// Constructing it for a context whose Dameng driver does not support automatic replay throws
+/// <see cref="NotSupportedException" />.
 /// </remarks>
 public class DamengRetryingExecutionStrategy : ExecutionStrategy
 {
@@ -60,7 +63,7 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
     /// </summary>
     /// <param name="dependencies">The execution-strategy dependencies.</param>
     /// <param name="errorNumbersToAdd">
-    /// Additional <see cref="DmException.Number" /> values to treat as transient.
+    /// Additional driver error numbers (for the official driver, <c>Dm.DmException.Number</c>) to treat as transient.
     /// </param>
     public DamengRetryingExecutionStrategy(
         ExecutionStrategyDependencies dependencies,
@@ -76,7 +79,7 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
     /// <param name="maxRetryCount">The maximum number of retry attempts.</param>
     /// <param name="maxRetryDelay">The maximum delay between retries.</param>
     /// <param name="errorNumbersToAdd">
-    /// Additional <see cref="DmException.Number" /> values to treat as transient.
+    /// Additional driver error numbers (for the official driver, <c>Dm.DmException.Number</c>) to treat as transient.
     /// </param>
     public DamengRetryingExecutionStrategy(
         DbContext context,
@@ -84,7 +87,10 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
         TimeSpan maxRetryDelay,
         IEnumerable<int>? errorNumbersToAdd)
         : base(context, maxRetryCount, maxRetryDelay)
-        => _additionalErrorNumbers = errorNumbersToAdd?.ToFrozenSet();
+    {
+        _additionalErrorNumbers = errorNumbersToAdd?.ToFrozenSet();
+        Driver = GetSupportedDriver(Dependencies.Options);
+    }
 
     /// <summary>
     /// Initializes a strategy using the supplied retry settings.
@@ -93,7 +99,7 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
     /// <param name="maxRetryCount">The maximum number of retry attempts.</param>
     /// <param name="maxRetryDelay">The maximum delay between retries.</param>
     /// <param name="errorNumbersToAdd">
-    /// Additional <see cref="DmException.Number" /> values to treat as transient.
+    /// Additional driver error numbers (for the official driver, <c>Dm.DmException.Number</c>) to treat as transient.
     /// </param>
     public DamengRetryingExecutionStrategy(
         ExecutionStrategyDependencies dependencies,
@@ -101,7 +107,10 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
         TimeSpan maxRetryDelay,
         IEnumerable<int>? errorNumbersToAdd)
         : base(dependencies, maxRetryCount, maxRetryDelay)
-        => _additionalErrorNumbers = errorNumbersToAdd?.ToFrozenSet();
+    {
+        _additionalErrorNumbers = errorNumbersToAdd?.ToFrozenSet();
+        Driver = GetSupportedDriver(Dependencies.Options);
+    }
 
     /// <summary>
     /// Gets the configured additional transient error numbers.
@@ -109,9 +118,19 @@ public class DamengRetryingExecutionStrategy : ExecutionStrategy
     public virtual IEnumerable<int>? AdditionalErrorNumbers
         => _additionalErrorNumbers;
 
+    private DamengDriver Driver { get; }
+
     /// <inheritdoc />
     protected override bool ShouldRetryOn(Exception exception)
-        => (exception is DmException dmException
-                && _additionalErrorNumbers?.Contains(dmException.Number) == true)
-            || DamengTransientExceptionDetector.ShouldRetryOn(exception);
+        => Driver.ShouldRetryOn(exception, _additionalErrorNumbers);
+
+    private static DamengDriver GetSupportedDriver(IDbContextOptions options)
+    {
+        var driver = options.FindExtension<DamengOptionsExtension>()?.Driver
+            ?? DamengOfficialDriver.Instance;
+
+        return driver.SupportsRetryOnFailure
+            ? driver
+            : throw DamengDriverErrors.RetryNotSupported(driver);
+    }
 }
