@@ -1,7 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
 using System.Linq.Expressions;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -302,7 +301,7 @@ public sealed class DamengDateTimeStringFunctionalTests
                 await command.ExecuteNonQueryAsync();
                 store._created = true;
                 store.Context = new DateStringContext(new DbContextOptionsBuilder<DateStringContext>()
-                    .UseDameng(store._connectionString)
+                    .UseDamengUnderTest(store._connectionString)
                     .ReplaceService<IModelCacheKeyFactory, DateStringModelCacheKeyFactory>()
                     .EnableServiceProviderCaching(false)
                     .AddInterceptors(new CommandCapture(store.Commands)).Options, store._tableName);

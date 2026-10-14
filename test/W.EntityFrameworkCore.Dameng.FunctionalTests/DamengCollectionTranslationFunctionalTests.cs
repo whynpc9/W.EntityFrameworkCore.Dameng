@@ -132,7 +132,7 @@ public sealed class DamengCollectionTranslationFunctionalTests
     private static CollectionContext CreateContext(CommandCounter commands)
     {
         var options = new DbContextOptionsBuilder<CollectionContext>()
-            .UseDameng(DamengTestEnvironment.GetRequiredConnectionString())
+            .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString())
             .AddInterceptors(commands)
             .Options;
         return new CollectionContext(options);

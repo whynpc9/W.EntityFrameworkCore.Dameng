@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -33,7 +32,7 @@ public sealed class DamengEnumToStringFunctionalTests
             }
             var commands = new List<string>();
             await using var context = new EnumContext(new DbContextOptionsBuilder<EnumContext>()
-                .UseDameng(connectionString).EnableServiceProviderCaching(false)
+                .UseDamengUnderTest(connectionString).EnableServiceProviderCaching(false)
                 .ReplaceService<IModelCacheKeyFactory, EnumModelCacheKeyFactory>()
                 .AddInterceptors(new Capture(commands)).Options, table);
             context.Rows.AddRange(

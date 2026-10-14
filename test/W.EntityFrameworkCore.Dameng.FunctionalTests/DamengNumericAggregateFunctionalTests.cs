@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -203,7 +202,7 @@ public sealed class DamengNumericAggregateFunctionalTests
                 await command.ExecuteNonQueryAsync();
                 store._created = true;
                 store.Context = new NumericAggregateContext(new DbContextOptionsBuilder<NumericAggregateContext>()
-                    .UseDameng(store._connectionString)
+                    .UseDamengUnderTest(store._connectionString)
                     .ReplaceService<IModelCacheKeyFactory, NumericAggregateModelCacheKeyFactory>()
                     .EnableServiceProviderCaching(false)
                     .AddInterceptors(new CommandCapture(store.Commands)).Options, store._tableName);

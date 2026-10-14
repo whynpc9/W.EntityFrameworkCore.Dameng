@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 
 namespace Microsoft.EntityFrameworkCore.Infrastructure;
@@ -22,10 +23,12 @@ public sealed class DamengDbContextOptionsBuilder
     /// </summary>
     /// <remarks>
     /// Uses the EF Core defaults of 6 retry attempts and a maximum delay of 30 seconds.
+    /// Only drivers that support automatic replay accept this call; the others throw
+    /// <see cref="NotSupportedException" /> instead of silently running without retries.
     /// </remarks>
     /// <returns>The same builder so additional calls can be chained.</returns>
     public DamengDbContextOptionsBuilder EnableRetryOnFailure()
-        => ExecutionStrategy(dependencies => new DamengRetryingExecutionStrategy(dependencies));
+        => EnableBuiltInRetries(dependencies => new DamengRetryingExecutionStrategy(dependencies));
 
     /// <summary>
     /// Configures the context to retry operations that fail with a transient Dameng error.
@@ -33,14 +36,14 @@ public sealed class DamengDbContextOptionsBuilder
     /// <param name="maxRetryCount">The maximum number of retry attempts.</param>
     /// <returns>The same builder so additional calls can be chained.</returns>
     public DamengDbContextOptionsBuilder EnableRetryOnFailure(int maxRetryCount)
-        => ExecutionStrategy(
+        => EnableBuiltInRetries(
             dependencies => new DamengRetryingExecutionStrategy(dependencies, maxRetryCount));
 
     /// <summary>
     /// Configures the context to retry operations that fail with a transient Dameng error.
     /// </summary>
     /// <param name="errorNumbersToAdd">
-    /// Additional <see cref="Dm.DmException.Number" /> values to treat as transient.
+    /// Additional driver error numbers (for the official driver, <c>Dm.DmException.Number</c>) to treat as transient.
     /// </param>
     /// <returns>The same builder so additional calls can be chained.</returns>
     public DamengDbContextOptionsBuilder EnableRetryOnFailure(ICollection<int> errorNumbersToAdd)
@@ -48,7 +51,7 @@ public sealed class DamengDbContextOptionsBuilder
         ArgumentNullException.ThrowIfNull(errorNumbersToAdd);
         var errorNumbers = errorNumbersToAdd.ToArray();
 
-        return ExecutionStrategy(
+        return EnableBuiltInRetries(
             dependencies => new DamengRetryingExecutionStrategy(dependencies, errorNumbers));
     }
 
@@ -58,7 +61,7 @@ public sealed class DamengDbContextOptionsBuilder
     /// <param name="maxRetryCount">The maximum number of retry attempts.</param>
     /// <param name="maxRetryDelay">The maximum delay between retries.</param>
     /// <param name="errorNumbersToAdd">
-    /// Additional <see cref="Dm.DmException.Number" /> values to treat as transient.
+    /// Additional driver error numbers (for the official driver, <c>Dm.DmException.Number</c>) to treat as transient.
     /// </param>
     /// <returns>The same builder so additional calls can be chained.</returns>
     public DamengDbContextOptionsBuilder EnableRetryOnFailure(
@@ -68,11 +71,20 @@ public sealed class DamengDbContextOptionsBuilder
     {
         var errorNumbers = errorNumbersToAdd?.ToArray();
 
-        return ExecutionStrategy(
+        return EnableBuiltInRetries(
             dependencies => new DamengRetryingExecutionStrategy(
                 dependencies,
                 maxRetryCount,
                 maxRetryDelay,
                 errorNumbers));
+    }
+
+    // Records the request on the options so a later driver selection or Validate can still
+    // reject it when retries were configured before the driver was chosen.
+    private DamengDbContextOptionsBuilder EnableBuiltInRetries(
+        Func<ExecutionStrategyDependencies, IExecutionStrategy> getExecutionStrategy)
+    {
+        WithOption(extension => extension.WithRetryOnFailureRequested());
+        return ExecutionStrategy(getExecutionStrategy);
     }
 }

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore.Design;
-using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.Extensions.DependencyInjection;
-using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
+using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 
 [assembly: DesignTimeProviderServices(
     "W.EntityFrameworkCore.Dameng.Design.Internal.DamengDesignTimeServices")]
@@ -9,21 +9,12 @@ using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
 namespace W.EntityFrameworkCore.Dameng.Design.Internal;
 
 /// <summary>
-/// Registers the services used by Entity Framework Core tools for the Dameng provider.
+/// Registers the services used by Entity Framework Core tools for the Dameng provider with the
+/// official <c>DM.DmProvider</c> driver.
 /// </summary>
 public sealed class DamengDesignTimeServices : IDesignTimeServices
 {
     /// <inheritdoc />
     public void ConfigureDesignTimeServices(IServiceCollection serviceCollection)
-    {
-        ArgumentNullException.ThrowIfNull(serviceCollection);
-
-        serviceCollection.AddEntityFrameworkDameng();
-
-        new EntityFrameworkRelationalDesignServicesBuilder(serviceCollection)
-            .TryAdd<IAnnotationCodeGenerator, DamengAnnotationCodeGenerator>()
-            .TryAdd<IProviderConfigurationCodeGenerator, DamengCodeGenerator>()
-            .TryAdd<IDatabaseModelFactory, DamengDatabaseModelFactory>()
-            .TryAddCoreServices();
-    }
+        => DamengDriverConfiguration.AddDesignTimeServices(serviceCollection, DamengOfficialDriver.Instance);
 }

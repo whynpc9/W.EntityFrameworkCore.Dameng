@@ -2,7 +2,6 @@ using System.Data.Common;
 using System.Globalization;
 using System.Diagnostics;
 using Xunit.Abstractions;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -11,6 +10,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Storage;
 using W.EntityFrameworkCore.Dameng.Scaffolding.Internal;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 using Xunit;
 
 #pragma warning disable EF1001 // Tests exercise the provider's reverse-engineering contracts.
@@ -111,7 +111,7 @@ public sealed class DamengReverseEngineeringCompletenessTests(ITestOutputHelper 
                 Assert.Equal(ValueGenerated.OnAddOrUpdate, column.ValueGenerated);
             }
             Assert.NotNull(Assert.Single(table.Columns, column => column.Name == "n.lower").DefaultValueSql);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var operation = new CreateTableOperation { Name = copy };
             foreach (var annotation in table.GetAnnotations()) operation[annotation.Name] = annotation.Value;
             foreach (var column in table.Columns)
@@ -190,7 +190,7 @@ public sealed class DamengReverseEngineeringCompletenessTests(ITestOutputHelper 
                 await ExecuteAsync(connection, $"CREATE TABLE \"{name}\" (ID BIGINT IDENTITY({index + 7},3) NOT NULL, A INT, B NVARCHAR2(20), C INT, CONSTRAINT \"PK_{name}\" NOT CLUSTER PRIMARY KEY(ID)) STORAGE(CLUSTERBTR)");
                 created.Add(name);
             }
-            var factory = CreateFactory();
+            var factory = CreateFactory(recordCatalog: true);
             using var recorder = new CatalogQueryRecorder(connection);
             var timer = Stopwatch.StartNew();
             var full = factory.Create(recorder, new DatabaseModelFactoryOptions());
@@ -243,10 +243,12 @@ public sealed class DamengReverseEngineeringCompletenessTests(ITestOutputHelper 
         return rows;
     }
 
-    private static DamengDatabaseModelFactory CreateFactory()
+    private static DamengDatabaseModelFactory CreateFactory(bool recordCatalog = false)
     {
-        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
-        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>());
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        var driver = context.GetService<DamengDriver>();
+        return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(),
+            recordCatalog ? new CatalogQueryRecorder.RecordingDriver(driver) : driver);
     }
 
     private static async Task ExecuteAsync(DbConnection connection, string sql)

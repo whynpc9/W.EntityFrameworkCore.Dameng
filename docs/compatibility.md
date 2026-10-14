@@ -52,7 +52,7 @@
 | 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
 | 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`）；自动推导按最小受支持页的保守 1900 字节预算，即 `n × 4 ≤ 1900`（475 字符）；变长超出转 CLOB，定长推导模型/无显式类型迁移拒绝，不会自动转换成二进制。显式存储类型仍按声明保留，由使用方核对实例页大小与整行预算。参考实例（页 32768、UTF-8）验证 2/3/475 字符 CHAR 语义与 476/1000 字符 CLOB 的 EF 往返；本轮未运行 4 KB/8 KB 实例，新预算依据官方最小页容量保守选取；页大小探针仅记录探索结果，遇到 SQL 错误不会失败，不能作为容量边界验收。建表接受不等于能存满。键/索引字符串默认长度统一为 450 个字符（最坏 1800 字节），在文档表最小 4 KB 页的列上限（1900 字节）内。`NVARCHAR2(n)` 已是字符语义，保持不变 |
 | `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；已有往返样本通过提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较及 `Year`/`Month`/`Day`/`Hour`/`Minute`/`Second` 六个本地日期部件已验证，部件按列上保存的原偏移提取。`Offset`、`UtcDateTime`、`DateTime`、`Now`/`UtcNow` 和 `Add*` 仍不翻译；映射精度声明不构成第七位小数保真保证 |
-| `TimeSpan` | 真实环境已验证 | `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留映射的天/小数秒精度，并拒绝造成信息损失的 tick |
+| `TimeSpan` | 真实环境已验证 | 默认 `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留天/小数秒精度，并拒绝造成信息损失的 tick。2026-10-14 两种驱动验证显式 `TIME` / `TIME(0/3/6)` 的写入、读取及参数比较：通过 TimeOnly 转换器读写，只接受一天内非负时刻，负值和大于等于一天的值明确拒绝；小数秒不可精确表示时拒绝参数与字面量。裸 TIME 为零位，默认 TimeOnly 仍为 TIME(6) |
 | 二进制与 LOB 映射 | 真实环境已验证 / 查询语义部分支持 | `VARBINARY`、40 KiB `BLOB` 和 40 KiB Unicode `NCLOB` 往返。通过 `TEXT_EQUAL`/`BLOB_EQUAL` 进行参数相等比较，以及通过 NCLOB `INSTR` 搜索，均已在参考服务器执行；排序、分组、distinct 和 distinct 集合操作会提前失败。字符串搜索函数仍受 `CLOB_MAX_CALC_LEN` 约束。键/索引需要有界行内类型，可用行内长度由页面/行配置决定 |
 | JSON 存储 | 部分支持 / 查询不支持 | 保留原有 `JsonElement` 的 JSON 往返测试范围。2026-09-29 新实例探针中，原生 JSON 列的补充平面 Unicode 原文回读已失真，不能扩大为完整 Unicode 保证；JSON_VALUE 还将 JSON 空字符串读为 SQL null，数值返回可隐式舍入/转换。因未满足无损契约，本轮未发布 JSON 标量 API；`GetProperty` 仍不翻译。整值 Equals 仍生成列比较并被参考服务器以数据类型不匹配拒绝 |
 | 无符号整数与分面边界 | 单元级已验证 | 保持范围的转换器和存储映射已有覆盖；尚未将广泛的真实服务器边界数据作为发布声明 |
@@ -120,6 +120,36 @@
 - Release 构建、Release 单元 682/682、格式验证和候选包检查通过。
 - 当前实例参数、失败历史、修复及最终证据路径见[0.3.0 发布准备](release-0.3.0.md)。
   此处记录本地候选验收，不表示版本已发布。
+
+## W.DamengProvider 驱动（开发候选）
+
+扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.1.0-preview.1]`
+（身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
+未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
+证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
+完整记录见 [W 接入验证记录](w-dmprovider-validation.md)；独立复审完成前不作为已发布能力。
+
+| 领域 | W 状态 | 范围与边界 |
+| --- | --- | --- |
+| 配置 | 单元级已验证 | 六个 `UseDamengWithWDriver` 重载、`AddEntityFrameworkDamengWithWDriver`；同一 options 混用两种驱动、手工服务与 options 驱动不符、同一服务集合注册两种驱动均明确失败 |
+| 共享功能套件 | 真实环境已验证 | 合并 main 并修复 PR #7 后，官方 300 项功能在 W 下全部通过；W 功能通道共 351 项，另有 4 项规范冒烟、7 项管理员迁移脚本全部通过；按驱动区分的断言与最新运行 ID 见验证记录 |
+| 异步与取消 | 真实环境已验证 | 查询与 `SaveChangesAsync` 在服务器未完成时返回；预取消不发送；运行中取消保留原 token 并关闭会话，EF 下一次操作用新会话；`CommandTimeout` 报客户端期限（`TotalDeadline`）。LOB 同步 getter 不在此结论内 |
+| 自动重试 | 明确拒绝 | `EnableRetryOnFailure` 全部重载及直接构造 `DamengRetryingExecutionStrategy` 抛 `Dameng:RetryNotSupportedForWDriver`；默认策略执行一次；自定义 `ExecutionStrategy` 由应用负责 |
+| 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。commit 失 ACK 与发送后断线的端到端注入 pending |
+| 错误后的会话 | 真实环境已验证（8.1.5.60） | 唯一键、外键、NOT NULL、触发器 RAISE、序列耗尽、未绑定标记 -6804 在 sync/async × 自动提交/事务下保留同一会话且事务不被暗中结束；准备阶段失败（语法错误）使会话 Broken，EF 重新打开 |
+| 事务内匿名块 | W 拒绝 | W 在本地事务内发送前拒绝 `BEGIN … END;`，会话与事务仍可用；事务外正常。迁移中的块由提供程序抑制事务，不受影响 |
+| 隔离级别 | 真实环境已验证（8.1.5.60） | RU / Serializable 下跟踪式 `SaveChanges` 成功（官方驱动失败）；RepeatableRead/Snapshot 仍拒绝；其他 profile 的发送前拒绝 pending |
+| 保存点 | 真实环境已验证 | EF 自动保存点在 `SaveChanges` 失败后回滚并继续事务；显式保存点可用 |
+| 时间精度 | 真实环境已验证（8.1.5.60） | 默认 `TIMESTAMP(7)` / `DATETIME(7) WITH TIME ZONE` 逐 tick 往返（含 Min/Max 边界、原偏移、相邻 tick 参数比较）；时间参数只用 `Scale`；六位列写入非整微秒值在发送前拒绝；8/9 位列禁止写入（含 NULL），读取非整 100ns 值拒绝；TIME/INTERVAL 最多六位；显式裸 TIME 为零位，TIME(0/3/6) 的 TimeSpan 转换与 TimeOnly 路径均有回归 |
+| 原始 ADO 读取 | 行为差异 | 带时区列 `GetValue` 返回 `DateTimeOffset`（官方为 `DateTime`）；EF 物化对 DateTimeOffset/INTERVAL 使用 typed getter |
+| 迁移与切换 | 真实环境已验证 | 6→7 位保值；7→6 位需先运行守卫（见[迁移说明](migrations.md)）；同一历史表可在官方与 W 之间交替应用/回滚迁移；比较 `ActiveProvider` 的迁移须同时接受两个提供程序名称；两驱动的模型互相 diff 无操作 |
+| 设计时 | 真实环境已验证 | `dotnet ef migrations add/script`、`database update`、`dbcontext scaffold`（提供程序名 `W.EntityFrameworkCore.Dameng.WDriver`）与生成代码编译；嵌套项目加载的 W DLL 与 manifest 一致 |
+| 诊断 | 真实环境已验证 | ActivitySource/Meter 名称 `W.DmProvider`；活动中不含 SQL、参数值、连接串或凭据；LogFragment/DebugInfo 带 `Driver=W` |
+| 数据源、流式 LOB、DmDecimal | 未接入 | M2/M3 范围，不能据驱动能力推断 EF 支持 |
+
+连接入口的兼容性变化（两种驱动）：`UseDameng(DbConnection)` 现在只接受官方 `Dm.DmConnection`，
+`UseDamengWithWDriver(DbConnection)` 只接受 `W.Dm.DmConnection`；包装连接（如 profiler）会被拒绝，
+因为提供程序专用参数类型无法穿过包装设置。
 
 ## 2026-10-07 反向工程补足
 

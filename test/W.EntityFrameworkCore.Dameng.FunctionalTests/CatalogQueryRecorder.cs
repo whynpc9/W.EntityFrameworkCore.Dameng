@@ -1,12 +1,30 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
 // Records catalog commands without changing the driver's reader or connection lifetime.
 internal sealed class CatalogQueryRecorder(DbConnection inner) : DbConnection
 {
+    private DbConnection InnerConnection => inner;
+
+    // Only catalog instrumentation accepts this exact wrapper. Production drivers retain
+    // their foreign/wrapped connection guard, and parameters still come from the real driver.
+    internal sealed class RecordingDriver(DamengDriver driver) : DamengDriver
+    {
+        public override string Name => driver.Name + "CatalogRecorder";
+        public override string ProviderName => driver.ProviderName;
+        public override MethodInfo UseProviderMethod => driver.UseProviderMethod;
+        public override DbConnection CreateConnection(string connectionString) => driver.CreateConnection(connectionString);
+        public override bool IsDriverConnection(DbConnection connection)
+            => connection is CatalogQueryRecorder recorder && driver.IsDriverConnection(recorder.InnerConnection);
+        public override void SetParameterType(DbParameter parameter, DamengParameterType type)
+            => driver.SetParameterType(parameter, type);
+    }
+
     internal sealed record Query(string Sql, (string Name, object Value)[] Parameters, bool ReturnsRows);
     public List<Query> Queries { get; } = [];
     [AllowNull]

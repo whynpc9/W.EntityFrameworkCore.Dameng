@@ -1,7 +1,9 @@
 # W.EntityFrameworkCore.Dameng
 
 这是一个独立维护的非官方达梦数据库 Entity Framework Core 10 关系数据库提供程序。
-它使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖任何具体应用框架。
+默认使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖任何具体应用框架。可选的扩展包
+`W.EntityFrameworkCore.Dameng.WDriver`（开发候选）让同一提供程序运行在
+[`W.DamengProvider`](https://github.com/whynpc9/W.DamengProvider) 驱动上，见下文“使用 W.DamengProvider 驱动”。
 
 当前预览版基线面向：
 
@@ -68,6 +70,27 @@ modelBuilder.Entity<AuditEvent>()
     .UseDamengSequence("AuditEventIds");
 ```
 
+### 使用 W.DamengProvider 驱动（开发候选）
+
+引用 `W.EntityFrameworkCore.Dameng.WDriver`（精确依赖同版本的基础包和
+`W.DamengProvider 0.1.0-preview.1`），改用 `UseDamengWithWDriver`：
+
+```csharp
+services.AddDbContext<AppDbContext>(options =>
+    options.UseDamengWithWDriver(
+        "Server=...;Port=5236;User=...;Password=...;transport_security=RequireTls",
+        dameng => dameng.CommandTimeout(30)));
+```
+
+- 连接字符串使用 W 自己的键；W 默认要求 TLS，明文服务器必须显式写 `transport_security=PlaintextAllowed`。
+- SQL、模型、迁移与反向工程与官方驱动共用；`Database.ProviderName` 为
+  `W.EntityFrameworkCore.Dameng.WDriver`，`dotnet ef dbcontext scaffold` 使用该名称并生成 `UseDamengWithWDriver`。
+- `EnableRetryOnFailure` 在 W 下抛 `NotSupportedException`：W 会报告命令或提交结果未知，
+  不提供自动重放；需要时在独立连接上核对最终状态后再由业务决定。
+- 每个 `DbContextOptions` 只能选择一种驱动；同一进程可以同时有官方与 W 两类上下文。
+- 与官方驱动的行为差异（真正的异步网络调用与取消、七位小数秒、RU/Serializable 跟踪保存、
+  错误后的会话保留、事务内拒绝匿名块等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动开发候选)。
+
 ## 构建与测试
 
 ```bash
@@ -103,9 +126,10 @@ scripts/local-test/run.sh test all
 - 无界 `string` 和 `byte[]` 属性分别映射为 `NCLOB` 和 `BLOB`。
   键、索引、排序/分组以及其他需要普通可比较行内值的操作必须配置有限最大长度。
   实际可用的行内值和索引长度还取决于数据库页面及行存储配置。
-- 当前驱动程序没有提供程序专用的 `DbBatch`；EF 修改命令会有意以单命令批次执行。
-- 在已测试的资产中，驱动程序的异步 ADO.NET 方法会回退到同步实现，因此 EF 异步
-  API 并不意味着非阻塞网络 I/O 或及时取消。
+- 两种驱动都没有提供程序专用的 `DbBatch`；EF 修改命令会有意以单命令批次执行。
+- 官方驱动在已测试资产中的异步 ADO.NET 方法回退到同步实现，因此 EF 异步 API
+  并不意味着非阻塞网络 I/O 或及时取消。W 驱动的打开/执行/读取/事务异步路径已在实库验证为非阻塞，
+  发送后取消会关闭会话；LOB 同步 getter 仍可能发起同步 I/O。
 - `CommandTimeout(...)` 以秒为单位配置 `DbCommand.CommandTimeout`。
   本项目不对驱动程序连接字符串的超时关键字或单位作任何断言；连接建立相关配置只能
   依据已安装驱动程序对应版本的文档。

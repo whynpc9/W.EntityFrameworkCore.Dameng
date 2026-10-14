@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -28,12 +27,49 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
             static (expected, actual) => Assert.Equal(expected, actual));
 
     [DamengFact]
+    public Task ExplicitBareTimeOnlyColumnRoundtripsWholeSeconds()
+        => WithValueAsync(
+            "TIME",
+            new TimeOnly(13, 14, 15),
+            static property => property.HasColumnType("TIME"),
+            static (expected, actual) => Assert.Equal(expected, actual));
+
+    [DamengFact]
     public Task DateTimeRoundtripsTheSeventhFractionalSecondDigit()
         => WithValueAsync(
             "TIMESTAMP(7)",
             new DateTime(2026, 7, 23, 14, 15, 16)
                 .AddTicks(1),
             static (expected, actual) => Assert.Equal(expected, actual));
+
+    [DamengTheory]
+    [InlineData("TIME", 0)]
+    [InlineData("TIME(0)", 0)]
+    [InlineData("TIME(3)", 1_230_000)]
+    [InlineData("TIME(6)", 1_234_560)]
+    public Task TimeSpanTimeColumnSupportsWritesAndParameterizedComparisons(string storeType, long fractionalTicks)
+        => ExtendedTypeStore.WithTableAsync(
+            storeType,
+            async store =>
+            {
+                var options = CreateExtendedOptions<TimeSpan>(store);
+                var expected = new TimeSpan(13, 14, 15).Add(TimeSpan.FromTicks(fractionalTicks));
+                await using (var context = new ExtendedTypeContext<TimeSpan>(options, store.TableName,
+                    property => property.HasColumnType(storeType)))
+                {
+                    context.Entities.Add(new ExtendedTypeEntity<TimeSpan> { Value = expected });
+                    await context.SaveChangesAsync();
+                }
+
+                await using (var context = new ExtendedTypeContext<TimeSpan>(options, store.TableName,
+                    property => property.HasColumnType(storeType)))
+                {
+                    var actual = await context.Entities.AsNoTracking()
+                        .Where(entity => entity.Value == expected)
+                        .Select(entity => entity.Value).SingleAsync();
+                    Assert.Equal(expected, actual);
+                }
+            });
 
     [DamengFact]
     public Task DateTimeOffsetRoundtripsThroughDatetimeWithTimeZone()
@@ -51,7 +87,7 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
             {
                 var options = new DbContextOptionsBuilder<
                         ExtendedTypeContext<DateTimeOffset>>()
-                    .UseDameng(store.ConnectionString)
+                    .UseDamengUnderTest(store.ConnectionString)
                     .ReplaceService<
                         IModelCacheKeyFactory,
                         ExtendedTypeModelCacheKeyFactory>()
@@ -98,7 +134,16 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
                 Assert.True(await reader.ReadAsync());
 
                 var raw = reader.GetValue(0);
+#if WDRIVER
+                // W returns the zoned value as DateTimeOffset (ticks and offset intact); the
+                // official driver returns its local clock fields as an unspecified DateTime.
+                var rawOffset = Assert.IsType<DateTimeOffset>(raw);
+                Assert.Equal(expected, rawOffset);
+                Assert.Equal(expected.Offset, rawOffset.Offset);
+                var rawDateTime = rawOffset.DateTime;
+#else
                 var rawDateTime = Assert.IsType<DateTime>(raw);
+#endif
                 var providerSpecificValue = reader.GetProviderSpecificValue(0);
                 var directText = reader.GetString(0);
                 var text = reader.GetString(1);
@@ -186,7 +231,7 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
             async store =>
             {
                 var options = new DbContextOptionsBuilder<ExtendedTypeContext<TimeSpan>>()
-                    .UseDameng(store.ConnectionString)
+                    .UseDamengUnderTest(store.ConnectionString)
                     .ReplaceService<
                         IModelCacheKeyFactory,
                         ExtendedTypeModelCacheKeyFactory>()
@@ -424,7 +469,7 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
     private static DbContextOptions<ExtendedTypeContext<T>> CreateExtendedOptions<T>(
         ExtendedTypeStore store)
         => new DbContextOptionsBuilder<ExtendedTypeContext<T>>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, ExtendedTypeModelCacheKeyFactory>()
             .EnableDetailedErrors()
             .Options;
@@ -445,7 +490,7 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
             async store =>
             {
                 var options = new DbContextOptionsBuilder<ExtendedTypeContext<T>>()
-                    .UseDameng(store.ConnectionString)
+                    .UseDamengUnderTest(store.ConnectionString)
                     .ReplaceService<IModelCacheKeyFactory, ExtendedTypeModelCacheKeyFactory>()
                     .EnableDetailedErrors()
                     .Options;

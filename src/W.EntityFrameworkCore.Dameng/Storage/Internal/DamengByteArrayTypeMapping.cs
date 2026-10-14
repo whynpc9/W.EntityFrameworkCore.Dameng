@@ -1,11 +1,11 @@
 using System.Data;
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
-internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping
+internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDamengDriverBoundMapping
 {
     private readonly bool _isLob;
 
@@ -27,14 +27,27 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping
         _isLob = lob;
     }
 
-    private DamengByteArrayTypeMapping(RelationalTypeMappingParameters parameters)
+    private DamengByteArrayTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
         : base(parameters)
     {
         _isLob = IsLobStoreType(parameters.StoreType);
+        Driver = driver;
     }
 
+    private DamengByteArrayTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver driver, bool isLob)
+        : base(parameters)
+    {
+        _isLob = isLob;
+        Driver = driver;
+    }
+
+    public DamengDriver? Driver { get; }
+
+    public RelationalTypeMapping WithDriver(DamengDriver driver)
+        => driver.Equals(Driver) ? this : new DamengByteArrayTypeMapping(Parameters, driver, _isLob);
+
     protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
-        => new DamengByteArrayTypeMapping(parameters);
+        => new DamengByteArrayTypeMapping(parameters, Driver);
 
     protected override string GenerateNonNullSqlLiteral(object value)
         => "0x" + Convert.ToHexString((byte[])value);
@@ -44,12 +57,11 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping
         base.ConfigureParameter(parameter);
 
         var valueLength = parameter.Value is byte[] value ? value.Length : 0;
-        if (parameter is DmParameter dmParameter)
-        {
-            dmParameter.DmSqlType = _isLob || IsLobStoreType(StoreType)
-                ? DmDbType.Blob
-                : IsFixedLength ? DmDbType.Binary : DmDbType.VarBinary;
-        }
+        this.RequireDriver().SetParameterType(
+            parameter,
+            _isLob || IsLobStoreType(StoreType)
+                ? DamengParameterType.Blob
+                : IsFixedLength ? DamengParameterType.Binary : DamengParameterType.VarBinary);
 
         if (_isLob || IsLobStoreType(StoreType))
         {

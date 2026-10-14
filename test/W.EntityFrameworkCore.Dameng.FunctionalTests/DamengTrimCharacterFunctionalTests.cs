@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -265,7 +264,7 @@ public sealed class DamengTrimCharacterFunctionalTests
     private static TrimContext CreateContext(TrimStore store, CommandCaptureInterceptor commands)
     {
         var options = new DbContextOptionsBuilder<TrimContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, TrimModelCacheKeyFactory>()
             .AddInterceptors(commands)
             .EnableDetailedErrors()

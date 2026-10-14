@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -167,7 +166,7 @@ public sealed class DamengDateTimeOffsetMemberFunctionalTests
     private static OffsetContext CreateContext(OffsetStore store, CommandCaptureInterceptor capture)
     {
         var options = new DbContextOptionsBuilder<OffsetContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, OffsetModelCacheKeyFactory>()
             .AddInterceptors(capture)
             .Options;

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Runs the four-test specification smoke slice against W.DamengProvider (linked sources, WDRIVER). -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <PreserveCompilationContext>true</PreserveCompilationContext>
+    <RootNamespace>W.EntityFrameworkCore.Dameng.Specification.Tests</RootNamespace>
+    <DefineConstants>$(DefineConstants);WDRIVER</DefineConstants>
+    <SharedSpecificationTests>../W.EntityFrameworkCore.Dameng.Specification.Tests</SharedSpecificationTests>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/W.EntityFrameworkCore.Dameng.WDriver/W.EntityFrameworkCore.Dameng.WDriver.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(SharedSpecificationTests)/**/*.cs"
+             Exclude="$(SharedSpecificationTests)/bin/**;$(SharedSpecificationTests)/obj/**"
+             LinkBase="Shared" />
+    <Compile Include="../W.EntityFrameworkCore.Dameng.FunctionalTests/DamengTestDriver.cs" Link="DamengTestDriver.cs" />
+  </ItemGroup>
+</Project>

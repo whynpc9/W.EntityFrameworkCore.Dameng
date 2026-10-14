@@ -2,13 +2,14 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.EntityFrameworkCore.Scaffolding.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
+using W.EntityFrameworkCore.Dameng.Infrastructure.Internal;
 using W.EntityFrameworkCore.Dameng.Metadata.Internal;
 using W.EntityFrameworkCore.Dameng.Storage.Internal;
 
@@ -23,11 +24,16 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
 {
     private readonly IRelationalTypeMappingSource _typeMappingSource;
     private readonly ISqlGenerationHelper _sqlGenerationHelper;
+    private readonly DamengDriver _driver;
 
-    public DamengDatabaseModelFactory(IRelationalTypeMappingSource typeMappingSource, ISqlGenerationHelper sqlGenerationHelper)
+    public DamengDatabaseModelFactory(
+        IRelationalTypeMappingSource typeMappingSource,
+        ISqlGenerationHelper sqlGenerationHelper,
+        DamengDriver driver)
     {
         _typeMappingSource = typeMappingSource;
         _sqlGenerationHelper = sqlGenerationHelper;
+        _driver = driver;
     }
 
     private static readonly Regex NextValDefaultPattern = new(
@@ -46,7 +52,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         ArgumentNullException.ThrowIfNull(connectionString);
 
-        using var connection = new DmConnection(connectionString);
+        using var connection = _driver.CreateConnection(connectionString);
         return Create(connection, options);
     }
 
@@ -56,6 +62,11 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(options);
+
+        if (!_driver.IsDriverConnection(connection))
+        {
+            throw DamengDriverErrors.ForeignConnection(_driver, connection);
+        }
 
         var databaseModel = new DatabaseModel();
 

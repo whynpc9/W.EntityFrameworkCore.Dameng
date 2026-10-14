@@ -1,5 +1,4 @@
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit;
@@ -70,7 +69,7 @@ public sealed class DamengLobQueryFunctionalTests
         ICollection<string> commandLog)
     {
         var options = new DbContextOptionsBuilder<LobQueryContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, LobQueryModelCacheKeyFactory>()
             .LogTo(commandLog.Add)
             .EnableDetailedErrors()

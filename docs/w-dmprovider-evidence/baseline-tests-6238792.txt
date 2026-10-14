@@ -1,0 +1,934 @@
+# 基线测试清单：本仓库 6238792，官方驱动，本地 8.1.5.60/UTF-8
+# 格式：<通道>	<结果>	<测试名>；由 scripts/local-test/run.sh test all 的 TRX 生成
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: False, operation: "Add")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: False, operation: "Concat2")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: False, operation: "Concat3")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: False, operation: "Concat4")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: True, operation: "Add")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: True, operation: "Concat2")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: True, operation: "Concat3")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: False, useRelationalNulls: True, operation: "Concat4")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: False, operation: "Add")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: False, operation: "Concat2")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: False, operation: "Concat3")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: False, operation: "Concat4")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: True, operation: "Add")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: True, operation: "Concat2")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: True, operation: "Concat3")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.FixedStringConcatenationRunsInServerFilterAndProjection(lob: True, useRelationalNulls: True, operation: "Concat4")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.IsNullOrEmptyIsTranslatedInFilterAndProjection(lob: False, useRelationalNulls: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.IsNullOrEmptyIsTranslatedInFilterAndProjection(lob: False, useRelationalNulls: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.IsNullOrEmptyIsTranslatedInFilterAndProjection(lob: True, useRelationalNulls: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengBasicStringTranslationTests.IsNullOrEmptyIsTranslatedInFilterAndProjection(lob: True, useRelationalNulls: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ConstantCollectionGeneratesServerPredicate
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.NullableContainsAndNegationGenerateNullCompensation
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 1000)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 2000)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 499)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 500)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 501)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 998)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.ParameterCollectionGeneratesDamengSql(size: 999)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengCollectionTranslationTests.TwoCollectionsFilterAndPaginationGenerateOneComposedQuery
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.AutoIncrementAndUnknownTypesCannotBecomeIdentity(low: 0, high: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.AutoIncrementAndUnknownTypesCannotBecomeIdentity(low: 1, high: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.AutoIncrementAndUnknownTypesCannotBecomeIdentity(low: 2, high: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.AutoIncrementAndUnknownTypesCannotBecomeIdentity(low: 3, high: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "BIGINT", dataLength: 8, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "BIGINT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "BINARY", dataLength: 4, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "BINARY(4)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "BIT", dataLength: 1, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "BIT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "BLOB", dataLength: 2147483647, dataPrecision: null, dataScale: 0, charLength: null, charUsed: null, expected: "BLOB")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "CHAR", dataLength: 12, dataPrecision: null, dataScale: null, charLength: 3, charUsed: "C", expected: "CHAR(3 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "CHAR", dataLength: 9, dataPrecision: null, dataScale: null, charLength: 9, charUsed: "B", expected: "CHAR(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DATETIME WITH TIME ZONE", dataLength: 11, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "DATETIME(0) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DATETIME WITH TIME ZONE", dataLength: 11, dataPrecision: null, dataScale: 7, charLength: 0, charUsed: null, expected: "DATETIME(7) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DATETIME", dataLength: 8, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "DATETIME(0)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DATETIME", dataLength: 8, dataPrecision: null, dataScale: 6, charLength: 0, charUsed: null, expected: "DATETIME(6)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DATETIME", dataLength: 8, dataPrecision: null, dataScale: 7, charLength: 0, charUsed: null, expected: "DATETIME(7)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DECIMAL", dataLength: 22, dataPrecision: 18, dataScale: 3, charLength: 0, charUsed: null, expected: "DECIMAL(18,3)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "DECIMAL", dataLength: 22, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "DECIMAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "FLOAT", dataLength: 4, dataPrecision: 24, dataScale: null, charLength: 0, charUsed: null, expected: "FLOAT(24)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "FLOAT", dataLength: 8, dataPrecision: 53, dataScale: null, charLength: 0, charUsed: null, expected: "FLOAT(53)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "FLOAT", dataLength: 8, dataPrecision: 7, dataScale: null, charLength: 0, charUsed: null, expected: "FLOAT(7)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "FLOAT", dataLength: 8, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "FLOAT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "INT", dataLength: 4, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "INT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "INTERVAL DAY TO SECOND", dataLength: 24, dataPrecision: 4, dataScale: 3, charLength: 0, charUsed: null, expected: "INTERVAL DAY(4) TO SECOND(3)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "INTERVAL DAY TO SECOND", dataLength: 24, dataPrecision: 9, dataScale: 6, charLength: 0, charUsed: null, expected: "INTERVAL DAY(9) TO SECOND(6)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "INTERVAL YEAR TO MONTH", dataLength: 12, dataPrecision: 3, dataScale: 6, charLength: 0, charUsed: null, expected: "INTERVAL YEAR(3) TO MONTH")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "NCHAR", dataLength: 8, dataPrecision: null, dataScale: null, charLength: 2, charUsed: "C", expected: "NCHAR(2)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "NUMERIC", dataLength: 22, dataPrecision: 9, dataScale: 0, charLength: 0, charUsed: null, expected: "NUMERIC(9,0)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "NVARCHAR2", dataLength: 200, dataPrecision: null, dataScale: null, charLength: 50, charUsed: "C", expected: "NVARCHAR2(50)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TEXT", dataLength: 2147483647, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "TEXT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIME", dataLength: 5, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "TIME(0)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIME", dataLength: 5, dataPrecision: null, dataScale: 3, charLength: 0, charUsed: null, expected: "TIME(3)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIME", dataLength: 5, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "TIME")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH LOCAL TIME ZONE", dataLength: 8, dataPrecision: null, dataScale: 4096, charLength: 0, charUsed: null, expected: "TIMESTAMP(0) WITH LOCAL TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH LOCAL TIME ZONE", dataLength: 8, dataPrecision: null, dataScale: 4099, charLength: 0, charUsed: null, expected: "TIMESTAMP(3) WITH LOCAL TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH LOCAL TIME ZONE", dataLength: 8, dataPrecision: null, dataScale: 4102, charLength: 0, charUsed: null, expected: "TIMESTAMP(6) WITH LOCAL TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH LOCAL TIME ZONE", dataLength: 8, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "TIMESTAMP WITH LOCAL TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH TIME ZONE", dataLength: 10, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "TIMESTAMP(0) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP WITH TIME ZONE", dataLength: 10, dataPrecision: null, dataScale: 6, charLength: 0, charUsed: null, expected: "TIMESTAMP(6) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP", dataLength: 8, dataPrecision: null, dataScale: 0, charLength: 0, charUsed: null, expected: "TIMESTAMP(0)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "TIMESTAMP", dataLength: 8, dataPrecision: null, dataScale: 6, charLength: 0, charUsed: null, expected: "TIMESTAMP(6)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "VARBINARY", dataLength: 16, dataPrecision: null, dataScale: null, charLength: 0, charUsed: null, expected: "VARBINARY(16)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "VARCHAR", dataLength: 30, dataPrecision: null, dataScale: null, charLength: 30, charUsed: "B", expected: "VARCHAR(30 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "VARCHAR", dataLength: 80, dataPrecision: null, dataScale: null, charLength: 20, charUsed: "C", expected: "VARCHAR(20 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "VARCHAR2", dataLength: 80, dataPrecision: null, dataScale: null, charLength: 20, charUsed: "C", expected: "VARCHAR2(20 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildStoreTypeRestoresFacets(dataType: "VARCHAR2", dataLength: 9, dataPrecision: null, dataScale: null, charLength: 9, charUsed: "B", expected: "VARCHAR2(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildTableFilterAcceptsUnqualifiedAndCurrentSchemaEntries
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildTableFilterRejectsEachEntryQualifiedWithAnotherSchema
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.BuildTableFilterReturnsNullWithoutEntries
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "(Seq.NEXTVAL)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "APP.Seq.\"NEXTVAL\" + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "APP.\"NEXTVAL\".NEXTVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "COALESCE(APP.Seq.NEXTVAL, 1)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "OTHER.Seq.NEXTVAL + APP.Seq.NEXTVAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "Seq.CURRVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "Seq.NEXTVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "Seq.\"CURRVAL\" + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CompoundLocalSequenceDefaultsAreRejectedBeforeOmittingTheirDependencies(sql: "\"APP\" /* a */ . \"Seq\" . NEXTVAL * 2")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ConstraintAssociationDoesNotMakeBitmapIndexesSupported
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ConstraintIndexesKeepTheirCatalogRole(type: "NORMAL", constraintType: "F", readColumns: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ConstraintIndexesKeepTheirCatalogRole(type: "NORMAL", constraintType: "P", readColumns: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ConstraintIndexesKeepTheirCatalogRole(type: "NORMAL", constraintType: "U", readColumns: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ConstraintIndexesKeepTheirCatalogRole(type: "VIRTUAL", constraintType: "F", readColumns: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CurrentSchemaForeignKeysCanBePreserved
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.CurrentSchemaNameKeepsCatalogSpelling
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(actions: "  ")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(actions: " C")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(actions: " D")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.DefaultForeignKeyUpdateActionDoesNotDependOnDeleteAction(actions: " N")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.EnabledConstraintStateCanBeScaffolded
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.EncryptedOrUnknownColumnStorageIsRejected(info2: 16384)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.EncryptedOrUnknownColumnStorageIsRejected(info2: 16385)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.EncryptedOrUnknownColumnStorageIsRejected(info2: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ExpressionOrUnknownIndexColumnPositionIsRejected(position: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ExpressionOrUnknownIndexColumnPositionIsRejected(position: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ExpressionOrUnknownIndexColumnPositionIsRejected(position: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ExternalForeignKeysCannotBeReturnedWithoutTheirRelationship(principalSchema: "OTHER")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ExternalForeignKeysCannotBeReturnedWithoutTheirRelationship(principalSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HiddenOrUnknownColumnVisibilityIsRejected(hiddenColumn: "")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HiddenOrUnknownColumnVisibilityIsRejected(hiddenColumn: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HiddenOrUnknownColumnVisibilityIsRejected(hiddenColumn: "YES")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HiddenOrUnknownColumnVisibilityIsRejected(hiddenColumn: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: 19)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: 289)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: 33)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: 39)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: 63)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.HugeOrUnknownNativeTableKindIsRejected(info3: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "BIGINT", supported: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "DECIMAL(18,0)", supported: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "INT", supported: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "INTEGER", supported: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "SMALLINT", supported: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IdentityAnnotationsRequireTheSameClrTypesAsModelFinalization(storeType: "TINYINT", supported: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IncompleteIdentityTypeIsRejected(length: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IncompleteIdentityTypeIsRejected(length: 24)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IncompleteIdentityTypeIsRejected(length: 25)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IncompleteIdentityTypeIsRejected(length: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IndexFillFactorUsesItsOwnLowByte(info1: 256, expected: 100)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IndexFillFactorUsesItsOwnLowByte(info1: 341, expected: 85)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.IndexFillFactorUsesItsOwnLowByte(info1: 356, expected: 100)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.InheritedConstraintFillFactorMustMatchItsTable
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LimitedOrUnknownTableSpaceIsRejected(limitPages: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LimitedOrUnknownTableSpaceIsRejected(limitPages: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LimitedOrUnknownTableSpaceIsRejected(limitPages: 128)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LimitedOrUnknownTableSpaceIsRejected(limitPages: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(storeType: "BIGINT", usesStrategy: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(storeType: "DECIMAL(18,2)", usesStrategy: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(storeType: "INT", usesStrategy: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LocalSequenceDefaultsUseCompatibleStrategiesAndResolvedSchema(storeType: "NUMBER(18,0)", usesStrategy: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LocalSequenceResolutionReusesTheCatalogDefinition
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LongRowFlagIsRejectedEvenForOrdinaryNativeTableKind(info3: 1125899906842624)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.LongRowFlagIsRejectedEvenForOrdinaryNativeTableKind(info3: 1125899906842880)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "BLOB")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "DECIMAL(10,2)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "INT")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "INTERVAL DAY(4) TO SECOND(3)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "TIMESTAMP(0)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "TIMESTAMP(3) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MappedColumnTypesKeepTheProviderMappingContract(storeType: "VARCHAR(20 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MaterializedViewPrebuiltTablesAreRejected(info3: 144115188075855872)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MaterializedViewPrebuiltTablesAreRejected(info3: 144115188075856128)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MissingCurrentSchemaNameIsRejected(schema: "")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MissingCurrentSchemaNameIsRejected(schema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.MissingLocalSequenceMetadataRejectsTheOwningColumn
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeDeleteActionsRetainTheirSupportedMeaning(actions: "  ", expected: NoAction)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeDeleteActionsRetainTheirSupportedMeaning(actions: " C", expected: Cascade)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeDeleteActionsRetainTheirSupportedMeaning(actions: " N", expected: SetNull)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeIdentityTypeIsAcceptedWithoutReadingOtherInfo6Facets
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeTableFillFactorRetainsItsEffectivePercentage(info1: 1426063376, expected: 85)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeTableFillFactorRetainsItsEffectivePercentage(info1: 1428160512, expected: 85)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeTableFillFactorRetainsItsEffectivePercentage(info1: 1679818752, expected: 100)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NativeTableFillFactorRetainsItsEffectivePercentage(info1: 2097152, expected: 100)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NextValQualifierWhitespacePreservesIdentifierSemantics(sql: " app . seq . NEXTVAL ", name: "SEQ", schema: "APP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NextValQualifierWhitespacePreservesIdentifierSemantics(sql: "\"App.Schema\"\t.\t\"Seq Name\"\n . NEXTVAL", name: "Seq Name", schema: "App.Schema")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NextValQualifierWhitespacePreservesIdentifierSemantics(sql: "\"a\"\"b\" . \"s\"\"q\" . NEXTVAL", name: "s\"q", schema: "a\"b")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NextValQualifierWhitespacePreservesIdentifierSemantics(sql: "seq . nextval", name: "SEQ", schema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: 10, ownerInfo3: 589828)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: 4, ownerInfo3: 589828)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: 5, ownerInfo3: 4)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: 9, ownerInfo3: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: null, ownerInfo3: 589828)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownPhysicalIndexTablespaceIsRejected(tablespaceId: null, ownerInfo3: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownTablespacePlacementIsRejected(tablespaceId: 4, ownerInfo3: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownTablespacePlacementIsRejected(tablespaceId: 5, ownerInfo3: 4)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownTablespacePlacementIsRejected(tablespaceId: null, ownerInfo3: 4)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NonDefaultOrUnknownTablespacePlacementIsRejected(tablespaceId: null, ownerInfo3: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NormalizeSchemaIdentifierPreservesDelimitedNames(input: " \"app\" ", expected: "app")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NormalizeSchemaIdentifierPreservesDelimitedNames(input: "\"a\"\"b\"", expected: "a\"b")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.NormalizeSchemaIdentifierPreservesDelimitedNames(input: "app", expected: "APP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OnlyNormalStandaloneIndexesAreReadAsColumnIndexes(type: "CLUSTER", expected: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OnlyNormalStandaloneIndexesAreReadAsColumnIndexes(type: "NORMAL", expected: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryAndIdentityColumnsAreNotMistakenForEncryption(info2: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryAndIdentityColumnsAreNotMistakenForEncryption(info2: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryColumnFlagsDoNotBlockScaffolding(flags: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryColumnFlagsDoNotBlockScaffolding(flags: 2)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryColumnFlagsDoNotBlockScaffolding(flags: 32)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryIndexColumnPositionCanBeScaffolded
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryNativeTableKindIgnoresUnrelatedHigherBits(info3: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryNativeTableKindIgnoresUnrelatedHigherBits(info3: 256)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryNativeTableKindIgnoresUnrelatedHigherBits(info3: 4294967296)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryPrimaryKeysAndNonKeyDefaultsAreAllowed(usesSequence: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.OrdinaryPrimaryKeysAndNonKeyDefaultsAreAllowed(usesSequence: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PartitionedOrUnknownPermanentTableKindIsRejected(marker: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PartitionedOrUnknownPermanentTableKindIsRejected(marker: "YES")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PartitionedOrUnknownPermanentTableKindIsRejected(marker: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PermanentTableKindCanBeScaffolded
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PhysicalIndexesUseDefaultIndexTablespaceIndependentlyOfDataTablespace(tablespaceId: 4, ownerInfo3: 262148)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PhysicalIndexesUseDefaultIndexTablespaceIndependentlyOfDataTablespace(tablespaceId: 4, ownerInfo3: 4)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PhysicalIndexesUseDefaultIndexTablespaceIndependentlyOfDataTablespace(tablespaceId: 9, ownerInfo3: 589828)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PrimaryKeyClusteringIsReadFromTheBackingIndex(indexType: "CLUSTER", expected: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.PrimaryKeyClusteringIsReadFromTheBackingIndex(indexType: "NORMAL", expected: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.ReferencedUniqueColumnsHaveTheSameGeneratedKeyRestriction
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SchemaOwnerDefaultDataTablespaceIgnoresDefaultIndexTablespace(tablespaceId: 4, ownerInfo3: 4)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SchemaOwnerDefaultDataTablespaceIgnoresDefaultIndexTablespace(tablespaceId: 4, ownerInfo3: 589828)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "'O''Brien.Seq.NEXTVAL'")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "'Seq.NEXTVAL + 1'")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "1 -- Seq.NEXTVAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "1 /* Seq.NEXTVAL */")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "CURRENT_TIMESTAMP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "OTHER.Seq.NEXTVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "OTHER.\"NEXTVAL\".NEXTVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SequenceDefaultDetectionIgnoresLiteralsCommentsAndExternalReferences(sql: "pkg.NEXTVAL()")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: "BITMAP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: "FUNCTION-BASED BITMAP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: "FUNCTION-BASED NORMAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: "VIRTUAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SpecializedOrUnknownIndexTypeIsRejected(type: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: " \"app\" . users ", expectedSchema: "app", expectedName: "USERS")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "APP.USERS", expectedSchema: "APP", expectedName: "USERS")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "APP.\"A.B\"", expectedSchema: "APP", expectedName: "A.B")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "USERS", expectedSchema: null, expectedName: "USERS")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "\"A.B\"", expectedSchema: null, expectedName: "A.B")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "\"MY.SCHEMA\".T", expectedSchema: "MY.SCHEMA", expectedName: "T")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "\"MY.SCHEMA\".\"T.U\"", expectedSchema: "MY.SCHEMA", expectedName: "T.U")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "\"WEIRD\"\"NAME\".T", expectedSchema: "WEIRD\"NAME", expectedName: "T")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "app.\"Quoted\"", expectedSchema: "APP", expectedName: "Quoted")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "app.users", expectedSchema: "APP", expectedName: "USERS")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.SplitQualifiedNameParsesIdentifierComponents(entry: "users", expectedSchema: null, expectedName: "USERS")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TemporaryOrUnknownTableKindIsRejected(marker: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TemporaryOrUnknownTableKindIsRejected(marker: "Y")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TemporaryOrUnknownTableKindIsRejected(marker: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "  \"OrderSeq\".NEXTVAL  ", expectedName: "OrderSeq", expectedSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "Order$Seq.NEXTVAL", expectedName: "ORDER$SEQ", expectedSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "OrderSeq.NEXTVAL", expectedName: "ORDERSEQ", expectedSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "\"OrderSeq\".NEXTVAL", expectedName: "OrderSeq", expectedSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "\"Quoted\"\"Seq\".NEXTVAL", expectedName: "Quoted\"Seq", expectedSchema: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "\"sales$\".order#seq.NEXTVAL", expectedName: "ORDER#SEQ", expectedSchema: "sales$")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "\"sales\".\"Order Seq\".NEXTVAL", expectedName: "Order Seq", expectedSchema: "sales")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "sales$.Order#Seq.nextval", expectedName: "ORDER#SEQ", expectedSchema: "SALES$")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultMatchesNextvalDefaults(defaultValueSql: "sales.OrderSeq.nextval", expectedName: "ORDERSEQ", expectedSchema: "SALES")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "'NEW'")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "CURRENT_TIMESTAMP")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "NEXTVAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "OrderSeq.CURRVAL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.TryParseSequenceDefaultRejectsOtherDefaults(defaultValueSql: "OrderSeq.NEXTVAL + 1")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownCharacterUnitIdentifiesTheObjectColumnAndCatalogValue(unit: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownCharacterUnitIdentifiesTheObjectColumnAndCatalogValue(unit: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownIndexFillFactorIsRejected(info1: 511)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownIndexFillFactorIsRejected(info1: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownPrimaryKeyClusteringIsRejected(indexType: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnknownPrimaryKeyClusteringIsRejected(indexType: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnlimitedTableSpaceIsAccepted
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "BFILE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "INTERVAL HOUR TO MINUTE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "INTERVAL YEAR(4) TO MONTH")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "TIME WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "TIME(3) WITH TIME ZONE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnmappedColumnTypesAreExplicitlyRejected(storeType: "UNKNOWN_TYPE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnreadableOrUnknownFillFactorCannotBeGuessed(info1: 4278190080)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnreadableOrUnknownFillFactorCannotBeGuessed(info1: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentableDeleteActionsCannotBecomeImplicitNoAction(action: " D")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentableDeleteActionsCannotBecomeImplicitNoAction(action: " X")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentableDeleteActionsCannotBecomeImplicitNoAction(action: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: 1, status: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: 1, status: "UNUSABLE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: 1, status: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: 65537, status: "VALID")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: 65553, status: "VALID")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnrepresentablePhysicalIndexStateIsRejected(nativeType: null, status: "VALID")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedColumnGenerationIsRejected(flags: 1, expected: "virtual computed column")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedColumnGenerationIsRejected(flags: 16, expected: "DEFAULT ON NULL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedColumnGenerationIsRejected(flags: 48, expected: "DEFAULT ON NULL")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedColumnGenerationIsRejected(flags: 64, expected: "ON UPDATE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedColumnGenerationIsRejected(flags: 96, expected: "ON UPDATE")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: "DEFERRABLE", deferred: "IMMEDIATE", validated: "VALIDATED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: "NOT DEFERRABLE", deferred: "DEFERRED", validated: "VALIDATED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE", validated: "NOT VALIDATED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE", validated: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: "NOT DEFERRABLE", deferred: null, validated: "VALIDATED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintFacetsAreRejected(deferrable: null, deferred: "IMMEDIATE", validated: "VALIDATED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintStateFailsExplicitly(status: "DISABLED")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintStateFailsExplicitly(status: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedConstraintStateFailsExplicitly(status: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedGeneratedPrimaryKeyIdentifiesItsColumn(storeType: "DECIMAL(18,2)", composite: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedGeneratedPrimaryKeyIdentifiesItsColumn(storeType: "NUMBER(18,0)", composite: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedGeneratedPrimaryKeyIdentifiesItsColumn(storeType: "NUMBER(18,0)", composite: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: "?")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: "AA")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: "C ")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: "D ")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: "N ")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.UnsupportedOrUnknownForeignKeyUpdateActionsAreRejected(actions: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 0, expected: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 1, expected: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 2, expected: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 3, expected: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 32, expected: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VirtualColumnMarkerUsesOnlyTheDocumentedBit(flags: 33, expected: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VisibleColumnsCanBeScaffolded
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VisibleValidPhysicalIndexesCanBeScaffolded(nativeType: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VisibleValidPhysicalIndexesCanBeScaffolded(nativeType: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDatabaseModelFactoryTests.VisibleValidPhysicalIndexesCanBeScaffolded(nativeType: 17)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDateBucketTranslationTests.BothDateTimeOverloadsTranslateFromMappedColumns
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDateBucketTranslationTests.DateBucketMethodsAreServerOnly
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDateBucketTranslationTests.DateBucketsTranslateInFilterGroupAndOrder
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDateTimeOffsetMemberTranslationTests.SixLocalDatePartsTranslateForRequiredAndNullableColumns
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDateTimeOffsetMemberTranslationTests.SixLocalDatePartsTranslateInServerFilters
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDesignTimeTests.AnnotationGeneratorEmitsPublicIdentityApis
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDesignTimeTests.AnnotationGeneratorEmitsPublicSequenceApi
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDesignTimeTests.DesignTimeServicesRegisterProviderGenerators
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDesignTimeTests.ProviderAssemblyExposesDesignTimeServices
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDesignTimeTests.ProviderCodeGeneratorEmitsUseDameng
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.NoneStrategyAndUnchangedAnnotationsAreAccepted(stringAnnotations: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.NoneStrategyAndUnchangedAnnotationsAreAccepted(stringAnnotations: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.PureRemovalIsOneTransactionSuppressedTableCommand(schema: "a\"b", table: "o\"r", expected: "ALTER TABLE \"a\"\"b\".\"o\"\"r\" DROP IDENTITY;\n")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.PureRemovalIsOneTransactionSuppressedTableCommand(schema: "app", table: "Orders", expected: "ALTER TABLE \"app\".\"Orders\" DROP IDENTITY;\n")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.PureRemovalIsOneTransactionSuppressedTableCommand(schema: null, table: "Orders", expected: "ALTER TABLE \"Orders\" DROP IDENTITY;\n")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RealEfModelDifferenceRemovesIdentityAndDownIsRejected(explicitIdentity: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RealEfModelDifferenceRemovesIdentityAndDownIsRejected(explicitIdentity: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "annotation")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "clr")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "collation")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "comment")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "computed")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "default")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "defaultSql")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "fixed")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "length")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "nullable")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "precision")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "removedAnnotation")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "rowversion")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "scale")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "sequence")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "sequenceName")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "sequenceSchema")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "stored")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "type")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalRejectsEveryAdditionalColumnDefinitionChange(change: "unicode")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengDropIdentitySqlGeneratorTests.RemovalUsesExistingIdempotentDynamicSqlWrapper
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.CollectionOverloadRejectsNull
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.EnableRetryOnFailureAppliesCustomSettingsAndCopiesErrorNumbers
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.EnableRetryOnFailureUsesDefaultDamengStrategy
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonDamengTimeoutException
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonTransientOrAmbiguousDamengCodes(errorNumber: -1040)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonTransientOrAmbiguousDamengCodes(errorNumber: -1210)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonTransientOrAmbiguousDamengCodes(errorNumber: -2007)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonTransientOrAmbiguousDamengCodes(errorNumber: -3002)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyDoesNotRetryNonTransientOrAmbiguousDamengCodes(errorNumber: -6011)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: -3003)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: -3404)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: -6003)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: -6004)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: -6010)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: 6001)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: 6027)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: 6060)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: 6089)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRecognizesOnlyExplicitDefaultTransientDamengCodes(errorNumber: 6123)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengExecutionStrategyTests.StrategyRetriesAnAdditionalErrorNumber
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "AbsDecimal", function: "ABS(", argumentOrCast: "\"DECIMAL_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "AbsDouble", function: "ABS(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "AbsInt", function: "CAST(ABS(", argumentOrCast: " AS INT)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "AbsLong", function: "ABS(", argumentOrCast: "\"LONG_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "CeilingDecimal", function: "CEIL(", argumentOrCast: "\"DECIMAL_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "CeilingDouble", function: "CEIL(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "Exp", function: "EXP(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "FloorDecimal", function: "FLOOR(", argumentOrCast: "\"DECIMAL_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "FloorDouble", function: "FLOOR(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "Log", function: "LN(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "Log10", function: "LOG10(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "LogWithBase", function: "LOG(", argumentOrCast: "\"LOG_BASE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "Pow", function: "POWER(", argumentOrCast: "\"EXPONENT\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "SignDecimal", function: "SIGN(", argumentOrCast: "\"DECIMAL_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "SignDouble", function: "SIGN(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "SignInt", function: "SIGN(", argumentOrCast: "\"INT_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "SignLong", function: "SIGN(", argumentOrCast: "\"LONG_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.ExactMathOverloadsTranslateInServerProjection(operation: "Sqrt", function: "SQRT(", argumentOrCast: "\"DOUBLE_VALUE\"")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.FunctionsTranslateInFilterOrderingGroupingAndNullableProjection(useRelationalNulls: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.FunctionsTranslateInFilterOrderingGroupingAndNullableProjection(useRelationalNulls: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.OtherNumericOverloadsRemainUntranslated
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.Q2FunctionsTranslateInServerFilterOrderingGroupingAndNullableProjection(useRelationalNulls: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMathTranslationTests.Q2FunctionsTranslateInServerFilterOrderingGroupingAndNullableProjection(useRelationalNulls: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.AddAndAlterColumnGenerateCommentChanges
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.AddAndAlterColumnGenerateSequenceDefaultAndDefaultRemoval
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.AlterIdentitySeedOrIncrementIsRejected(oldSeed: 1, oldIncrement: 1, newSeed: 1, newIncrement: 2)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.AlterIdentitySeedOrIncrementIsRejected(oldSeed: 1, oldIncrement: 1, newSeed: 2, newIncrement: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.AlterTableGeneratesCommentOnlyWhenChanged
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.ByteColumnDdlHasAnExplicitTargetSemanticsGuard(idempotent: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.ByteColumnDdlHasAnExplicitTargetSemanticsGuard(idempotent: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.ClusterBtreeStorageIsExplicitWhenAnnotated(annotated: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.ClusterBtreeStorageIsExplicitWhenAnnotated(annotated: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.CreateTableGeneratesCommentStatements
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.CreateTableGeneratesIdentityComputedAndRelationalConstraints
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.EnsureSchemaUsesCatalogGuardAndStaysUnwrappedInIdempotentScripts
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.HistoryRepositoryGeneratesDamengIdempotencyBlocks
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "  BEGIN\n    NULL;\n  END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "-- comment\rBEGIN NULL; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "-- ensure lookup\nbegin null; end;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "/* BEGIN ' */ /* second */ DECLARE v INT; BEGIN v "···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "BEGIN BEGIN NULL; END; IF 1=1 THEN NULL; END IF; E"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "BEGIN\n    NULL;\nEND;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "DECLARE FUNCTION f RETURN INT IS BEGIN RETURN CASE"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; E"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "DECLARE\n    v INT;\nBEGIN\n    v := 1;\nEND;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "\n  \nbegin\n    null;\n  end;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationPassesAnonymousBlocksThroughUnwrapped(blockSql: "declare v int;\nbegin\n    null;\nend;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsCommandsAboveTheDynamicSqlLiteralLimit
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(sql: "-- lead\nBEGIN NULL; END; INSERT INTO T VALUES (1)"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(sql: "BEGIN NULL; END; BEGIN NULL; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(sql: "BEGIN NULL; END; CREATE TABLE T (ID INT);")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsStatementsAfterAnonymousBlocks(sql: "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; E"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "CREATE OR REPLACE FUNCTION F RETURN INT AS BEGIN R"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "CREATE PACKAGE P AS PROCEDURE F; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "CREATE PROCEDURE P AS BEGIN NULL; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "CREATE TRIGGER TR BEFORE INSERT ON T BEGIN NULL; E"···)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "CREATE TYPE T AS OBJECT (N INT);")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "UPDATE T SET N=1; BEGIN NULL; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationRejectsUnsafeProceduralSplitting(sql: "UPDATE T SET N=1; DECLARE N INT; BEGIN NULL; END;")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationWrapsEachStatementInEscapedDynamicSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(sql: "-- DECLARE\nSELECT 1 FROM dual")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(sql: "/* BEGIN */ SELECT 1 FROM dual")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(sql: "BEGINNING")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentGenerationWrapsTextThatMerelySharesTheBlockKeywordPrefix(sql: "DECLARES")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdempotentStatementBoundariesIgnoreQuotedAndCommentedSemicolons
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IdentitySeedDataUsesSeparateSessionCommands
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IndexAndRenameOperationsUseDamengSyntax
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IndexFillFactorIsGeneratedExplicitly(configured: 0, expected: 100)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IndexFillFactorIsGeneratedExplicitly(configured: 70, expected: 70)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.IndexFillFactorIsGeneratedExplicitly(configured: 85, expected: 85)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidIndexFillFactorsAreRejected(configured: "70")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidIndexFillFactorsAreRejected(configured: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidIndexFillFactorsAreRejected(configured: 101)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidPrimaryKeyClusteringAnnotationIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidTableFillFactorsAreRejected(value: "85")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidTableFillFactorsAreRejected(value: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.InvalidTableFillFactorsAreRejected(value: 101)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.MigratorComposesExecutableDamengIdempotentScript
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.PrimaryKeyClusteringAnnotationIsExplicitInSql(clustered: False, expected: "NOT CLUSTER PRIMARY KEY")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.PrimaryKeyClusteringAnnotationIsExplicitInSql(clustered: True, expected: "CLUSTER PRIMARY KEY")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.SchemaAndSequenceOperationsUseDamengSyntax
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.SeedDataOperationsGenerateInsertUpdateAndDelete
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.SequenceColumnAnnotationGeneratesDamengNextvalDefault
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.SqlGenerationHelperUsesImplicitDamengTransactionStart
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.SqlOperationRejectsDisqlBatchTerminatorButNotSlashInsideLiteral
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableFillFactorChangesRequireARebuild
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(clustered: False, fillFactor: 85, expected: "STORAGE(FILLFACTOR 85)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(clustered: True, fillFactor: 0, expected: "STORAGE(CLUSTERBTR, FILLFACTOR 100)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(clustered: True, fillFactor: 100, expected: "STORAGE(CLUSTERBTR, FILLFACTOR 100)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableFillFactorIsExplicitAndDoesNotDependOnTargetDefaults(clustered: True, fillFactor: 85, expected: "STORAGE(CLUSTERBTR, FILLFACTOR 85)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.TableStorageAnnotationFlowsFromEntityModelToCreateScript
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.UnknownTableStorageAndStorageChangesAreRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.UnspecifiedStoreTypeCannotTurnOversizedFixedAnsiIntoBinary
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengMigrationsSqlGeneratorTests.UnsupportedMigrationShapesFailExplicitly
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.BoundedInlineKeyAndIndexAreAllowed
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.ClientGeneratedGuidKeyIsAllowed
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.DecimalPrecisionOutsideDamengRangeIsRejected(precision: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.DecimalPrecisionOutsideDamengRangeIsRejected(precision: 39)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.DecimalScaleAbovePrecisionIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.ExplicitLobKeyIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.IdentityAcrossMultipleTpcTablesIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.KeyWithDefaultSqlButValueGeneratedNeverIsAllowed
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.ModelIdentityBuilderRejectsZeroIncrement
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.MultipleIdentityColumnsInOneTableAreRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.NegativeIdentityIncrementIsAllowed
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.OversizedBinaryIndexMappedToLobIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.OversizedStringKeyMappedToLobIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.PropertyIdentityBuilderRejectsZeroIncrement
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.SnapshotModelIdentityAnnotationWithZeroIncrementIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.SnapshotPropertyIdentityAnnotationWithZeroIncrementIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.StandardRowVersionIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.StoreGeneratedKeyUsingComputedColumnIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.StoreGeneratedKeyUsingDefaultValueIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.StoreGeneratedKeyWithoutDamengStrategyIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengModelValidatorTests.TriggerBackedGeneratedConcurrencyTokenIsAllowed
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.BooleanValuesAreConvertedWhenUsedAsSearchConditions
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "CompareOrdinal")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "ContainsOrdinalIgnoreCase")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "EndsWithOrdinalIgnoreCase")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "IndexOfOrdinalIgnoreCase")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "IsNullOrWhiteSpace")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "PadLeft")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "PadRight")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "Split")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.CommonUntranslatedStringMethodsAreNotTranslated(member: "StartsWithOrdinal")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.ConvertedBooleanValuesUseTheirProviderLiteralsInPredicates
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeMembersAndIntegralAddsUseDamengFunctions
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetColumnComparisonGeneratesParameterizedSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "AddDays")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "AddHours")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "DateTime")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "Now")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "Offset")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "UtcDateTime")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DateTimeOffsetQueryMembersAndMethodsAreNotTranslated(member: "UtcNow")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DistinctOnLobFailsBeforeSendingInvalidSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.DistinctSetOperationOnLobFailsBeforeSendingInvalidSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.GeneratorKeepsFromlessSelectFromless
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.GroupByOnLobFailsBeforeSendingInvalidSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.GuidNewGuidUsesVerifiedDamengNewIdFunction
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.JsonElementPropertyAccessIsNotTranslated
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.JsonElementWholeValueEqualityGeneratesParameterizedSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.KnownFractionalDateAddIsNotTranslated
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.LobEqualityPreservesRelationalNullSemantics
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.LobEqualityUsesDamengNullSafeComparisonFunctions
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.LobInequalityUsesDamengNullSafeComparisonFunctions
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.LobNullableColumnEqualityKeepsEfNullGuardsAroundNullPropagatingFunction
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.LobStringSearchesUseFunctionsSupportedForClobInputs
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.OrderByOnLobFailsBeforeSendingInvalidSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.PaginationUsesQuotedIdentifiersColonParametersAndOffsetFetch
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.ParameterizedDoubleDateAddIsNotSilentlyTruncated
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.SearchConditionsAreConvertedWhenProjectedAsValues
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.StringCompareAndCompareToTranslateToSqlComparisonOperators
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengQueryTranslationTests.StringMembersAndMethodsUseDamengFunctions
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.CatalogQueryReadsAllSequencesInOnlyTheBoundSchema
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.CyclicContinuationOneStepPastTheBoundaryWraps(increment: -3, start: -1, expected: 1000)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.CyclicContinuationOneStepPastTheBoundaryWraps(increment: 3, start: 1001, expected: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.ExactIntegralFacetsPreserveEfBoundaries(increment: -2147483648)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.ExactIntegralFacetsPreserveEfBoundaries(increment: 2147483647)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InconsistentCyclicContinuationIsNotSilentlyNormalized(increment: -3, start: 1001)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InconsistentCyclicContinuationIsNotSilentlyNormalized(increment: 3, start: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InconsistentCyclicContinuationIsNotSilentlyNormalized(increment: 3, start: 2000)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: "not-an-integer")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: )
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: -2147483649)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: 1.5)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 1, invalid: 2147483648)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 2, invalid: -9223372036854775809)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 3, invalid: 9223372036854775808)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 4, invalid: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 5, invalid: "9223372036854775808")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 5, invalid: 41.5)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 5, invalid: 9223372036854775808)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 6, invalid: )
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 6, invalid: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 6, invalid: 0.5)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 6, invalid: 2)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 6, invalid: 50)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 7, invalid: "UNKNOWN")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 7, invalid: "Y")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidFacetsRejectTheSequenceInsteadOfTruncatingOrOmittingIt(ordinal: 7, invalid: )
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidSequenceBoundsOrContinuationCannotBeRecreated(min: 1, max: 1000, start: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidSequenceBoundsOrContinuationCannotBeRecreated(min: 1, max: 1000, start: 1001)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidSequenceBoundsOrContinuationCannotBeRecreated(min: 1000, max: 1, start: 41)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.InvalidSequenceBoundsOrContinuationCannotBeRecreated(min: 41, max: 41, start: 41)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.SequenceContinuationAtEitherBoundIsStillRepresentable(start: 1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengSequenceScaffoldingTests.SequenceContinuationAtEitherBoundIsStillRepresentable(start: 1000)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.ConcatAndUnorderedJoinUseServerAggregate
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.DistinctAndLobSelectorsFailTranslationExplicitly
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.FixedLengthColumnSeparatorFailsTranslation(national: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.FixedLengthColumnSeparatorFailsTranslation(national: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.JoinPreservesOrderingFilterAndParameterizedSeparator
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.ListAggUsesClrNullPlacementForEachOrderingKey
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengStringAggregateTranslationTests.NullableBoundedColumnSeparatorTranslates
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.ConstantCharacterSetsTranslateAsSetsForAllThreeMethods(lob: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.ConstantCharacterSetsTranslateAsSetsForAllThreeMethods(lob: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.SingleCharactersTranslateOnBothEndsAndPreserveLobMapping(lob: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.SingleCharactersTranslateOnBothEndsAndPreserveLobMapping(lob: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.UnsupportedCharacterInputsDoNotTranslateInWhere(variant: "Captured")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.UnsupportedCharacterInputsDoNotTranslateInWhere(variant: "Empty")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.UnsupportedCharacterInputsDoNotTranslateInWhere(variant: "Null")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.UnsupportedCharacterInputsDoNotTranslateInWhere(variant: "SurrogateArray")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTrimCharacterTranslationTests.UnsupportedCharacterInputsDoNotTranslateInWhere(variant: "SurrogateChar")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.BinaryFacetsSwitchToBlobOnlyAboveTheInlineLimit
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "CHAR  (9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "CHAR(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "VARCHAR(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "VARCHAR2 (9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "VARCHAR2(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "varchar( 9 byte )")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifiedStoreTypesKeepTheirUnitAndLength(storeType: "varchar\t(9 byte)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "INT (9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "INT(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "NCHAR(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "NVARCHAR2 (9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ByteQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "NVARCHAR2(9 BYTE)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharQualifiedAnsiStoreTypeParsesAndRoundTrips
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterLengthSemanticsAllowWhitespaceBeforeParenthesis(storeType: "CHAR  (9 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterLengthSemanticsAllowWhitespaceBeforeParenthesis(storeType: "VARCHAR2 (9 CHAR)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterLengthSemanticsAllowWhitespaceBeforeParenthesis(storeType: "varchar\t(9 char)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "CLOB(9 CHAR)", clrType: typeof(string))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "DECIMAL(9 CHAR)", clrType: typeof(decimal))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "INT(9 CHAR)", clrType: typeof(int))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "NCHAR(9 CHAR)", clrType: typeof(string))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "NVARCHAR2(9 CHAR)", clrType: typeof(string))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "VARBINARY(9 CHAR)", clrType: typeof(byte[]))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.CharacterQualifierSupportDoesNotExpandToOtherStoreTypes(storeType: "int (9 char)", clrType: typeof(int))
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.DateOnly), storeType: "DATE", dbType: Date)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.DateTime), storeType: "TIMESTAMP(7)", dbType: DateTime2)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.DateTimeOffset), storeType: "DATETIME(7) WITH TIME ZONE", dbType: DateTimeOffset)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.Guid), storeType: "CHAR(36)", dbType: Guid)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.Text.Json.JsonElement), storeType: "JSON", dbType: String)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.TimeOnly), storeType: "TIME(6)", dbType: Time)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(System.TimeSpan), storeType: "INTERVAL DAY(9) TO SECOND(6)", dbType: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(bool), storeType: "BIT", dbType: Boolean)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(byte), storeType: "SMALLINT", dbType: Int16)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(byte[]), storeType: "BLOB", dbType: Binary)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(char), storeType: "NVARCHAR2(1)", dbType: String)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(decimal), storeType: "DECIMAL", dbType: Decimal)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(double), storeType: "FLOAT", dbType: Double)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(float), storeType: "REAL", dbType: Single)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(int), storeType: "INT", dbType: Int32)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(long), storeType: "BIGINT", dbType: Int64)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(sbyte), storeType: "TINYINT", dbType: SByte)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(short), storeType: "SMALLINT", dbType: Int16)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(string), storeType: "NCLOB", dbType: String)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(uint), storeType: "BIGINT", dbType: Int64)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(ulong), storeType: "DECIMAL(20,0)", dbType: Decimal)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ClrTypesHaveRangeSafeDefaultMappings(clrType: typeof(ushort), storeType: "INT", dbType: Int32)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.DamengParametersUseLobBinaryIntervalAndJsonTypes
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.DateTimeOffsetReaderTextPreservesTheOriginalOffset
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.DecimalFacetsArePreservedInMappingAndParameter
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.DecimalScaffoldingCanProbeScaleWithoutPrecision
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.DefaultDecimalMappingPreservesHighScaleValues
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitFloatPrecisionRemainsInStoreType(storeType: "FLOAT(24)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitFloatPrecisionRemainsInStoreType(storeType: "FLOAT(53)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitFloatPrecisionRemainsInStoreType(storeType: "FLOAT(7)")
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitStoreTypesRetainSpellingAndFacets
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitStoreTypesRetainTheirInstanceSpecificCapacity(storeType: "CHAR(476 CHAR)", size: 476)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ExplicitStoreTypesRetainTheirInstanceSpecificCapacity(storeType: "VARCHAR2(2047 CHAR)", size: 2047)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InferredOversizedFixedAnsiPropertyIsRejectedInsteadOfConvertedToBinary
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.IntervalReaderTextParsesWithoutDriverSpecificTypes(value: "INTERVAL '-000000123 04:05:06.789000' DAY(9) TO SE"···, days: 123, hours: 4, minutes: 5, seconds: 6, milliseconds: 789, negative: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.IntervalReaderTextParsesWithoutDriverSpecificTypes(value: "INTERVAL '000000123 04:05:06.789000' DAY(9) TO SEC"···, days: 123, hours: 4, minutes: 5, seconds: 6, milliseconds: 789, negative: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InvalidDecimalFacetsAreRejected(precision: 10, scale: 11)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InvalidDecimalFacetsAreRejected(precision: 39, scale: null)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InvalidIntegerCharacterQualifierCannotGenerateMigrationSql
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InvalidIntervalFractionalSecondPrecisionIsRejected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.InvalidTimeOnlyPrecisionIsRejectedWhileBuildingTheEfModel
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.KeyStringsUseBoundedIndexSafeDefaults
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.LiteralsUseDamengCompatibleJsonBinaryAndIntervalSyntax
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.LossyOrReadOnlyStoreTypesAreNotMappedToWritableClrTypes
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.ModelTemporalPrecisionFacetsGenerateDamengStoreTypeSyntax
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.StringFacetsSelectUnicodeAnsiFixedAndLobStoreTypesAtTheBoundary
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TemporalLiteralsPreserveTheSeventhFractionalSecondDigit
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TemporalPrecisionFacetsGenerateDamengStoreTypeSyntax
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimeOnlyMappingRejectsValuesThatWouldLoseFractionalSeconds
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimeOnlyPrecisionOutsideDamengRangeIsRejected(precision: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimeOnlyPrecisionOutsideDamengRangeIsRejected(precision: 7)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimeSpanMappingRejectsValuesThatWouldLoseFractionalSeconds
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionOutsideDamengRangeIsRejected(clrType: typeof(System.DateTime), precision: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionOutsideDamengRangeIsRejected(clrType: typeof(System.DateTime), precision: 10)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionOutsideDamengRangeIsRejected(clrType: typeof(System.DateTimeOffset), precision: -1)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionOutsideDamengRangeIsRejected(clrType: typeof(System.DateTimeOffset), precision: 10)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionSupportsDamengBoundaryValues(precision: 0)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.TimestampPrecisionSupportsDamengBoundaryValues(precision: 9)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.UnboundedStringsAndBinaryUseLobMappings
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengTypeMappingTests.UnsignedMappingsConvertToProviderTypesThatCoverTheFullRange
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.ClientKeysLocateMultipleGeneratedNonKeyValues(compositeKey: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.ClientKeysLocateMultipleGeneratedNonKeyValues(compositeKey: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.DeleteReturnsOneOnlyWhenExactlyOneRowWasAffected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.GeneratedUpdateUsesOriginalConcurrencyAndReadsByKeyWithZeroRowGuard(nullOriginalToken: False)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.GeneratedUpdateUsesOriginalConcurrencyAndReadsByKeyWithZeroRowGuard(nullOriginalToken: True)
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.InsertReadsAllGeneratedValuesFromTheInsertedIdentityRow
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.ModificationCommandsAreKeptInSingleCommandBatches
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.SequenceGeneratedKeyUsesCurrvalForReadback
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengUpdateSqlGeneratorTests.UpdateReturnsOneOnlyWhenExactlyOneRowWasAffected
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.ConvertedIntegerPropertyCanUseIdentityRegardlessOfBuilderOrder
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.ExplicitIdentityConfigurationPreservesSeedAndIncrement
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.ExplicitIdentityRejectsNonIntegerProperty
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.ExplicitIdentityRejectsSmallIntegerProperty
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.ExplicitStrategyRejectsConflictingStoreGeneration
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.GeneratedIntegerKeyUsesIdentityByConvention
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.IdentityAnnotationsReachTheDesignTimeRelationalColumn
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.LastExplicitStrategyClearsIncompatibleFacets
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.NonIntegerKeyDoesNotUseIdentityByConvention
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SequenceAnnotationsReachTheDesignTimeRelationalColumn
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SequenceConfigurationCreatesSequenceAndProviderMetadata
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SequenceWithoutNameUsesHierarchyNameMetadata
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SharedPrimaryKeyForeignKeyDoesNotUseIdentityByConvention
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SmallIntegerKeyDoesNotUseIdentityByConvention
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.SmallIntegerPropertyCanUseSequence
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.TpcCreateScriptUsesOneSharedSequenceForEveryConcreteTable
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.TpcInheritedKeyUsesSharedSequenceMetadataOnEveryConcreteTable
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.TpcWithOneConcreteTableCanUseIdentity
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.TptInheritedKeyUsesIdentityOnlyOnTheRootTable
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.DamengValueGenerationTests.TptInheritedKeyUsesSequenceMetadataOnlyOnTheRootTable
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.DamengAndSqlServerPublicApisCoexistWithoutExtensionAmbiguity
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.ExistingConnectionOverloadsAcceptProviderOptionsWithoutOwnershipFlag
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.OptionsBuilderExposesStandardRelationalSettings
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.ProviderSetsDamengIdentifierLengthLimit
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.SqlGenerationUsesColonParametersAndQuotedIdentifiers
+unit	Passed	W.EntityFrameworkCore.Dameng.Tests.ProviderConfigurationTests.UseDamengRegistersTheProviderAndConnection
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.ApplicationCompatibilityFunctionalTests.AddDbContextPoolReusesContextWithoutLeakingTenantState
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.ApplicationCompatibilityFunctionalTests.CommonApplicationScalarTypesAndValueConverterRoundtrip
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.ApplicationCompatibilityFunctionalTests.ExecuteUpdateAndExecuteDeleteReportAffectedRowsAndPersistChanges
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.ApplicationCompatibilityFunctionalTests.GlobalTenantAndSoftDeleteFiltersUseTheCurrentContextState
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.ApplicationCompatibilityFunctionalTests.KeylessFromSqlQueryMaterializesUnicodeProjection
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengBasicStringTranslationFunctionalTests.NclobConcatenationDoesNotTruncateLongText
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengBasicStringTranslationFunctionalTests.NullableUnicodeAndNclobStringsHaveServerSideSemantics(useRelationalNulls: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengBasicStringTranslationFunctionalTests.NullableUnicodeAndNclobStringsHaveServerSideSemantics(useRelationalNulls: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ConstantCollectionReturnsExpectedRowsInOneCommand
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.NullAndNegatedCollectionsPreserveNullSemantics
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 0)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 1)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 1000)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 2000)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 499)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 500)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 501)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 998)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ParameterCollectionReturnsExpectedRowsInOneCommand(size: 999)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.ReusedQueryReadsCurrentCollectionAfterSizeChanges
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCollectionTranslationFunctionalTests.TwoCollectionsFilterAndPaginationExecuteAsSingleCommands
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengDateBucketFunctionalTests.DateBucketsRunOnServerInProjectionFilterGroupAndOrder
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengDateTimeOffsetMemberFunctionalTests.LocalDatePartsRunOnServerAcrossOffsetsAndNulls
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengDotNetEfCliFunctionalTests.MigrationsAndScaffoldRunThroughDotNetEfCli
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengDropIdentityFunctionalTests.ModelDifferenceDropsIdentityWithoutChangingRowsOrPrimaryKey
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.DateOnlyRoundtripsThroughDate
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.DateTimeOffsetColumnComparisonExecutes
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.DateTimeOffsetRawAdoReadbackPreservesServerEvidence
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.DateTimeOffsetRoundtripsThroughDatetimeWithTimeZone
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.DateTimeRoundtripsTheSeventhFractionalSecondDigit
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.InlineByteArrayRoundtripsThroughVarbinary
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.JsonElementPropertyAccessIsRejectedBeforeExecution
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.JsonElementRoundtripsThroughJson
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.JsonElementWholeValueEqualityIsRejectedByTheServer
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.LargeByteArrayRoundtripsThroughBlob
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.LongUnicodeStringRoundtripsThroughNclob
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.NegativeTimeSpanBeyondTwoDigitDaysRoundtripsThroughIntervalDayToSecond
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.NegativeTimeSpanBeyondTwoDigitDaysRoundtripsWithExplicitDayPrecision
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.NegativeTimeSpanRawAdoReadbackPreservesServerEvidence
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.PositiveTimeSpanBeyondTwoDigitDaysRoundtripsThroughIntervalDayToSecond
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.PositiveTimeSpanBeyondTwoDigitDaysRoundtripsWithExplicitDayPrecision
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.PositiveTimeSpanRawAdoReadbackPreservesServerEvidence
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.TimeOnlyRoundtripsMicrosecondsThroughTime
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengExtendedTypeMappingFunctionalTests.TimeSpanWithinTwoDigitDaysRoundtripsThroughIntervalDayToSecond
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.CallerOwnedTransactionReadsGeneratedValuesAndRollbackRestoresDatabase(async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.CallerOwnedTransactionReadsGeneratedValuesAndRollbackRestoresDatabase(async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.DeletedRowUpdateThrowsWithoutPropagatingAnotherRowsGeneratedValues(async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.DeletedRowUpdateThrowsWithoutPropagatingAnotherRowsGeneratedValues(async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Client, async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Client, async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Composite, async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Composite, async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Identity, async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Identity, async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Sequence, async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.InsertImmediatelyReadsDefaultsNullAndComputedValues(mode: Sequence, async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.TriggerValuesBecomeCurrentAndOriginalAcrossRepeatedUpdatesAndStaleFailure(async: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengGeneratedValueReadbackFunctionalTests.TriggerValuesBecomeCurrentAndOriginalAcrossRepeatedUpdatesAndStaleFailure(async: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.BeginTransactionRejectsUnsupportedIsolationLevels(isolationLevel: RepeatableRead)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.BeginTransactionRejectsUnsupportedIsolationLevels(isolationLevel: Snapshot)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.ReadCommittedIsolationLevelBeginsCommitsAndRollsBack
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.SaveChangesFailsAfterBeginningReadUncommittedOrSerializable(isolationLevel: ReadUncommitted)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.SaveChangesFailsAfterBeginningReadUncommittedOrSerializable(isolationLevel: Serializable)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.SerializableExecuteUpdatePersistsChanges
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengIsolationLevelFunctionalTests.SerializableTransactionCanQueryExistingRows
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengLobQueryFunctionalTests.DefaultLobMappingsSupportParameterEqualityAndTextSearch
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMathTranslationFunctionalTests.ExponentialLogarithmicAndRootFunctionsExecuteOnServer(useRelationalNulls: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMathTranslationFunctionalTests.ExponentialLogarithmicAndRootFunctionsExecuteOnServer(useRelationalNulls: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMathTranslationFunctionalTests.MathOverloadsExecuteInServerQueries(useRelationalNulls: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMathTranslationFunctionalTests.MathOverloadsExecuteInServerQueries(useRelationalNulls: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.AnonymousBlockAndFollowingDdlRequireSeparateOperations
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.AnsiSizedStringColumnsUseCharSemanticsAndHoldMultibyteText
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.CommentPrefixedInlineBlocksExecuteAsGeneratedCommands
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.CommentsExecuteAndRoundTripAgainstDameng
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.EnsureSchemaGuardSkipsExistingCurrentSchema
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.GeneratedDdlAndHistoryRepositoryExecuteAgainstDameng
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.IdempotentCommandsApplyIdentitySeedAndHistoryOnlyOnce
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.IdempotentMultiStatementSqlOperationExecutesOnce(includesDdl: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.IdempotentMultiStatementSqlOperationExecutesOnce(includesDdl: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationsFunctionalTests.IdempotentScriptCarriesMultilineCommentsAsSingleBatches
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.AdoAndEfConnectionsOpenOnNet10
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.OrderedSkipTakeQueryExecutes
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.SavepointRollbackPreservesEarlierWork
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.StaleConcurrencyTokenThrows
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.TransactionRollbackDiscardsChanges
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.UnicodeCrudAndIdentityGeneratedKeyRoundtrip
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengProviderFunctionalTests.UpdateAndDeleteRoundtrip
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "CHAR", spacedStoreType: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "CHAR", spacedStoreType: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "VARCHAR", spacedStoreType: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "VARCHAR", spacedStoreType: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "VARCHAR2", spacedStoreType: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ByteLengthColumnsRetainTheirUnitAndCapacityWhenRecreated(type: "VARCHAR2", spacedStoreType: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ClusterBtreeStorageSurvivesRecreationAndHeapTablesAreRejected
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ColumnCollateSyntaxDoesNotPersistAColumnFacetOnReferenceServer(collation: "Chinese_PRC_CS_AS_KS_WS")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ColumnCollateSyntaxDoesNotPersistAColumnFacetOnReferenceServer(collation: "EF10_NONEXISTENT_COLLATION")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ColumnCollateSyntaxDoesNotPersistAColumnFacetOnReferenceServer(collation: "utf8mb4_bin")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ColumnCollateSyntaxDoesNotPersistAColumnFacetOnReferenceServer(collation: "utf8mb4_general_ci")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.CyclicSequenceAtBoundaryKeepsItsWrappedContinuation(descending: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.CyclicSequenceAtBoundaryKeepsItsWrappedContinuation(descending: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.DecimalSequenceDefaultsKeepTheirSqlAndSequenceDefinition(type: "DECIMAL(18,2)")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.DecimalSequenceDefaultsKeepTheirSqlAndSequenceDefinition(type: "NUMBER(18,0)")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.EncryptedColumnsAreRejectedBeforeTheirStorageProtectionIsLost(encryption: "ENCRYPT MANUAL")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.EncryptedColumnsAreRejectedBeforeTheirStorageProtectionIsLost(encryption: "ENCRYPT")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ExhaustedSequenceContinuationIsRejectedBeforeGeneratingInvalidDdl(descending: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ExhaustedSequenceContinuationIsRejectedBeforeGeneratingInvalidDdl(descending: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryKeepsRawDefaultForCrossSchemaSequenceReferences(compound: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryKeepsRawDefaultForCrossSchemaSequenceReferences(compound: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryLoadsSequencesWithUnquotedDollarAndHashNames
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryMatchesDelimitedTableFiltersContainingDots
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryNormalizesUnquotedFiltersAndPreservesQuotedCase
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryPreservesFloatCatalogPrecisionOnRecreation
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryPreservesPrimaryKeyClusteringThroughGeneratedDdl(clustered: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryPreservesPrimaryKeyClusteringThroughGeneratedDdl(clustered: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryPreservesZeroFractionalSecondPrecision
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryReadsIdentityFacetsForDelimitedNamesContainingDots
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryReadsIdentityFacetsFromTheSessionSchemaNotTheLoginSchema
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryReadsTablesColumnsConstraintsIndexesCommentsAndValueGeneration
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryReadsViewsAndForeignKeys
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsAutoIncrementWithoutChangingIdentityOrTableFilters
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsBitmapIndexesAndStillReadsNormalIndexes
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsCompoundLocalSequenceDefaultsWithoutBlockingSimpleDefaults(qualified: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsCompoundLocalSequenceDefaultsWithoutBlockingSimpleDefaults(qualified: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsCrossSchemaForeignKeysAndKeepsFilteredSelfReferences
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsDecimalIdentityBeforeAddingAnUnsupportedStrategy
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsDisabledConstraintsOnlyOnSelectedTables(kind: "P")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsDisabledConstraintsOnlyOnSelectedTables(kind: "R")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsDisabledConstraintsOnlyOnSelectedTables(kind: "U")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsExpressionIndexesAndPreservesFilteredOrdinaryIndexes(unique: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsExpressionIndexesAndPreservesFilteredOrdinaryIndexes(unique: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsGeneratedAlternateKeysOnlyWhenReferencedBySelectedForeignKeys
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsLongRowStorageWithoutBlockingOrdinaryTableFilters
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsMaterializedViewPrebuiltTableAndPreservesTableFiltering
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonIntegralSequencePrimaryKeys(type: "DECIMAL(18,2)", composite: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonIntegralSequencePrimaryKeys(type: "DECIMAL(18,2)", composite: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonIntegralSequencePrimaryKeys(type: "NUMBER(18,0)", composite: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonIntegralSequencePrimaryKeys(type: "NUMBER(18,0)", composite: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonPrimaryClustering(uniqueConstraint: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsNonPrimaryClustering(uniqueConstraint: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsPartitionedTablesWithoutBlockingOrdinaryTableFilters(hash: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsPartitionedTablesWithoutBlockingOrdinaryTableFilters(hash: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTableFiltersQualifiedWithAnotherSchema
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTableSpaceLimitsAfterVerifyingTheirWriteCeiling
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTemporaryTablesWithoutBlockingPermanentTableFilters(duration: "DELETE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTemporaryTablesWithoutBlockingPermanentTableFilters(duration: "PRESERVE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTriggersWithoutBlockingOrdinaryTableFilters(disabled: False, useView: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTriggersWithoutBlockingOrdinaryTableFilters(disabled: False, useView: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsTriggersWithoutBlockingOrdinaryTableFilters(disabled: True, useView: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnmappedColumnsWithoutBlockingSupportedTableFilters(storeType: "BFILE", useView: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnmappedColumnsWithoutBlockingSupportedTableFilters(storeType: "BFILE", useView: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnmappedColumnsWithoutBlockingSupportedTableFilters(storeType: "INTERVAL HOUR TO MINUTE", useView: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnmappedColumnsWithoutBlockingSupportedTableFilters(storeType: "TIME WITH TIME ZONE", useView: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnrepresentableLocalSequenceEvenWithOtherTableFilters
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnrepresentedColumnGeneration(onUpdate: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnrepresentedColumnGeneration(onUpdate: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(kind: "check")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(kind: "check_not_null")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(kind: "disabled_check")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnsupportedTableSemanticsWithoutRejectingNotNull(kind: "virtual")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnvalidatedConstraints(foreignKey: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRejectsUnvalidatedConstraints(foreignKey: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRequiresUncachedUnorderedSequences(options: "", supported: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRequiresUncachedUnorderedSequences(options: "CACHE 2", supported: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRequiresUncachedUnorderedSequences(options: "CACHE 50", supported: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRequiresUncachedUnorderedSequences(options: "NOCACHE NOORDER", supported: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.FactoryRequiresUncachedUnorderedSequences(options: "ORDER", supported: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(update: False, action: "SET DEFAULT", expected: 1)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(update: True, action: "CASCADE", expected: 3)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(update: True, action: "NO ACTION", expected: 2)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(update: True, action: "SET DEFAULT", expected: 1)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyActionsAreCheckedAfterTheirServerBehaviorIsVerified(update: True, action: "SET NULL", expected: null)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyBackingIndexesKeepTheirCatalogRole(physical: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyBackingIndexesKeepTheirCatalogRole(physical: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyMatchSyntaxUsesDefaultSemanticsOnReferenceServer(matchClause: "")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyMatchSyntaxUsesDefaultSemanticsOnReferenceServer(matchClause: "MATCH FULL")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyMatchSyntaxUsesDefaultSemanticsOnReferenceServer(matchClause: "MATCH PARTIAL")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ForeignKeyMatchSyntaxUsesDefaultSemanticsOnReferenceServer(matchClause: "MATCH SIMPLE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.IndexFillFactorsSurviveIndependentAndConstraintIndexRecreation
+functional	Failed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.LocalSequenceAfterSetSchemaRecreatesAgainstTheCatalogSchema
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.MissingCurrentSchemaSequenceDefaultsAreRejected(qualified: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.MissingCurrentSchemaSequenceDefaultsAreRejected(qualified: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.NonDefaultIndexStatesAreRejectedAndRestorationIsObserved(state: "INVISIBLE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.NonDefaultIndexStatesAreRejectedAndRestorationIsObserved(state: "UNUSABLE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.NotVisibleColumnsKeepTheirServerSemanticsAndAreRejected(notNull: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.NotVisibleColumnsKeepTheirServerSemanticsAndAreRejected(notNull: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.SelectedForeignKeyRequiresItsPrincipalToBeIncluded
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ServerRejectsSmallIdentityTypesAndFactoryKeepsSupportedIdentity(type: "SMALLINT", supportedType: "INT")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.ServerRejectsSmallIdentityTypesAndFactoryKeepsSupportedIdentity(type: "TINYINT", supportedType: "BIGINT")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.SpacedNextValDefaultsKeepTheirLocalSequenceDefinition(qualified: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.SpacedNextValDefaultsKeepTheirLocalSequenceDefinition(qualified: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.StandaloneSequencesSurviveSchemaScaffoldingAndRecreation(hasTable: False, filterTable: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.StandaloneSequencesSurviveSchemaScaffoldingAndRecreation(hasTable: True, filterTable: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.StandaloneSequencesSurviveSchemaScaffoldingAndRecreation(hasTable: True, filterTable: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.TableFillFactorSurvivesScaffoldingAndRecreation(declared: 0, expected: 100)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.TableFillFactorSurvivesScaffoldingAndRecreation(declared: 100, expected: 100)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.TableFillFactorSurvivesScaffoldingAndRecreation(declared: 85, expected: 85)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.UnsupportedStandaloneSequencesRejectEvenWithoutTables(options: "CACHE 10")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengReverseEngineeringFunctionalTests.UnsupportedStandaloneSequencesRejectEvenWithoutTables(options: "INCREMENT BY 2147483648 NOCACHE")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.IdempotentSplitIgnoresBlockKeywordsInsideLiteralsAndComments
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.IdempotentSplitKeepsNestedGuardBlocksAsSingleBatches
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitKeepsDeclareOpenedBlocksWhole
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitKeepsLowercaseAndIndentedBlocksWhole
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "-- lead\nBEGIN -- body\n NULL; END; -- tail")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "/* lead ' BEGIN */ DECLARE v INT; BEGIN v := 1; EN"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN -- quote ' in comment\n NULL; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN /* block\n/\nEND; ' */ NULL; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN BEGIN NULL; END; IF 1=1 THEN NULL; END IF; E"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN CASE WHEN 1=1 THEN NULL; END CASE; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN DECLARE v INT; BEGIN v := CASE WHEN 1=1 THEN"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "BEGIN NULL; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "DECLARE FUNCTION f RETURN INT IS BEGIN RETURN CASE"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN NULL"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "DECLARE PROCEDURE p IS PROCEDURE q IS BEGIN NULL; "···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRecognizesTokensAndPreservesBlockComments(block: "DECLARE PROCEDURE p; PROCEDURE p IS BEGIN NULL; EN"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsIncompleteCommands(script: "/* unterminated")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsIncompleteCommands(script: "BEGIN NULL; END")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsIncompleteCommands(script: "BEGIN NULL;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsIncompleteCommands(script: "DECLARE v INT;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsIncompleteCommands(script: "SELECT 'unterminated")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsStoredDefinitionsBeforeReturningPartialCommands(definition: "CREATE OR REPLACE FUNCTION f RETURN INT AS BEGIN R"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsStoredDefinitionsBeforeReturningPartialCommands(definition: "CREATE PACKAGE p AS PROCEDURE q; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsStoredDefinitionsBeforeReturningPartialCommands(definition: "CREATE PROCEDURE p AS BEGIN NULL; END;")
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.SplitRejectsStoredDefinitionsBeforeReturningPartialCommands(definition: "CREATE TRIGGER t AFTER INSERT ON x BEGIN NULL; END"···)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengScriptExecutorTests.StatementSplitKeepsBlocksWholeWithoutIdempotentMarkers
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengSequenceAndTranslationFunctionalTests.SequenceGeneratedKeysAreReadBackWithCurrval
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengSequenceAndTranslationFunctionalTests.StringCompareAndCompareToExecuteOnServer
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengSequenceAndTranslationFunctionalTests.StringDateTimeAndGuidTranslationsExecuteOnServer
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengStringAggregateFunctionalTests.JoinAndConcatKeepClrElementFilterOrderAndEmptySemantics
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengStringAggregateFunctionalTests.ListAggNullableOrderingMatchesClrInBothDirections
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengStringAggregateFunctionalTests.OverflowFailsExplicitlyWithoutTruncating
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengTrimCharacterFunctionalTests.ConstantCharacterTrimRunsInFiltersAndServerProjections(lob: False)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengTrimCharacterFunctionalTests.ConstantCharacterTrimRunsInFiltersAndServerProjections(lob: True)
+functional	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengTrimCharacterFunctionalTests.NclobTrimPreservesLongUnicodeText
+specification	Passed	W.EntityFrameworkCore.Dameng.Specification.Tests.DamengRelationalSpecificationTests.BasicScalarTypesRoundTrip
+specification	Passed	W.EntityFrameworkCore.Dameng.Specification.Tests.DamengRelationalSpecificationTests.EfRelationalSpecificationPackageAndProviderServicesAreWired
+specification	Passed	W.EntityFrameworkCore.Dameng.Specification.Tests.DamengRelationalSpecificationTests.ParameterizedFilterOrderAndProjectionExecute
+specification	Passed	W.EntityFrameworkCore.Dameng.Specification.Tests.DamengRelationalSpecificationTests.TrackedUpdateAndDeleteReportExpectedRows
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.DatabaseMigrateAppliesUpgrades
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.GeneratedCreateScriptAppliesSupportedModel
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.IdempotentMigrationScriptAppliesOnce
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.NonIdempotentMigrationScriptAppliesUpgrades
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.ScaffoldedMigrationRejectsHugeTableInsteadOfCreatingAnOrdinaryTable
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.ScaffoldingRejectsNonDefaultTablespacesAndUsesSchemaOwnerDefault
+admin	Passed	W.EntityFrameworkCore.Dameng.FunctionalTests.DamengMigrationScriptFunctionalTests.ScaffoldingValidatesPhysicalIndexPlacementSeparatelyFromDataPlacement

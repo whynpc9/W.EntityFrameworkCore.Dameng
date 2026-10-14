@@ -1,5 +1,4 @@
 using System.Data;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit;
@@ -22,7 +21,7 @@ public sealed class DamengProviderFunctionalTests
         }
 
         var options = new DbContextOptionsBuilder<ConnectionContext>()
-            .UseDameng(connectionString)
+            .UseDamengUnderTest(connectionString)
             .Options;
 
         await using var context = new ConnectionContext(options);
@@ -225,7 +224,7 @@ public sealed class DamengProviderFunctionalTests
     private static FunctionalContext CreateContext(DamengTestStore store)
     {
         var options = new DbContextOptionsBuilder<FunctionalContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, FunctionalModelCacheKeyFactory>()
             .EnableDetailedErrors()
             .Options;

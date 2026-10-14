@@ -1,0 +1,117 @@
+name: 发布 W 驱动扩展包
+
+# 仅 W.EntityFrameworkCore.Dameng.WDriver。基础包使用 v<SemVer>（publish-nuget.yml）。
+on:
+  push:
+    tags:
+      - "wdriver-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-nuget-wdriver-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 构建、测试并发布 W 扩展包
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+    steps:
+      - name: 检出标签
+        uses: actions/checkout@v6
+
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: 从标签解析包版本
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_version="${GITHUB_REF_NAME#wdriver-v}"
+          semver_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+
+          if [[ "$package_version" == "$GITHUB_REF_NAME" || ! "$package_version" =~ $semver_pattern ]]; then
+            echo "::error::标签必须使用 wdriver-v<SemVer> 格式，例如 wdriver-v0.4.0-preview.1。"
+            exit 1
+          fi
+
+          echo "value=$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: 锁定还原
+        run: dotnet restore W.EntityFrameworkCore.Dameng.slnx --locked-mode --disable-parallel
+
+      - name: 核验 W.DamengProvider 身份
+        run: python3 -I scripts/driver-candidate/verify-package.py --require-lock-reference
+
+      - name: Release 构建
+        run: dotnet build W.EntityFrameworkCore.Dameng.slnx --configuration Release --no-restore
+
+      - name: 运行单元测试
+        run: |
+          dotnet test test/W.EntityFrameworkCore.Dameng.Tests/W.EntityFrameworkCore.Dameng.Tests.csproj --configuration Release --no-build --no-restore
+          dotnet test test/W.EntityFrameworkCore.Dameng.WDriver.Tests/W.EntityFrameworkCore.Dameng.WDriver.Tests.csproj --configuration Release --no-build --no-restore
+
+      - name: 打包
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: >-
+          dotnet pack
+          src/W.EntityFrameworkCore.Dameng.WDriver/W.EntityFrameworkCore.Dameng.WDriver.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --output "${{ runner.temp }}/packages"
+          -p:PackageVersion="$PACKAGE_VERSION"
+
+      - name: 校验包与基础包依赖
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t packages < <(find "${{ runner.temp }}/packages" -maxdepth 1 -type f -name '*.nupkg' ! -name '*.snupkg' -print)
+          expected="W.EntityFrameworkCore.Dameng.WDriver.${{ steps.version.outputs.value }}.nupkg"
+          if (( ${#packages[@]} != 1 )) || [[ "$(basename "${packages[0]}")" != "$expected" ]]; then
+            echo "::error::预期恰好 1 个 $expected，实际为：${packages[*]:-无}"
+            exit 1
+          fi
+
+          base_version="$(unzip -p "${packages[0]}" '*.nuspec' \
+            | grep -oE 'id="W\.EntityFrameworkCore\.Dameng" version="\[[^]]+\]"' \
+            | sed -E 's/.*version="\[([^]]+)\]"/\1/')"
+          if [[ -z "$base_version" ]]; then
+            echo "::error::扩展包必须精确依赖一个基础包版本。"
+            exit 1
+          fi
+
+          # 成对交付时先发布基础包；基础包精确版本在 NuGet.org 可取得之前不发布扩展包。
+          base_lower="$(echo "$base_version" | tr '[:upper:]' '[:lower:]')"
+          status="$(curl -sL -o /dev/null -w '%{http_code}' \
+            "https://api.nuget.org/v3-flatcontainer/w.entityframeworkcore.dameng/${base_lower}/w.entityframeworkcore.dameng.${base_lower}.nupkg")"
+          if [[ "$status" != "200" ]]; then
+            echo "::error::基础包 W.EntityFrameworkCore.Dameng $base_version 尚未在 NuGet.org 可用（HTTP $status）。"
+            exit 1
+          fi
+
+          echo "path=${packages[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: 发布到 NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >-
+          dotnet nuget push "${{ steps.package.outputs.path }}"
+          --api-key "$NUGET_API_KEY"
+          --source "https://api.nuget.org/v3/index.json"
+          --skip-duplicate

@@ -1,5 +1,4 @@
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit;
@@ -137,7 +136,7 @@ public sealed class DamengSequenceAndTranslationFunctionalTests
         ICollection<string> commandLog)
     {
         var options = new DbContextOptionsBuilder<SequenceTranslationContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, SequenceTranslationModelCacheKeyFactory>()
             .LogTo(commandLog.Add)
             .EnableDetailedErrors()

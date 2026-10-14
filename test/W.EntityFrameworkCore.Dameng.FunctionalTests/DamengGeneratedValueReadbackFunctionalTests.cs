@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Xunit;
@@ -235,11 +234,11 @@ public sealed class DamengGeneratedValueReadbackFunctionalTests
         var builder = new DbContextOptionsBuilder<GeneratedContext>();
         if (connection is null)
         {
-            builder.UseDameng(store.ConnectionString);
+            builder.UseDamengUnderTest(store.ConnectionString);
         }
         else
         {
-            builder.UseDameng(connection);
+            builder.UseDamengUnderTest(connection);
         }
         builder.ReplaceService<IModelCacheKeyFactory, GeneratedModelCacheKeyFactory>().EnableDetailedErrors();
         return new GeneratedContext(builder.Options, store);

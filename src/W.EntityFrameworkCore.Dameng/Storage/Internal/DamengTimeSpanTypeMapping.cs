@@ -2,12 +2,12 @@ using System.Data.Common;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
-using Dm;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Infrastructure;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
-internal sealed class DamengTimeSpanTypeMapping : TimeSpanTypeMapping
+internal sealed class DamengTimeSpanTypeMapping : TimeSpanTypeMapping, IDamengDriverBoundMapping
 {
     private static readonly MethodInfo GetStringMethod =
         typeof(DbDataReader).GetRuntimeMethod(
@@ -24,20 +24,32 @@ internal sealed class DamengTimeSpanTypeMapping : TimeSpanTypeMapping
     {
     }
 
-    private DamengTimeSpanTypeMapping(RelationalTypeMappingParameters parameters)
+    private DamengTimeSpanTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
         : base(parameters)
     {
+        Driver = driver;
     }
 
-    protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
-        => new DamengTimeSpanTypeMapping(parameters);
+    public DamengDriver? Driver { get; }
 
+    public RelationalTypeMapping WithDriver(DamengDriver driver)
+        => driver.Equals(Driver) ? this : new DamengTimeSpanTypeMapping(Parameters, driver);
+
+    protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
+        => new DamengTimeSpanTypeMapping(parameters, Driver);
+
+    // Drivers with exact typed interval getters read TimeSpan directly; the official driver
+    // keeps the interval text parser.
     public override MethodInfo GetDataReaderMethod()
-        => GetStringMethod;
+        => this.RequireDriver().UsesTypedTemporalReaders
+            ? base.GetDataReaderMethod()
+            : GetStringMethod;
 
     public override Expression CustomizeDataReaderExpression(
         Expression expression)
-        => Expression.Call(ParseMethod, expression);
+        => this.RequireDriver().UsesTypedTemporalReaders
+            ? base.CustomizeDataReaderExpression(expression)
+            : Expression.Call(ParseMethod, expression);
 
     protected override void ConfigureParameter(DbParameter parameter)
     {
@@ -48,12 +60,12 @@ internal sealed class DamengTimeSpanTypeMapping : TimeSpanTypeMapping
 
         base.ConfigureParameter(parameter);
 
-        if (parameter is DmParameter dmParameter)
-        {
-            dmParameter.DmSqlType = DmDbType.IntervalDayToSecond;
-        }
+        var driver = this.RequireDriver();
+        driver.SetParameterType(parameter, DamengParameterType.IntervalDayToSecond);
 
-        parameter.Scale = (byte)Math.Clamp(Scale ?? 6, 0, 6);
+        var fractionalSecondPrecision = Math.Clamp(Scale ?? 6, 0, 6);
+        parameter.Scale = (byte)fractionalSecondPrecision;
+        driver.ConfigureTemporalParameter(parameter, fractionalSecondPrecision);
     }
 
     protected override string GenerateNonNullSqlLiteral(object value)

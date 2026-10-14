@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -152,7 +151,7 @@ public sealed class DamengDateBucketFunctionalTests
     private static BucketContext CreateContext(BucketStore store, CommandCaptureInterceptor commands)
     {
         var options = new DbContextOptionsBuilder<BucketContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, BucketModelCacheKeyFactory>()
             .AddInterceptors(commands)
             .Options;

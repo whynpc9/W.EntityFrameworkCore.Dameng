@@ -8,6 +8,7 @@ using System.Xml.Linq;
 internal static class TestLauncher
 {
     private const string ConnectionVariable = "DAMENG_TEST_CONNECTION_STRING";
+    private const string WTransportSecurityVariable = "DAMENG_TEST_W_TRANSPORT_SECURITY";
     private const string ScriptClass = "DamengMigrationScriptFunctionalTests";
     private const string NormalFunctionalFilter =
         "FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe";
@@ -23,15 +24,46 @@ internal static class TestLauncher
 
     public static int Run(string[] args, string root, JsonObject? secrets)
     {
-        if (args.Length < 1 || args.Length > 3 || args.Length == 2
-            || (args.Length == 3 && args[1] != "--filter")
-            || (args.Length == 3 && string.IsNullOrWhiteSpace(args[2])))
+        if (args.Length < 1 || args.Length % 2 == 0)
         {
             throw new ArgumentException("Invalid test arguments.");
         }
 
-        var selected = SelectLanes(args[0]);
-        var customFilter = args.Length == 3 ? args[2] : null;
+        var options = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 1; index < args.Length; index += 2)
+        {
+            if (args[index] is not ("--filter" or "--driver" or "--w-transport-security")
+                || string.IsNullOrWhiteSpace(args[index + 1])
+                || !options.TryAdd(args[index], args[index + 1]))
+            {
+                throw new ArgumentException("Invalid test arguments.");
+            }
+        }
+
+        var driver = options.GetValueOrDefault("--driver", "official");
+        if (driver is not ("official" or "w"))
+        {
+            throw new ArgumentException("Unknown driver; use official or w.");
+        }
+
+        // The W transport mode is non-secret configuration; it only reaches W test processes.
+        var wTransportSecurity = options.GetValueOrDefault("--w-transport-security")
+            ?? Environment.GetEnvironmentVariable(WTransportSecurityVariable);
+        if (wTransportSecurity is not (null or "RequireTls" or "PlaintextAllowed"))
+        {
+            throw new ArgumentException("Unknown W transport security; use RequireTls or PlaintextAllowed.");
+        }
+        if (driver != "w" && options.ContainsKey("--w-transport-security"))
+        {
+            throw new ArgumentException("--w-transport-security applies only to --driver w.");
+        }
+
+        var selected = SelectLanes(args[0], driver);
+        var customFilter = options.GetValueOrDefault("--filter");
+        var laneEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [WTransportSecurityVariable] = driver == "w" ? wTransportSecurity : null
+        };
         var adminConnection = secrets?["AdminConnectionString"]?.GetValue<string>();
         var savedTestConnection = secrets?["ConnectionString"]?.GetValue<string>();
         var overrideConnection = Environment.GetEnvironmentVariable(ConnectionVariable);
@@ -85,7 +117,7 @@ internal static class TestLauncher
                 "restore", project, "--locked-mode", "--disable-parallel", "-m:1",
                 "/nodeReuse:false", "/p:UseSharedCompilation=false"
             };
-            var restoreCode = RunProcess(dotnetHost, restoreArgs, root, cliHome, null, redact);
+            var restoreCode = RunProcess(dotnetHost, restoreArgs, root, cliHome, null, laneEnvironment, redact);
             if (restoreCode != 0)
             {
                 Console.Error.WriteLine(lane.Name + ": restore failed; this lane is not accepted.");
@@ -110,7 +142,7 @@ internal static class TestLauncher
             }
             var connection = lane.NeedsAdmin ? adminConnection
                 : lane.NeedsTestConnection ? testConnection : null;
-            var code = RunProcess(dotnetHost, testArgs, root, cliHome, connection, redact);
+            var code = RunProcess(dotnetHost, testArgs, root, cliHome, connection, laneEnvironment, redact);
             var trxPath = Path.Combine(resultDirectory, lane.Id + ".trx");
             var counts = ReadAndRedactTrx(trxPath, redact);
             if (counts is null)
@@ -138,16 +170,22 @@ internal static class TestLauncher
         return overallCode;
     }
 
-    private static IReadOnlyList<Lane> SelectLanes(string name)
+    private static IReadOnlyList<Lane> SelectLanes(string name, string driver)
     {
-        const string functional = "test/W.EntityFrameworkCore.Dameng.FunctionalTests/W.EntityFrameworkCore.Dameng.FunctionalTests.csproj";
-        const string specification = "test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFrameworkCore.Dameng.Specification.Tests.csproj";
-        const string unit = "test/W.EntityFrameworkCore.Dameng.Tests/W.EntityFrameworkCore.Dameng.Tests.csproj";
-        var normalLane = new Lane("functional", "functional", functional, NormalFunctionalFilter, false, true);
-        var specLane = new Lane("specification", "specification", specification, null, false, true);
-        var adminLane = new Lane("admin", "admin migration scripts", functional, AdminFilter, true, false);
-        var probeLane = new Lane("probes", "capability probes", functional, ProbeFilter, false, true);
-        var unitLane = new Lane("unit", "unit", unit, null, false, false);
+        // W lanes run the same shared sources through the W.DamengProvider test projects and
+        // write separate TRX files, so the two drivers' results can never be merged.
+        var w = driver == "w";
+        var prefix = w ? "test/W.EntityFrameworkCore.Dameng.WDriver." : "test/W.EntityFrameworkCore.Dameng.";
+        var suffix = w ? "-w" : "";
+        var label = w ? "W " : "";
+        var functional = prefix + "FunctionalTests/" + prefix[5..] + "FunctionalTests.csproj";
+        var specification = prefix + "Specification.Tests/" + prefix[5..] + "Specification.Tests.csproj";
+        var unit = prefix + "Tests/" + prefix[5..] + "Tests.csproj";
+        var normalLane = new Lane("functional" + suffix, label + "functional", functional, NormalFunctionalFilter, false, true);
+        var specLane = new Lane("specification" + suffix, label + "specification", specification, null, false, true);
+        var adminLane = new Lane("admin" + suffix, label + "admin migration scripts", functional, AdminFilter, true, false);
+        var probeLane = new Lane("probes" + suffix, label + "capability probes", functional, ProbeFilter, false, true);
+        var unitLane = new Lane("unit" + suffix, label + "unit", unit, null, false, false);
         return name switch
         {
             "functional" => [normalLane],
@@ -170,7 +208,8 @@ internal static class TestLauncher
         };
 
     private static int RunProcess(string dotnetHost, IEnumerable<string> arguments, string root,
-        string cliHome, string? connection, Func<string, string> redact)
+        string cliHome, string? connection, IReadOnlyDictionary<string, string?> environment,
+        Func<string, string> redact)
     {
         var start = new ProcessStartInfo(dotnetHost)
         {
@@ -185,6 +224,11 @@ internal static class TestLauncher
         start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         if (connection is null) start.Environment.Remove(ConnectionVariable);
         else start.Environment[ConnectionVariable] = connection;
+        foreach (var (name, value) in environment)
+        {
+            if (value is null) start.Environment.Remove(name);
+            else start.Environment[name] = value;
+        }
 
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("Unable to start dotnet.");
