@@ -71,6 +71,42 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 `migrations add` 和 `migrations script` 会构造上下文，但生成脚本本身不连接数据库。
 `database update` 和 `migrations list` 会连接数据库。
 
+## 使用 W.DamengProvider 驱动（开发候选）
+
+启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
+（W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：
+
+```bash
+dotnet ef dbcontext scaffold "Name=ConnectionStrings:Dameng" W.EntityFrameworkCore.Dameng.WDriver \
+  --project App.Data --startup-project App
+```
+
+- 两种驱动生成相同的迁移 SQL，可以对同一数据库、同一历史表交替执行；切换驱动不会产生新的模型差异。
+- `migrationBuilder.ActiveProvider` 在 W 下为 `W.EntityFrameworkCore.Dameng.WDriver`。已有迁移若只比较
+  `"W.EntityFrameworkCore.Dameng"`，切换后会走另一分支；执行前审阅这类迁移，显式接受两个名称。
+- W 在本地事务内拒绝匿名 `BEGIN … END;` 块。迁移中的块由提供程序抑制事务；自定义 `migrationBuilder.Sql(...)`
+  块需写 `suppressTransaction: true`。
+- 时间列默认七位（`TIMESTAMP(7)`、`DATETIME(7) WITH TIME ZONE`）。六位→七位是保值的独立变更；七位→六位前必须先检查，
+  否则第七位会丢失。守卫与 ALTER 分开、`suppressTransaction: true`，同一迁移内所有待降列先检查再 ALTER：
+
+```csharp
+migrationBuilder.Sql("""
+    DECLARE v_bad BIGINT;
+    BEGIN
+        SELECT COUNT(*) INTO v_bad FROM "Orders"
+         WHERE MOD(TO_NUMBER(TO_CHAR("CreatedAt", 'FF9')), 1000) <> 0
+            OR MOD(TO_NUMBER(TO_CHAR("ShippedAt", 'FF9')), 1000) <> 0;
+        IF v_bad > 0 THEN
+            RAISE_APPLICATION_ERROR(-20071, 'Seven-digit fractions would be lost by narrowing to six digits.');
+        END IF;
+    END;
+    """, suppressTransaction: true);
+migrationBuilder.AlterColumn<DateTime>("CreatedAt", "Orders", type: "TIMESTAMP(6)", oldType: "TIMESTAMP(7)");
+migrationBuilder.AlterColumn<DateTime>("ShippedAt", "Orders", type: "TIMESTAMP(6)", oldType: "TIMESTAMP(7)");
+```
+
+  提供程序不会自动注入该守卫。守卫拒绝后数据与列精度不变；不要截断数据来适配旧驱动或旧精度。
+
 ## 多种数据库各用一个迁移项目
 
 同一套实体要同时面向 SQL Server、PostgreSQL 和达梦时，模型留在共享项目，每种数据库单独放迁移。

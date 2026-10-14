@@ -8,13 +8,28 @@
 
 ```text
               应用
-                |
-                v
-W.EntityFrameworkCore.Dameng
+           |          \
+           |           v
+           |    W.EntityFrameworkCore.Dameng.WDriver ──> W.DamengProvider
+           v           |
+W.EntityFrameworkCore.Dameng  (共享 SQL/模型/迁移/反向工程 + 官方驱动适配)
         |                    |
         v                    v
 EF Core Relational 10     DM.DmProvider
 ```
+
+驱动通过 `W.EntityFrameworkCore.Dameng.Infrastructure.DamengDriver` 桥接：它同时是驱动身份
+（`Name`、EF `ProviderName`、脚手架 `Use...` 方法）和无状态适配器（创建/识别连接、设置
+BLOB/CLOB/BINARY/VARBINARY/INTERVAL 参数类型、把时间映射的小数秒位数交给参数、选择时间读取方式、
+是否允许内建重试）。`DamengDriverConfiguration` 以指定驱动配置 options 并注册运行时/设计时服务；
+其余实现保持 internal，扩展包不使用 `InternalsVisibleTo`。
+
+- `DamengOptionsExtension.Driver` 进入服务提供程序缓存键、LogFragment 与 DebugInfo；两种驱动不会共用
+  类型映射、连接或异常服务。
+- 类型映射源保留与驱动无关的模板，返回的每个映射都绑定到本服务提供程序的驱动，Clone 保留驱动；
+  驱动收到其他驱动的参数时抛异常，因此跨驱动复用模型会显式失败。
+- `DamengDatabaseProvider` 按驱动报告 `ProviderName` 并只认领选择该驱动的 options；
+  `ISingletonOptions` 在首次初始化和复用时拒绝混合注册或与 options 不符的服务。
 
 公共配置公开 EF 抽象和标准 `DbConnection` 重载，不公开驱动程序专用的连接类型。
 达梦专用模型 API 使用 `UseDameng...` / `GetDameng...` 命名前缀，从而可在同一使用方中
@@ -92,9 +107,9 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 `DM.DmProvider` 当前提供 `net9.0` 资产，可在已测试的 .NET 10 进程中运行。
 这是观察到的兼容性，而非原生 .NET 10 驱动程序保证。
 
-驱动程序未公开提供程序专用的 `DbBatch`，因此修改命令使用 EF 单命令批次。
-在已测试资产中，其异步 ADO.NET 方法会回退到同步实现；即使 EF 异步 API 仍可调用，
-非阻塞 I/O 和取消能力也会受到限制。
+两种驱动都未公开提供程序专用的 `DbBatch`，因此修改命令使用 EF 单命令批次。
+官方驱动在已测试资产中的异步 ADO.NET 方法会回退到同步实现，非阻塞 I/O 和取消能力受限；
+W 驱动的异步路径为真实网络异步，取消/期限与失败结果由驱动的 `FailureInfo` 描述，提供程序不在其上增加重试。
 
 `CommandTimeout(...)` 以秒为单位配置 `DbCommand.CommandTimeout`。本项目不对
 连接字符串超时关键字或其单位作任何断言，因为该行为尚未针对锁定的驱动程序进行验证；

@@ -334,3 +334,7 @@ T07改造构建、推包与GitHub Release任务的统一标签解析及包白名
 - 每个任务一个本地提交；推送分支和创建 PR 需要用户另行确认。
 - 真实数据库门在本地 `8.1.5.60 / UTF-8 / plaintext` profile 上执行，记录在[验证记录](w-dmprovider-validation.md)。TLS profile、其他服务器版本、commit 失 ACK 端到端故障注入、需要额外权限的上游缺口保持 pending，不当作通过。
 - M2（T08–T10）、T11 与 R4 不在本轮执行；M1 闭合并经独立复审后再按本计划启动。
+
+执行状态（2026-10-14）：T00–T07 已完成到开发候选，最终验收为官方 734/233/4/7、W 44/284/4/7（详见[验证记录](w-dmprovider-validation.md)）。
+实施中新确认的 W 行为已写入兼容矩阵：准备阶段失败使会话 Broken、事务内拒绝匿名块、8/9 位列禁止写入（含 NULL）、
+`CommandTimeout` 报 `TotalDeadline`。尚待：独立复审、TLS/其他 profile、EF 端到端故障注入、发布授权。

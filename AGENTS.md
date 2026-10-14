@@ -47,8 +47,13 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
 - 明确拒绝不支持或会造成信息损失的结构；不得生成其他数据库的语法，也不得静默截断值。
 - 达梦 DDL 会隐式提交。生成 DDL 时应正确禁止事务，为测试对象使用唯一名称，并在
   `finally` 中精确清理对象。
-- 驱动程序没有提供程序专用的 `DbBatch`；在真实证据支持其他策略之前，保持单命令修改批次。
-- 将驱动程序异步视为同步回退，其取消能力有限。
+- 两种驱动都没有提供程序专用的 `DbBatch`；在真实证据支持其他策略之前，保持单命令修改批次。
+- 官方驱动的异步视为同步回退，取消能力有限；W 驱动的异步与取消按其 `FailureInfo` 合同处理，
+  不得据此增加自动重试。
+- 驱动相关行为只经 `DamengDriver` 桥接；共享代码不得直接判断某个驱动的 ADO.NET 类型。
+  W 驱动专用公共 API 使用 `UseDamengWithWDriver` / `AddEntityFrameworkDamengWithWDriver` 命名。
+- W 通道：`scripts/local-test/run.sh test <lane> --driver w --w-transport-security PlaintextAllowed`；
+  两种驱动的数据库通道共享测试模式，不得并行运行。
 
 ## 证据
 

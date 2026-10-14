@@ -2,7 +2,9 @@
   <PropertyGroup>
     <AssemblyName>W.EntityFrameworkCore.Dameng.WDriver</AssemblyName>
     <RootNamespace>W.EntityFrameworkCore.Dameng.WDriver</RootNamespace>
-    <VersionPrefix>0.3.0</VersionPrefix>
+    <!-- Depends on the preview W.DamengProvider, so the package is a prerelease (NU5104). -->
+    <VersionPrefix>0.4.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
     <PackageId>W.EntityFrameworkCore.Dameng.WDriver</PackageId>
     <Title>W.DamengProvider driver for the unofficial Dameng EF Core 10 provider</Title>
     <Description>Runs the W.EntityFrameworkCore.Dameng provider on the W.DamengProvider ADO.NET driver (asynchronous network I/O, cancellation, failure outcomes, 100ns temporal precision). Select it with UseDamengWithWDriver.</Description>
@@ -19,6 +21,16 @@
   <ItemGroup>
     <ProjectReference Include="../W.EntityFrameworkCore.Dameng/W.EntityFrameworkCore.Dameng.csproj" />
   </ItemGroup>
+
+  <!--
+    The extension uses only the base package's public driver API, but it is validated as an exact
+    pair, so the packed dependency on W.EntityFrameworkCore.Dameng is pinned to one version.
+  -->
+  <Target Name="PinBasePackageVersion" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Update="@(_ProjectReferencesWithVersions)" ProjectVersion="[%(ProjectVersion)]" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />

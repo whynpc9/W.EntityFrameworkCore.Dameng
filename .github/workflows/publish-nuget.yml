@@ -1,5 +1,7 @@
 name: 发布 NuGet 包
 
+# 仅基础包 W.EntityFrameworkCore.Dameng。W 扩展包使用 wdriver-v<SemVer>（publish-nuget-wdriver.yml），
+# 该前缀不匹配 v*。
 on:
   push:
     tags:
@@ -92,6 +94,13 @@ jobs:
 
           if (( ${#packages[@]} != 1 )); then
             echo "::error::预期生成 1 个 NuGet 包，实际找到 ${#packages[@]} 个。"
+            exit 1
+          fi
+
+          # v<SemVer> 只发布基础包：校验文件名对应的 PackageId 与版本都与标签一致。
+          expected="W.EntityFrameworkCore.Dameng.${{ steps.version.outputs.value }}.nupkg"
+          if [[ "$(basename "${packages[0]}")" != "$expected" ]]; then
+            echo "::error::预期 $expected，实际为 $(basename "${packages[0]}")。"
             exit 1
           fi
 

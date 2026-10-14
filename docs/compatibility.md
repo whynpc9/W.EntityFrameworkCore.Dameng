@@ -119,6 +119,36 @@
 - 当前实例参数、失败历史、修复及最终证据路径见[0.3.0 发布准备](release-0.3.0.md)。
   此处记录本地候选验收，不表示版本已发布。
 
+## W.DamengProvider 驱动（开发候选）
+
+扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.1.0-preview.1]`
+（身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
+未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
+证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
+完整记录见 [W 接入验证记录](w-dmprovider-validation.md)；独立复审完成前不作为已发布能力。
+
+| 领域 | W 状态 | 范围与边界 |
+| --- | --- | --- |
+| 配置 | 单元级已验证 | 六个 `UseDamengWithWDriver` 重载、`AddEntityFrameworkDamengWithWDriver`；同一 options 混用两种驱动、手工服务与 options 驱动不符、同一服务集合注册两种驱动均明确失败 |
+| 共享功能套件 | 真实环境已验证 | 官方 233 项功能、4 项规范冒烟、7 项管理员迁移脚本测试在 W 下全部通过；按驱动区分的断言见验证记录 T04 |
+| 异步与取消 | 真实环境已验证 | 查询与 `SaveChangesAsync` 在服务器未完成时返回；预取消不发送；运行中取消保留原 token 并关闭会话，EF 下一次操作用新会话；`CommandTimeout` 报客户端期限（`TotalDeadline`）。LOB 同步 getter 不在此结论内 |
+| 自动重试 | 明确拒绝 | `EnableRetryOnFailure` 全部重载及直接构造 `DamengRetryingExecutionStrategy` 抛 `Dameng:RetryNotSupportedForWDriver`；默认策略执行一次；自定义 `ExecutionStrategy` 由应用负责 |
+| 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。commit 失 ACK 与发送后断线的端到端注入 pending |
+| 错误后的会话 | 真实环境已验证（8.1.5.60） | 唯一键、外键、NOT NULL、触发器 RAISE、序列耗尽、未绑定标记 -6804 在 sync/async × 自动提交/事务下保留同一会话且事务不被暗中结束；准备阶段失败（语法错误）使会话 Broken，EF 重新打开 |
+| 事务内匿名块 | W 拒绝 | W 在本地事务内发送前拒绝 `BEGIN … END;`，会话与事务仍可用；事务外正常。迁移中的块由提供程序抑制事务，不受影响 |
+| 隔离级别 | 真实环境已验证（8.1.5.60） | RU / Serializable 下跟踪式 `SaveChanges` 成功（官方驱动失败）；RepeatableRead/Snapshot 仍拒绝；其他 profile 的发送前拒绝 pending |
+| 保存点 | 真实环境已验证 | EF 自动保存点在 `SaveChanges` 失败后回滚并继续事务；显式保存点可用 |
+| 时间精度 | 真实环境已验证（8.1.5.60） | 默认 `TIMESTAMP(7)` / `DATETIME(7) WITH TIME ZONE` 逐 tick 往返（含 Min/Max 边界、原偏移、相邻 tick 参数比较）；时间参数只用 `Scale`；六位列写入非整微秒值在发送前拒绝；8/9 位列禁止写入（含 NULL），读取非整 100ns 值拒绝；TIME/INTERVAL 仍为六位 |
+| 原始 ADO 读取 | 行为差异 | 带时区列 `GetValue` 返回 `DateTimeOffset`（官方为 `DateTime`）；EF 物化对 DateTimeOffset/INTERVAL 使用 typed getter |
+| 迁移与切换 | 真实环境已验证 | 6→7 位保值；7→6 位需先运行守卫（见[迁移说明](migrations.md)）；同一历史表可在官方与 W 之间交替应用/回滚迁移；比较 `ActiveProvider` 的迁移须同时接受两个提供程序名称；两驱动的模型互相 diff 无操作 |
+| 设计时 | 真实环境已验证 | `dotnet ef migrations add/script`、`database update`、`dbcontext scaffold`（提供程序名 `W.EntityFrameworkCore.Dameng.WDriver`）与生成代码编译；嵌套项目加载的 W DLL 与 manifest 一致 |
+| 诊断 | 真实环境已验证 | ActivitySource/Meter 名称 `W.DmProvider`；活动中不含 SQL、参数值、连接串或凭据；LogFragment/DebugInfo 带 `Driver=W` |
+| 数据源、流式 LOB、DmDecimal | 未接入 | M2/M3 范围，不能据驱动能力推断 EF 支持 |
+
+连接入口的兼容性变化（两种驱动）：`UseDameng(DbConnection)` 现在只接受官方 `Dm.DmConnection`，
+`UseDamengWithWDriver(DbConnection)` 只接受 `W.Dm.DmConnection`；包装连接（如 profiler）会被拒绝，
+因为提供程序专用参数类型无法穿过包装设置。
+
 ## 真实数据库测试契约
 
 真实数据库测试接收一个机密环境变量：

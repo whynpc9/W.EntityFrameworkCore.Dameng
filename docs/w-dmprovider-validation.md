@@ -128,3 +128,45 @@ W 专属 `WDriverTemporalAndMigrationFunctionalTests`（15 项）单独运行 15
 - 驱动切换：官方驱动应用迁移 1 → W 读取历史并应用 2、3 → 官方回滚 3 再重新应用 → W 回滚全部；使用 `ActiveProvider` 分支的迁移在两种驱动下分别走对应分支，说明旧迁移若只比较旧名称需显式接受两个名称。离线单元证明两驱动的设计时模型互相 diff 无任何迁移操作。
 
 全量 W 功能（284 项 = 共享 233 + T05 36 + T06 15）：283/284，唯一失败为 `Connection reset by peer`（运行 ID `20261014T082855838Z-27148e00`）。为避免进程内服务提供程序数量告警误报，共享测试助手把 EF `ManyServiceProvidersCreatedWarning` 改为记录日志（测试代码有意创建多种模型变体）。最终干净运行见 T07。
+
+## T07 M1 开发候选（2026-10-14）
+
+- 版本：基础包 `W.EntityFrameworkCore.Dameng` 0.4.0（新增公开驱动桥接 API，连接类型校验收紧）；扩展包
+  `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1（依赖预览版驱动，按 NU5104 必须为预发布版）。
+- 扩展包 nuspec：`W.EntityFrameworkCore.Dameng [0.4.0]`（精确配对，由 `PinBasePackageVersion` 目标固定）、
+  `W.DamengProvider [0.1.0-preview.1]`。
+- 本地打包（Release，最终树，未发布）：基础包 SHA-256 `8b2f02b7…3289`，扩展包 SHA-256 `eec7f6ad…5c75`。nupkg 是构建产物，不提交。
+- 精确包消费者矩阵（独立 `NUGET_PACKAGES`、显式 `NuGet.config` 把两个候选包映射到本地目录，`TreatWarningsAsErrors`）：
+
+| 消费者 | 结果 |
+| --- | --- |
+| 仅基础包 | 构建无警告；`ProviderName=W.EntityFrameworkCore.Dameng`，连接 `Dm.DmConnection`，未加载 `W.DamengProvider` |
+| 仅扩展包 | 构建无警告；`ProviderName=W.EntityFrameworkCore.Dameng.WDriver`，连接 `W.Dm.DmConnection`，加载 MVID 与 manifest 一致；实库查询返回 1 |
+| 两包 + SqlServer | 构建无警告；三个提供程序名称各自正确，扩展方法无歧义 |
+
+- 发布工作流：`v<SemVer>`（`publish-nuget.yml`）只发布基础包，并新增 PackageId/版本与标签一致的校验；
+  `wdriver-v<SemVer>`（新 `publish-nuget-wdriver.yml`，不匹配 `v*`）只打包扩展包，核验 W 包身份、运行两组单元测试，
+  校验恰好一个同名同版本 nupkg，并要求其精确依赖的基础包版本已在 NuGet.org 可取得后才推送。本地已用实际 nupkg
+  验证 nuspec 解析；工作流本身未触发，未创建任何标签或发布。
+- 文档：README、兼容矩阵（新增 W 小节与连接类型兼容性变化）、架构、迁移说明（W 设计时入口、`ActiveProvider`、七位→六位守卫）、
+  AGENTS、本地测试说明。
+
+### 最终验收（同一工作树、顺序执行）
+
+| 通道 | 官方 | W |
+| --- | --- | --- |
+| unit | 734/734 | 44/44 |
+| functional | 233/233 | 284/284 |
+| specification | 4/4 | 4/4 |
+| admin | 7/7 | 7/7 |
+| 运行 ID | `20261014T121220978Z-a4f897fa` | `20261014T121451942Z-66a9e53f` |
+
+两次运行均满足宿主 Completed、退出 0、Total=Executed=Passed、无失败或跳过；`dotnet format --verify-no-changes`
+与 `--locked-mode` 还原通过。
+
+### 仍为 pending
+
+- 用户指定的独立复审（计划 §8，针对 M1 代码 diff）。
+- TLS profile、非 8.1.5.60 服务器的拒绝合同；commit 失 ACK / 发送后断线的 EF 端到端故障注入；`-3510` 负例。
+- 公开发布：需要发布授权、按先基础包后扩展包的顺序打标签。
+- M2（数据源、流式 LOB）、T11（DmDecimal）。
