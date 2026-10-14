@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using Dm;
 using Xunit;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
@@ -96,11 +95,13 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
             // allows a non-DBA account to read those system catalogs.
             await ExecuteAsync(admin, "GRANT SOI TO \"" + user + "\"");
 
-            var builder = new DmConnectionStringBuilder(adminConnectionString)
-            {
-                ["UID"] = user,
-                ["Pwd"] = _password
-            };
+            // W rejects re-assigning a synonym of an existing key with a different value, so
+            // the admin credentials are removed before the test user's are set.
+            var builder = new DmConnectionStringBuilder(adminConnectionString);
+            builder.Remove("UID");
+            builder.Remove("Pwd");
+            builder["UID"] = user;
+            builder["Pwd"] = _password;
             ConnectionString = builder.ConnectionString;
             _secrets.Add(ConnectionString);
 

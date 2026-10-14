@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs the official functional suite against W.DamengProvider. The sources are linked from the
+    official project and compiled with WDRIVER; per-driver expectations live in those sources.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>W.EntityFrameworkCore.Dameng.FunctionalTests</RootNamespace>
+    <DefineConstants>$(DefineConstants);WDRIVER</DefineConstants>
+    <SharedFunctionalTests>../W.EntityFrameworkCore.Dameng.FunctionalTests</SharedFunctionalTests>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/W.EntityFrameworkCore.Dameng.WDriver/W.EntityFrameworkCore.Dameng.WDriver.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(SharedFunctionalTests)/**/*.cs"
+             Exclude="$(SharedFunctionalTests)/bin/**;$(SharedFunctionalTests)/obj/**"
+             LinkBase="Shared" />
+    <Compile Include="../Shared/QueryTranslationCases.cs" Link="QueryTranslationCases.cs" />
+    <None Include="../../scripts/driver-candidate/w-damengprovider.manifest.json" Link="w-damengprovider.manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

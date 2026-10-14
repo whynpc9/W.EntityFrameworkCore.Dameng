@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -93,7 +92,7 @@ public sealed class DamengDropIdentityFunctionalTests
 
     private static DropIdentityContext CreateContext(string connectionString, string table, bool identity)
         => new(new DbContextOptionsBuilder<DropIdentityContext>()
-            .UseDameng(connectionString)
+            .UseDamengUnderTest(connectionString)
             .ReplaceService<IModelCacheKeyFactory, DropIdentityModelCacheKeyFactory>()
             .Options, table, identity);
 

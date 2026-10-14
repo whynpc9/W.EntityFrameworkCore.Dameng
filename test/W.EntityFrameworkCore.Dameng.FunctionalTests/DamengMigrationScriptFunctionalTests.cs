@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Xunit.Abstractions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -58,7 +57,7 @@ public sealed class DamengMigrationScriptFunctionalTests
                     Assert.Equal(0L, (ownerInfo3 >> 16) & 0xFFFFL);
                     Assert.Equal(ownerInfo3 & 0xFFFFL, Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture));
                 }
-                using var baselineContext = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+                using var baselineContext = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(database.ConnectionString).Options);
                 var baselineFactory = new DamengDatabaseModelFactory(baselineContext.GetService<IRelationalTypeMappingSource>(), baselineContext.GetService<ISqlGenerationHelper>(), baselineContext.GetService<DamengDriver>());
                 Assert.Equal("BASELINE", Assert.Single(baselineFactory.Create(baseline, new DatabaseModelFactoryOptions(tables: ["BASELINE"])).Tables).Name);
                 await ExecuteAsync(baseline, "DROP TABLE BASELINE");
@@ -121,7 +120,7 @@ public sealed class DamengMigrationScriptFunctionalTests
             Assert.Equal(3, misplacedIndexes.Count);
             Assert.Equal(4, normalDefaults); // secondary index, PK, UNIQUE and physical FK
             Assert.Equal(1, virtualIndexes);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(database.ConnectionString).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(database.ConnectionString).Options);
             var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), context.GetService<DamengDriver>());
             foreach (var (table, index) in misplacedIndexes)
             {
@@ -189,7 +188,7 @@ public sealed class DamengMigrationScriptFunctionalTests
                     Assert.False(await reader.ReadAsync());
                 }
 
-                using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+                using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(_database.ConnectionString).Options);
                 var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), context.GetService<DamengDriver>());
                 var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: ["PLACED"])));
                 Assert.Contains("PLACED", error.Message, StringComparison.Ordinal);
@@ -241,7 +240,7 @@ public sealed class DamengMigrationScriptFunctionalTests
                 Assert.InRange(Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture) & 0x3FL, 0x21L, 0x27L);
             }
 
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(_database.ConnectionString).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(_database.ConnectionString).Options);
             var factory = new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), context.GetService<DamengDriver>());
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection,
                 new DatabaseModelFactoryOptions(tables: [huge])));
@@ -265,7 +264,7 @@ public sealed class DamengMigrationScriptFunctionalTests
         WriteServerFacts();
         var names = ScriptObjectNames.ForPrefix(NewPrefix());
         var options = new DbContextOptionsBuilder<ScriptBootstrapContext>()
-            .UseDameng(_database.ConnectionString)
+            .UseDamengUnderTest(_database.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, ScriptBootstrapCacheKeyFactory>()
             .Options;
 
@@ -422,7 +421,7 @@ public sealed class DamengMigrationScriptFunctionalTests
     private DamengScriptMigrationContext CreateMigrationContext(string historyTable)
         => new(
             new DbContextOptionsBuilder<DamengScriptMigrationContext>()
-                .UseDameng(
+                .UseDamengUnderTest(
                     _database.ConnectionString,
                     dameng => dameng.MigrationsHistoryTable(historyTable))
                 .Options);

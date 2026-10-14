@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -20,7 +19,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
         await using var connection = new DmConnection(connectionString);
         await connection.OpenAsync();
-        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(connectionString).Options);
         var generator = context.GetService<IMigrationsSqlGenerator>();
         var block = "DECLARE PROCEDURE p IS BEGIN NULL; END; BEGIN p; END;";
         var ddl = $"CREATE TABLE \"{table}\" (ID INT);";
@@ -59,7 +58,7 @@ public sealed class DamengMigrationsFunctionalTests
         await using var connection = new DmConnection(connectionString);
         await connection.OpenAsync();
         await using var context = new DbContext(new DbContextOptionsBuilder()
-            .UseDameng(connectionString, options => options.MigrationsHistoryTable(historyTable)).Options);
+            .UseDamengUnderTest(connectionString, options => options.MigrationsHistoryTable(historyTable)).Options);
         var createSql = $"CREATE TABLE \"{table}\" (ID INT PRIMARY KEY, N VARCHAR(40), C INT);";
         try
         {
@@ -119,7 +118,7 @@ public sealed class DamengMigrationsFunctionalTests
         var name = "EF10_BLK_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         await using var connection = new DmConnection(connectionString);
         await connection.OpenAsync();
-        await using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(connectionString).Options);
+        await using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(connectionString).Options);
         var created = false;
         try
         {
@@ -177,7 +176,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
         var options = new DbContextOptionsBuilder<MigrationContext>()
-            .UseDameng(
+            .UseDamengUnderTest(
                 connectionString,
                 damengOptions => damengOptions.MigrationsHistoryTable(historyTableName))
             .ReplaceService<IModelCacheKeyFactory, MigrationModelCacheKeyFactory>()
@@ -284,7 +283,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
         var options = new DbContextOptionsBuilder<MigrationContext>()
-            .UseDameng(
+            .UseDamengUnderTest(
                 connectionString,
                 damengOptions => damengOptions.MigrationsHistoryTable(historyTableName))
             .ReplaceService<IModelCacheKeyFactory, MigrationModelCacheKeyFactory>()
@@ -362,7 +361,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
         var options = new DbContextOptionsBuilder<CommentContext>()
-            .UseDameng(connectionString)
+            .UseDamengUnderTest(connectionString)
             .ReplaceService<IModelCacheKeyFactory, CommentModelCacheKeyFactory>()
             .EnableDetailedErrors()
             .Options;
@@ -438,7 +437,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
         var options = new DbContextOptionsBuilder<CommentContext>()
-            .UseDameng(
+            .UseDamengUnderTest(
                 connectionString,
                 damengOptions => damengOptions.MigrationsHistoryTable(historyTableName))
             .ReplaceService<IModelCacheKeyFactory, CommentModelCacheKeyFactory>()
@@ -532,7 +531,7 @@ public sealed class DamengMigrationsFunctionalTests
         }
 
         var options = new DbContextOptionsBuilder<EmptyContext>()
-            .UseDameng(connectionString)
+            .UseDamengUnderTest(connectionString)
             .Options;
         await using var context = new EmptyContext(options);
         var generator = context.GetService<IMigrationsSqlGenerator>();
@@ -624,7 +623,7 @@ public sealed class DamengMigrationsFunctionalTests
         var connectionString = DamengTestEnvironment.GetRequiredConnectionString();
 
         var options = new DbContextOptionsBuilder<AnsiStringContext>()
-            .UseDameng(connectionString)
+            .UseDamengUnderTest(connectionString)
             .ReplaceService<IModelCacheKeyFactory, AnsiStringModelCacheKeyFactory>()
             // 此测试的专用模型服务使用独立容器，避免受全套测试的缓存容器数量影响；
             // 警告阈值按全局缓存计数，缓存禁用时仍会触发，因此显式改为记录日志。

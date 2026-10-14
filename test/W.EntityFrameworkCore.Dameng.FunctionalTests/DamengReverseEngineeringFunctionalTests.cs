@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -63,7 +62,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var table in Enumerable.Reverse(tables)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            foreach (var table in Enumerable.Reverse(tables)) await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
         }
     }
 
@@ -103,7 +102,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             var create = new CreateTableOperation { Name = copy };
             foreach (var column in new[] { "A", "B" }) create.Columns.Add(new AddColumnOperation { Name = column, Table = copy, ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
             create.ForeignKeys.Add(new AddForeignKeyOperation { Name = "FK_" + copy, Table = copy, Columns = foreignKey.Columns.Select(column => column.Name).ToArray(), PrincipalTable = principal, PrincipalColumns = foreignKey.PrincipalColumns.Select(column => column.Name).ToArray(), OnDelete = foreignKey.OnDelete!.Value });
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             foreach (var command in context.GetService<IMigrationsSqlGenerator>().Generate([create])) await ExecuteAsync(connection, command.CommandText);
             tables.Add(copy);
             foreach (var table in new[] { source, copy })
@@ -118,7 +117,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var table in Enumerable.Reverse(tables)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            foreach (var table in Enumerable.Reverse(tables)) await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
         }
     }
 
@@ -164,14 +163,14 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            if (viewCreated) await ExecuteAsync(connection, $"DROP MATERIALIZED VIEW \"{view}\"");
+            if (viewCreated) await CleanupAsync(connection, $"DROP MATERIALIZED VIEW \"{view}\"");
             foreach (var table in Enumerable.Reverse(tables))
             {
                 await using var exists = connection.CreateCommand();
                 exists.CommandText = "SELECT COUNT(*) FROM ALL_TABLES WHERE OWNER=SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) AND TABLE_NAME=:name";
                 var name = exists.CreateParameter(); name.ParameterName = "name"; name.Value = table; exists.Parameters.Add(name);
                 if (Convert.ToInt32(await exists.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 1)
-                    await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                    await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -195,7 +194,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             var model = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
             Assert.Equal(70, Assert.Single(model.Indexes)[DamengAnnotationNames.IndexFillFactor]);
             Assert.Equal(85, Assert.Single(model.UniqueConstraints)[DamengAnnotationNames.IndexFillFactor]);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var create = new CreateTableOperation { Name = copy };
             create.AddAnnotations(model.GetAnnotations());
             foreach (var column in new[] { "ID", "U", "V" }) create.Columns.Add(new AddColumnOperation { Table = copy, Name = column, ClrType = typeof(int), ColumnType = "INT", IsNullable = column != "ID" });
@@ -227,7 +226,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -249,7 +248,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             created.Add(table);
             var source = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions(tables: [table])).Tables);
             Assert.Equal(expected, source[DamengAnnotationNames.TableFillFactor]);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var operation = new CreateTableOperation { Name = copy };
             operation.AddAnnotations(source.GetAnnotations());
             operation.Columns.Add(new AddColumnOperation { Table = copy, Name = "ID", ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
@@ -268,7 +267,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -286,7 +285,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         await using var query = connection.CreateCommand();
         query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
         var schema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
-        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
         var sql = context.GetService<ISqlGenerationHelper>();
         var reference = sql.DelimitIdentifier(sequence, qualified ? schema : null);
         var created = new List<string>();
@@ -328,8 +327,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
-            if (sequenceCreated) await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
+            if (sequenceCreated) await CleanupAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
         }
     }
 
@@ -389,7 +388,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -444,7 +443,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -485,7 +484,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -557,7 +556,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(created)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(created)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -586,7 +585,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             var item = Assert.Single(CreateFactory().Create(connection, new DatabaseModelFactoryOptions()).Sequences);
             Assert.True(item.IsCyclic);
             Assert.Equal(next, item.StartValue);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var copy = new CreateSequenceOperation
             {
                 Name = "COPY_SEQ",
@@ -606,8 +605,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
-            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            await CleanupAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await CleanupAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
         }
     }
 
@@ -647,8 +646,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
-            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            await CleanupAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await CleanupAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
         }
     }
 
@@ -689,7 +688,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal(-99L, descending.MinValue);
             Assert.Equal(-1L, descending.MaxValue);
             foreach (var item in model.Sequences) await ExecuteAsync(connection, $"DROP SEQUENCE \"{item.Name}\"");
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var operations = model.Sequences.Select(item => new CreateSequenceOperation
             {
                 Name = item.Name,
@@ -709,8 +708,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
-            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            await CleanupAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await CleanupAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
         }
     }
 
@@ -739,8 +738,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            await ExecuteAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
-            await ExecuteAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
+            await CleanupAsync(connection, $"SET SCHEMA \"{originalSchema}\"");
+            await CleanupAsync(connection, $"DROP SCHEMA \"{schema}\" CASCADE");
         }
     }
 
@@ -798,7 +797,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var table in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            foreach (var table in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
         }
     }
 
@@ -813,7 +812,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         var sequence = $"EF10_CMPQ_{suffix}";
         await using var connection = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
         await connection.OpenAsync();
-        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
         var helper = context.GetService<ISqlGenerationHelper>();
         await using var query = connection.CreateCommand();
         query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
@@ -842,7 +841,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -860,7 +859,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         await using var query = connection.CreateCommand();
         query.CommandText = "SELECT SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID()) FROM dual";
         var schema = Convert.ToString(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture)!;
-        using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+        using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
         var helper = context.GetService<ISqlGenerationHelper>();
         var sequenceSql = (qualified ? helper.DelimitIdentifier(schema) + " \n . \t " : "")
             + helper.DelimitIdentifier(sequence) + " \t . \n NEXTVAL";
@@ -902,7 +901,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -927,7 +926,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal(true, table[DamengAnnotationNames.IsClusterBtree]);
             var error = Assert.Throws<NotSupportedException>(() => factory.Create(connection, new DatabaseModelFactoryOptions(tables: [heap])));
             Assert.Contains(heap, error.Message, StringComparison.Ordinal);
-            using var context = new DbContext(new DbContextOptionsBuilder().UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            using var context = new DbContext(new DbContextOptionsBuilder().UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var operation = new CreateTableOperation { Name = copy };
             operation[DamengAnnotationNames.IsClusterBtree] = table[DamengAnnotationNames.IsClusterBtree];
             operation.Columns.Add(new AddColumnOperation { Table = copy, Name = "ID", ClrType = typeof(int), ColumnType = "INT", IsNullable = true });
@@ -952,7 +951,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -980,7 +979,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -1011,7 +1010,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -1045,7 +1044,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var table in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+            foreach (var table in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
         }
     }
 
@@ -1077,7 +1076,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1126,7 +1125,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1159,7 +1158,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1201,7 +1200,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             await ExecuteAsync(connection, dropSequence);
             cleanup.Remove(dropSequence);
             using var context = new DbContext(new DbContextOptionsBuilder()
-                .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+                .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var generator = context.GetService<IMigrationsSqlGenerator>();
             foreach (var command in generator.Generate([new CreateSequenceOperation
                 { Name = item.Name, Schema = item.Schema, ClrType = typeof(long), StartValue = item.StartValue!.Value,
@@ -1223,8 +1222,8 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            await ExecuteAsync(connection, $"SET SCHEMA \"{loginSchema}\"");
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            await CleanupAsync(connection, $"SET SCHEMA \"{loginSchema}\"");
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1251,7 +1250,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
             Assert.Equal($"{type}(9 BYTE)", table.Columns[0].StoreType);
             Assert.Equal($"{type}(9 CHAR)", table.Columns[1].StoreType);
             using var context = new DbContext(new DbContextOptionsBuilder()
-                .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+                .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
             var operation = new CreateTableOperation { Name = copy };
             foreach (var column in table.Columns)
             {
@@ -1304,7 +1303,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var name in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+            foreach (var name in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
         }
     }
 
@@ -1348,7 +1347,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
                 var model = factory.Create(connection, new DatabaseModelFactoryOptions(tables: [table]));
                 var item = Assert.Single(model.Sequences);
                 using var context = new DbContext(new DbContextOptionsBuilder()
-                    .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+                    .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
                 var command = Assert.Single(context.GetService<IMigrationsSqlGenerator>().Generate(
                     [new CreateSequenceOperation { Name = copy, ClrType = typeof(long), StartValue = item.StartValue!.Value,
                         IncrementBy = item.IncrementBy!.Value, MinValue = item.MinValue, MaxValue = item.MaxValue, IsCyclic = item.IsCyclic!.Value }]));
@@ -1372,7 +1371,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1421,7 +1420,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         }
         finally
         {
-            foreach (var sql in Enumerable.Reverse(cleanup)) await ExecuteAsync(connection, sql);
+            foreach (var sql in Enumerable.Reverse(cleanup)) await CleanupAsync(connection, sql);
         }
     }
 
@@ -1488,7 +1487,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var sql in Enumerable.Reverse(cleanup))
             {
-                await ExecuteAsync(connection, sql);
+                await CleanupAsync(connection, sql);
             }
         }
     }
@@ -1535,7 +1534,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var sql in Enumerable.Reverse(cleanup))
             {
-                await ExecuteAsync(connection, sql);
+                await CleanupAsync(connection, sql);
             }
         }
     }
@@ -1606,7 +1605,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (created)
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{tableName}\"");
             }
         }
     }
@@ -1661,7 +1660,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -1711,7 +1710,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -1776,7 +1775,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -1810,7 +1809,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -1851,7 +1850,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -1889,12 +1888,12 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
 
             if (sequenceCreated)
             {
-                await ExecuteAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
+                await CleanupAsync(connection, $"DROP SEQUENCE \"{sequence}\"");
             }
         }
     }
@@ -1939,7 +1938,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -1985,7 +1984,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -2038,12 +2037,12 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (tableCreated)
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
 
             if (sequenceCreated)
             {
-                await ExecuteAsync(connection, $"DROP SEQUENCE {sequence}");
+                await CleanupAsync(connection, $"DROP SEQUENCE {sequence}");
             }
         }
     }
@@ -2077,7 +2076,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (created)
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -2126,7 +2125,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -2169,7 +2168,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -2180,7 +2179,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         public bool Clustered => clustered;
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-            => optionsBuilder.UseDameng(DamengTestEnvironment.GetRequiredConnectionString())
+            => optionsBuilder.UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString())
                 .ReplaceService<IModelCacheKeyFactory, ClusteringModelCacheKeyFactory>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -2248,7 +2247,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -2293,7 +2292,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var name in created)
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{name}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{name}\"");
             }
         }
     }
@@ -2484,17 +2483,17 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (lowerTableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{lowerTableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{lowerTableName}\"");
             }
 
             if (tableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
 
             if (sequenceCreated)
             {
-                await ExecuteAsync(setup, $"DROP SEQUENCE \"{sequenceName}\"");
+                await CleanupAsync(setup, $"DROP SEQUENCE \"{sequenceName}\"");
             }
         }
     }
@@ -2603,22 +2602,22 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (viewCreated)
             {
-                await ExecuteAsync(setup, $"DROP VIEW \"{viewName}\"");
+                await CleanupAsync(setup, $"DROP VIEW \"{viewName}\"");
             }
 
             if (childCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{childTable}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{childTable}\"");
             }
 
             if (compositeParentCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{compositeParentTable}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{compositeParentTable}\"");
             }
 
             if (parentCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{parentTable}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{parentTable}\"");
             }
         }
     }
@@ -2683,27 +2682,27 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (selfCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{selfTable}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{selfTable}\"");
             }
 
             if (childCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{childTable}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{childTable}\"");
             }
 
             if (sharedCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{sharedName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{sharedName}\"");
             }
 
             if (otherTableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{otherSchema}\".\"{sharedName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{otherSchema}\".\"{sharedName}\"");
             }
 
             if (schemaCreated)
             {
-                await ExecuteAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
+                await CleanupAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
             }
         }
     }
@@ -2768,17 +2767,17 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (sessionTableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{secondSchema}\".\"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{secondSchema}\".\"{tableName}\"");
             }
 
             if (loginTableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
 
             if (schemaCreated)
             {
-                await ExecuteAsync(setup, $"DROP SCHEMA \"{secondSchema}\"");
+                await CleanupAsync(setup, $"DROP SCHEMA \"{secondSchema}\"");
             }
         }
     }
@@ -2819,7 +2818,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (created)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
         }
     }
@@ -2883,7 +2882,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (created)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
         }
     }
@@ -2937,7 +2936,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (created)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
         }
     }
@@ -2995,17 +2994,17 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             if (tableCreated)
             {
-                await ExecuteAsync(setup, $"DROP TABLE \"{tableName}\"");
+                await CleanupAsync(setup, $"DROP TABLE \"{tableName}\"");
             }
 
             if (sequenceCreated)
             {
-                await ExecuteAsync(setup, $"DROP SEQUENCE \"{otherSchema}\".\"{sequenceName}\"");
+                await CleanupAsync(setup, $"DROP SEQUENCE \"{otherSchema}\".\"{sequenceName}\"");
             }
 
             if (schemaCreated)
             {
-                await ExecuteAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
+                await CleanupAsync(setup, $"DROP SCHEMA \"{otherSchema}\"");
             }
         }
     }
@@ -3050,7 +3049,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
         {
             foreach (var table in Enumerable.Reverse(created))
             {
-                await ExecuteAsync(connection, $"DROP TABLE \"{table}\"");
+                await CleanupAsync(connection, $"DROP TABLE \"{table}\"");
             }
         }
     }
@@ -3058,7 +3057,7 @@ public sealed class DamengReverseEngineeringFunctionalTests
     private static DamengDatabaseModelFactory CreateFactory()
     {
         using var context = new DbContext(new DbContextOptionsBuilder()
-            .UseDameng(DamengTestEnvironment.GetRequiredConnectionString()).Options);
+            .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString()).Options);
         return new DamengDatabaseModelFactory(context.GetService<IRelationalTypeMappingSource>(), context.GetService<ISqlGenerationHelper>(), context.GetService<DamengDriver>());
     }
 
@@ -3068,4 +3067,39 @@ public sealed class DamengReverseEngineeringFunctionalTests
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
     }
+
+    // Cleanup of uniquely named test objects. If the server reset the test's own session, the
+    // exact statement runs once more on a fresh connection so a transport failure in one test
+    // does not leave objects that break later schema-wide catalog assertions.
+    private static async Task CleanupAsync(DbConnection connection, string sql)
+    {
+        try
+        {
+            await ExecuteAsync(connection, sql);
+        }
+        catch (Exception error) when (connection.State != System.Data.ConnectionState.Open
+            || error is InvalidOperationException
+            || (error is DbException && !IsServerReportedError(error)))
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await using var fresh = new DmConnection(DamengTestEnvironment.GetRequiredConnectionString());
+                    await fresh.OpenAsync();
+                    await ExecuteAsync(fresh, sql);
+                    return;
+                }
+                catch (Exception retryError) when (attempt < 3 && !IsServerReportedError(retryError))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2 * attempt));
+                }
+            }
+        }
+    }
+
+    // Server-reported errors (for example an object that was never created) are real cleanup
+    // failures; only transport-level failures fall back to a fresh connection.
+    private static bool IsServerReportedError(Exception error)
+        => error is DmException { Number: < 0 };
 }

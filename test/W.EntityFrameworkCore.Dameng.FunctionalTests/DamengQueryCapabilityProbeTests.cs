@@ -3,7 +3,6 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
@@ -470,7 +469,7 @@ public sealed class DamengQueryCapabilityProbeTests(ITestOutputHelper output)
     {
         var commands = new SetCommandCaptureInterceptor();
         var options = new DbContextOptionsBuilder<SetProbeContext>()
-            .UseDameng(DamengTestEnvironment.GetRequiredConnectionString())
+            .UseDamengUnderTest(DamengTestEnvironment.GetRequiredConnectionString())
             .AddInterceptors(commands)
             .Options;
         await using var context = new SetProbeContext(options);

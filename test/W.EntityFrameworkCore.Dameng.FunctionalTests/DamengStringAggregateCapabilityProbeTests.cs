@@ -3,7 +3,6 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Dm;
 using W.EntityFrameworkCore.Dameng.TestData;
 using Xunit;
 using Xunit.Abstractions;

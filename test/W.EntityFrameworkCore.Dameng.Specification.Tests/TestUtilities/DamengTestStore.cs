@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.TestUtilities;
+using W.EntityFrameworkCore.Dameng.FunctionalTests;
 
 namespace W.EntityFrameworkCore.Dameng.Specification.Tests.TestUtilities;
 
@@ -34,7 +34,7 @@ internal sealed class DamengTestStore : RelationalTestStore
         => new(name, shared: true, SharedSuffixes.GetOrAdd(name, static _ => CreateSuffix()));
 
     public override DbContextOptionsBuilder AddProviderOptions(DbContextOptionsBuilder builder)
-        => builder.UseDameng(Connection, contextOwnsConnection: false);
+        => builder.UseDamengUnderTest(Connection, contextOwnsConnection: false);
 
     public async Task CreateBasicTypesTableAsync()
     {

@@ -1,9 +1,9 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Xunit.Abstractions;
@@ -40,17 +40,15 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
         var repoRoot = FindRepositoryRoot();
         var (efCoreVersion, dmProviderVersion) = ResolveLockedPackageVersions(repoRoot);
-        var providerAssembly = Path.Combine(
-            repoRoot,
-            "src",
-            "W.EntityFrameworkCore.Dameng",
-            "bin",
-            "Debug",
-            "net10.0",
-            "W.EntityFrameworkCore.Dameng.dll");
-        Assert.True(
-            File.Exists(providerAssembly),
-            "Build the provider before running the CLI test: " + providerAssembly);
+        var providerAssemblies = ProviderProjects
+            .Select(project => Path.Combine(repoRoot, "src", project, "bin", "Debug", "net10.0", project + ".dll"))
+            .ToArray();
+        foreach (var providerAssembly in providerAssemblies)
+        {
+            Assert.True(
+                File.Exists(providerAssembly),
+                "Build the provider before running the CLI test: " + providerAssembly);
+        }
         var projectDirectory = Path.Combine(
             Path.GetTempPath(),
             $"dameng-ef-cli-{suffix.ToLowerInvariant()}");
@@ -62,7 +60,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         {
             WriteCliProject(
                 projectDirectory,
-                providerAssembly,
+                providerAssemblies,
                 efCoreVersion,
                 dmProviderVersion,
                 tableName,
@@ -88,6 +86,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 projectDirectory,
                 connectionString,
                 ["build", "--no-restore"]);
+#if WDRIVER
+            await AssertNestedProjectLoadsPinnedWDriverAsync(dotnetHost, projectDirectory, connectionString);
+#endif
 
             await RunDotNetEfAsync(
                 dotnetEf,
@@ -165,7 +166,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 connectionString,
                 [
                     "dbcontext", "scaffold", connectionString,
-                    "W.EntityFrameworkCore.Dameng",
+                    DamengTestDriver.ProviderName,
                     "--no-build",
                     "--table", tableName,
                     "--context", "ScaffoldedCliContext",
@@ -176,7 +177,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             var scaffoldedContext = File.ReadAllText(
                 Path.Combine(projectDirectory, "Scaffolded", "ScaffoldedCliContext.cs"));
             output.WriteLine(Redact(connectionString, scaffoldedContext));
-            Assert.Contains("UseDameng(", scaffoldedContext, StringComparison.Ordinal);
+            Assert.Contains(UseProviderMethod + "(", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains(
                 $".ToTable(\"{tableName}\"",
                 scaffoldedContext,
@@ -252,17 +253,44 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         }
     }
 
+#if WDRIVER
+    private static readonly string[] ProviderProjects =
+        ["W.EntityFrameworkCore.Dameng", "W.EntityFrameworkCore.Dameng.WDriver"];
+
+    private const string UseProviderMethod = "UseDamengWithWDriver";
+
+    private const string DriverPackageReferences
+        = """<PackageReference Include="W.DamengProvider" Version="[0.1.0-preview.1]" />""";
+
+    // The nested project prints the MVID of the W assembly it actually loads; the copy in its
+    // output directory must also be byte-identical to the pinned package DLL.
+    private const string CliProgram
+        = """Console.WriteLine("cli roundtrip W.DamengProvider MVID=" + typeof(W.Dm.DmConnection).Assembly.ManifestModule.ModuleVersionId);""";
+#else
+    private static readonly string[] ProviderProjects = ["W.EntityFrameworkCore.Dameng"];
+
+    private const string UseProviderMethod = "UseDameng";
+
+    private const string DriverPackageReferences = "";
+
+    private const string CliProgram = """Console.WriteLine("cli roundtrip");""";
+#endif
+
     // A project reference would drag the repository's lock-file props into the temp project
-    // graph and break NuGet asset resolution; reference the built provider assembly instead.
+    // graph and break NuGet asset resolution; reference the built provider assemblies instead.
     private static void WriteCliProject(
         string projectDirectory,
-        string providerAssembly,
+        string[] providerAssemblies,
         string efCoreVersion,
         string dmProviderVersion,
         string tableName,
         string sequenceName,
         string suffix)
     {
+        var references = string.Join(
+            " ",
+            providerAssemblies.Select(
+                assembly => $"<Reference Include=\"{Path.GetFileNameWithoutExtension(assembly)}\"><HintPath>{assembly}</HintPath></Reference>"));
         File.WriteAllText(
             Path.Combine(projectDirectory, "CliRoundtrip.csproj"),
             $"""
@@ -274,18 +302,17 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 <ImplicitUsings>enable</ImplicitUsings>
               </PropertyGroup>
               <ItemGroup>
-                <Reference Include="W.EntityFrameworkCore.Dameng">
-                  <HintPath>{providerAssembly}</HintPath>
-                </Reference>
+                {references}
                 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="{efCoreVersion}" />
                 <PackageReference Include="DM.DmProvider" Version="{dmProviderVersion}" />
+                {DriverPackageReferences}
               </ItemGroup>
             </Project>
             """);
 
         File.WriteAllText(
             Path.Combine(projectDirectory, "Program.cs"),
-            """Console.WriteLine("cli roundtrip");""");
+            CliProgram);
 
         File.WriteAllText(
             Path.Combine(projectDirectory, "CliDbContext.cs"),
@@ -310,7 +337,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 public DbSet<CliOrder> Orders => Set<CliOrder>();
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-                    => optionsBuilder.UseDameng(
+                    => optionsBuilder.{{UseProviderMethod}}(
                         Environment.GetEnvironmentVariable("DAMENG_TEST_CONNECTION_STRING")!,
                         dameng => dameng.MigrationsHistoryTable("EF10_CLIH_{{suffix}}"));
 
@@ -359,7 +386,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         await RunDotNetAsync(dotnetEf, workingDirectory, connectionString, efArguments);
     }
 
-    private async Task RunDotNetAsync(
+    private async Task<string> RunDotNetAsync(
         string dotnet,
         string workingDirectory,
         string connectionString,
@@ -440,7 +467,37 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 + "env: " + environmentDump + " || "
                 + Redact(connectionString, standardError.Length > 0 ? standardError : standardOutput));
         }
+
+        return standardOutput;
     }
+
+#if WDRIVER
+    private async Task AssertNestedProjectLoadsPinnedWDriverAsync(
+        string dotnetHost,
+        string projectDirectory,
+        string connectionString)
+    {
+        using var manifest = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "w-damengprovider.manifest.json")));
+        var expectedMvid = manifest.RootElement.GetProperty("assemblyMvid").GetString();
+        var expectedSha256 = manifest.RootElement.GetProperty("assemblySha256").GetString();
+        var outputDirectory = Path.Combine(projectDirectory, "bin", "Debug", "net10.0");
+
+        Assert.Equal(
+            expectedSha256,
+            Convert.ToHexStringLower(
+                SHA256.HashData(File.ReadAllBytes(Path.Combine(outputDirectory, "W.DamengProvider.dll")))));
+        var runOutput = await RunDotNetAsync(
+            dotnetHost,
+            projectDirectory,
+            connectionString,
+            [Path.Combine(outputDirectory, "CliRoundtrip.dll")]);
+        Assert.Contains("W.DamengProvider MVID=" + expectedMvid, runOutput, StringComparison.Ordinal);
+        Assert.False(
+            File.Exists(Path.Combine(outputDirectory, "W.DmProvider.dll")),
+            "The nested project must not also contain the legacy W.DmProvider assembly.");
+    }
+#endif
 
     // dotnet-ef must match the locked EF Core version: the 10.0.3 tool mishandles build
     // output paths on Unix and fails its own build. The tool lives under artifacts/ so the

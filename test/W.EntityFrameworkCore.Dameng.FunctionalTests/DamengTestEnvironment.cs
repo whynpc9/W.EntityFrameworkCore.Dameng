@@ -1,5 +1,4 @@
 using System.Globalization;
-using Dm;
 using Xunit;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
@@ -8,8 +7,12 @@ internal static class DamengTestEnvironment
 {
     public const string ConnectionStringVariable = "DAMENG_TEST_CONNECTION_STRING";
 
+    private static readonly Lazy<string?> DriverConnectionString = new(
+        () => DamengTestDriver.DeriveConnectionString(
+            Environment.GetEnvironmentVariable(ConnectionStringVariable)));
+
     public static string? ConnectionString
-        => Environment.GetEnvironmentVariable(ConnectionStringVariable);
+        => DriverConnectionString.Value;
 
     public static string GetRequiredConnectionString()
         => string.IsNullOrWhiteSpace(ConnectionString)

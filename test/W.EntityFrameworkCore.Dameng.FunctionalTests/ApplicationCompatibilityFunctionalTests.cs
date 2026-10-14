@@ -1,5 +1,4 @@
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -151,7 +150,7 @@ public sealed class ApplicationCompatibilityFunctionalTests
                 var services = new ServiceCollection();
                 services.AddDbContextPool<PooledApplicationCompatibilityContext>(
                     options => options
-                        .UseDameng(store.ConnectionString)
+                        .UseDamengUnderTest(store.ConnectionString)
                         .EnableDetailedErrors(),
                     poolSize: 1);
 
@@ -257,7 +256,7 @@ public sealed class ApplicationCompatibilityFunctionalTests
         bool applyTenantAndSoftDeleteFilter = false)
     {
         var options = new DbContextOptionsBuilder<ApplicationCompatibilityContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<
                 IModelCacheKeyFactory,
                 ApplicationCompatibilityModelCacheKeyFactory>()

@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -357,7 +356,7 @@ public sealed class DamengMathTranslationFunctionalTests
         bool useRelationalNulls)
     {
         var options = new DbContextOptionsBuilder<MathContext>()
-            .UseDameng(store.ConnectionString, damengOptions =>
+            .UseDamengUnderTest(store.ConnectionString, damengOptions =>
             {
                 if (useRelationalNulls)
                 {

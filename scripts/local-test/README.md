@@ -55,6 +55,21 @@ scripts/local-test/run.sh test probes
 scripts/local-test/run.sh test all
 ```
 
+### W.DamengProvider 通道
+
+每个通道都可追加 `--driver w`，改为运行 W 驱动的测试项目；默认 `--driver official` 与原行为相同：
+
+```bash
+scripts/local-test/run.sh test unit --driver w
+scripts/local-test/run.sh test functional --driver w --w-transport-security PlaintextAllowed
+scripts/local-test/run.sh test all --driver w --w-transport-security PlaintextAllowed
+```
+
+- W 单元通道运行 `W.EntityFrameworkCore.Dameng.WDriver.Tests`（离线）。W 功能、规范和管理员通道运行 `W.EntityFrameworkCore.Dameng.WDriver.FunctionalTests` / `…WDriver.Specification.Tests`：两者以链接方式编译官方测试源码并定义 `WDRIVER`，按驱动区分的断言写在共享源码的 `#if WDRIVER` 分支中。
+- W 连接设置在测试进程内从同一测试连接经 W typed builder 派生，不另存 secrets。W 默认要求 TLS；明文服务器需显式传 `--w-transport-security PlaintextAllowed`（非敏感参数，只传给 W 测试进程，也可用环境变量 `DAMENG_TEST_W_TRANSPORT_SECURITY`）。
+- W 通道的 TRX 文件名带 `-w` 后缀（如 `functional-w.trx`），与官方结果分开保存，不能合并计数。
+- 两种驱动的功能/管理员通道共享同一个持久测试模式，部分反向工程用例会检查整个当前模式的目录对象，因此**不要并行运行两个数据库通道**。
+
 `functional` 使用持久测试用户，排除 `DamengMigrationScriptFunctionalTests` 和 `Category=CapabilityProbe`。`specification` 也使用持久测试用户。`admin` 只运行会自行创建、清理临时用户与表空间的 `DamengMigrationScriptFunctionalTests`，使用 secrets 中的管理员连接。`probes` 只运行标有 `Category=CapabilityProbe` 的功能测试。`all` 顺序运行 unit、functional、specification、admin；探针需显式运行。
 
 普通测试优先使用进程已有的 `DAMENG_TEST_CONNECTION_STRING`，没有时使用 secrets 中的测试连接。该环境变量不会改变 `admin` 通道的选择或授权。需要缩小测试范围时，在通道后追加 `--filter '<dotnet test 过滤表达式>'`；工具始终将其与通道固定过滤条件相与，不能扩大管理员通道或把探针混入普通功能测试。

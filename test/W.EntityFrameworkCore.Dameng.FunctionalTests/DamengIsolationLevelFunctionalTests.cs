@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
@@ -76,6 +77,64 @@ public sealed class DamengIsolationLevelFunctionalTests
                         StringComparison.OrdinalIgnoreCase));
             });
 
+#if WDRIVER
+    // W.DamengProvider supports tracked SaveChanges in RU/Serializable transactions on the
+    // server profile it has verified (self-reported 8.1.5.60); the official driver fails with
+    // "CommandText has no value" (see the #else test). Other profiles must reject before send,
+    // which needs a different server and stays pending.
+    [DamengTheory]
+    [InlineData(IsolationLevel.ReadUncommitted)]
+    [InlineData(IsolationLevel.Serializable)]
+    public Task SaveChangesSucceedsAfterBeginningReadUncommittedOrSerializable(IsolationLevel isolationLevel)
+        => DamengTestStore.WithEntityTableAsync(
+            async store =>
+            {
+                long id;
+                await using (var seed = CreateContext(store))
+                {
+                    var entity = new IsolationEntity
+                    {
+                        Name = "隔离级别-种子",
+                        Version = 1
+                    };
+                    seed.Entities.Add(entity);
+                    await seed.SaveChangesAsync();
+                    id = entity.Id;
+                }
+
+                await using (var context = CreateContext(store))
+                {
+                    await using var transaction = await context.Database.BeginTransactionAsync(isolationLevel);
+                    Assert.Equal(isolationLevel, transaction.GetDbTransaction().IsolationLevel);
+                    var loaded = await context.Entities.SingleAsync(item => item.Id == id);
+                    loaded.Name = $"隔离级别更新-{isolationLevel}";
+                    loaded.Version = 2;
+                    Assert.Equal(1, await context.SaveChangesAsync());
+                    await transaction.CommitAsync();
+                }
+
+                await using (var context = CreateContext(store))
+                {
+                    await using var transaction = await context.Database.BeginTransactionAsync(isolationLevel);
+                    context.Entities.Add(
+                        new IsolationEntity
+                        {
+                            Name = $"隔离级别插入-{isolationLevel}",
+                            Version = 1
+                        });
+                    Assert.Equal(1, await context.SaveChangesAsync());
+                    await transaction.RollbackAsync();
+                }
+
+                await using (var context = CreateContext(store))
+                {
+                    var rows = await context.Entities.OrderBy(item => item.Id).ToListAsync();
+                    var row = Assert.Single(rows);
+                    Assert.Equal($"隔离级别更新-{isolationLevel}", row.Name);
+                    Assert.Equal(2, row.Version);
+                }
+            });
+#else
     [DamengTheory]
     [InlineData(IsolationLevel.ReadUncommitted)]
     [InlineData(IsolationLevel.Serializable)]
@@ -124,6 +183,8 @@ public sealed class DamengIsolationLevelFunctionalTests
                     AssertCommandTextHasNoValue(insertException);
                 }
             });
+
+#endif
 
     [DamengFact]
     public Task SerializableTransactionCanQueryExistingRows()
@@ -208,7 +269,7 @@ public sealed class DamengIsolationLevelFunctionalTests
     private static IsolationContext CreateContext(DamengTestStore store)
     {
         var options = new DbContextOptionsBuilder<IsolationContext>()
-            .UseDameng(store.ConnectionString)
+            .UseDamengUnderTest(store.ConnectionString)
             .ReplaceService<IModelCacheKeyFactory, IsolationModelCacheKeyFactory>()
             .EnableDetailedErrors()
             .Options;

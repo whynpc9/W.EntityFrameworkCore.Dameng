@@ -1,7 +1,6 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
-using Dm;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -262,7 +261,7 @@ public sealed class DamengStringAggregateFunctionalTests
     private static AggregateContext CreateContext(AggregateStore store, CommandCaptureInterceptor commands)
         => new(
             new DbContextOptionsBuilder<AggregateContext>()
-                .UseDameng(store.ConnectionString)
+                .UseDamengUnderTest(store.ConnectionString)
                 .ReplaceService<IModelCacheKeyFactory, AggregateModelCacheKeyFactory>()
                 .AddInterceptors(commands)
                 .Options,

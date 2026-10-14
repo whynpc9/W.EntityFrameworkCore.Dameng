@@ -7,6 +7,8 @@
     <Project Path="test/W.EntityFrameworkCore.Dameng.FunctionalTests/W.EntityFrameworkCore.Dameng.FunctionalTests.csproj" />
     <Project Path="test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFrameworkCore.Dameng.Specification.Tests.csproj" />
     <Project Path="test/W.EntityFrameworkCore.Dameng.Tests/W.EntityFrameworkCore.Dameng.Tests.csproj" />
+    <Project Path="test/W.EntityFrameworkCore.Dameng.WDriver.FunctionalTests/W.EntityFrameworkCore.Dameng.WDriver.FunctionalTests.csproj" />
+    <Project Path="test/W.EntityFrameworkCore.Dameng.WDriver.Specification.Tests/W.EntityFrameworkCore.Dameng.WDriver.Specification.Tests.csproj" />
     <Project Path="test/W.EntityFrameworkCore.Dameng.WDriver.Tests/W.EntityFrameworkCore.Dameng.WDriver.Tests.csproj" />
   </Folder>
 </Solution>
