@@ -148,7 +148,15 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
             ["IMAGE"] = [CreateStoreBinary("IMAGE", lob: true)],
             ["LONGVARBINARY"] = [CreateStoreBinary("LONGVARBINARY", lob: true)],
             ["DATE"] = [DateOnly, new DamengDateTimeTypeMapping("DATE", DbType.Date)],
-            ["TIME"] = [TimeOnlyStoreType, new TimeSpanTypeMapping("TIME", DbType.Time)],
+            ["TIME"] =
+            [
+                TimeOnlyStoreType,
+                CreateConvertedMapping(
+                    TimeOnlyStoreType,
+                    new ValueConverter<TimeSpan, TimeOnly>(
+                        value => System.TimeOnly.FromTimeSpan(value),
+                        value => value.ToTimeSpan()))
+            ],
             ["DATETIME"] = [DateTimeStoreType],
             ["DATETIME2"] = [DateTimeStoreType],
             ["SMALLDATETIME"] = [DateTimeStoreType],
@@ -279,7 +287,9 @@ internal sealed class DamengTypeMappingSource : RelationalTypeMappingSource
     private static RelationalTypeMapping? FindRawMapping(in RelationalTypeMappingInfo mappingInfo)
     {
         var clrType = mappingInfo.ClrType;
-        if (clrType == typeof(TimeOnly)
+        if ((clrType == typeof(TimeOnly)
+                || (clrType == typeof(TimeSpan)
+                    && string.Equals(mappingInfo.StoreTypeNameBase, "TIME", StringComparison.OrdinalIgnoreCase)))
             && mappingInfo.Precision is int configuredTimePrecision)
         {
             ValidateTimePrecision(configuredTimePrecision);

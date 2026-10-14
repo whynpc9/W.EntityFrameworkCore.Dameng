@@ -85,7 +85,13 @@ public sealed class WDriverTypeMappingTests
             { typeof(DateTimeOffset), "DATETIME WITH TIME ZONE", null, new DateTimeOffset(2026, 10, 14, 1, 2, 3, TimeSpan.Zero), 6 },
             { typeof(TimeOnly), null, null, new TimeOnly(1, 2, 3), 6 },
             { typeof(TimeOnly), null, 2, new TimeOnly(1, 2, 3), 2 },
-            { typeof(TimeSpan), null, null, TimeSpan.FromSeconds(1), 6 }
+            { typeof(TimeSpan), null, null, TimeSpan.FromSeconds(1), 6 },
+            { typeof(TimeSpan), "TIME", null, TimeSpan.FromSeconds(1), 0 },
+            { typeof(TimeOnly), "TIME", null, new TimeOnly(1, 2, 3), 0 },
+            { typeof(TimeSpan), "TIME", 3, TimeSpan.FromMilliseconds(1234), 3 },
+            { typeof(TimeSpan), "TIME(0)", null, TimeSpan.FromSeconds(1), 0 },
+            { typeof(TimeSpan), "TIME(3)", null, TimeSpan.FromMilliseconds(1234), 3 },
+            { typeof(TimeSpan), "TIME(6)", null, TimeSpan.FromSeconds(1).Add(TimeSpan.FromTicks(10)), 6 }
         };
 
     [Theory]
@@ -98,9 +104,7 @@ public sealed class WDriverTypeMappingTests
         int expectedScale)
     {
         var source = MappingSource();
-        var mapping = storeType is null
-            ? source.FindMapping(clrType, null, precision: precision)!
-            : source.FindMapping(clrType, storeType)!;
+        var mapping = source.FindMapping(clrType, storeType, precision: precision)!;
         using var command = new DmCommand();
 
         var withValue = CreateParameter(mapping, command, value);
@@ -116,6 +120,57 @@ public sealed class WDriverTypeMappingTests
 
         Assert.Equal(DBNull.Value, withNull.Value);
     }
+
+    [Theory]
+    [InlineData("TIME", 10_000_000, 1)]
+    [InlineData("TIME(0)", 10_000_000, 1)]
+    [InlineData("TIME(3)", 1_230_000, 1_234_560)]
+    [InlineData("TIME(6)", 1_234_560, 1_234_561)]
+    public void TimeSpanTimeMappingRejectsPrecisionLossInParametersAndLiterals(
+        string storeType, long exactTicks, long lossyTicks)
+    {
+        var mapping = MappingSource().FindMapping(typeof(TimeSpan), storeType)!;
+        using var command = new DmCommand();
+        var exact = TimeSpan.FromTicks(exactTicks);
+        Assert.Equal(TimeOnly.FromTimeSpan(exact), CreateParameter(mapping, command, exact).Value);
+        Assert.NotEmpty(mapping.GenerateSqlLiteral(exact));
+        Assert.Throws<ArgumentException>(() => CreateParameter(mapping, command, TimeSpan.FromTicks(lossyTicks)));
+        Assert.Throws<ArgumentException>(() => mapping.GenerateSqlLiteral(TimeSpan.FromTicks(lossyTicks)));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(86400)]
+    [InlineData(172801)]
+    public void TimeSpanTimeMappingRejectsValuesOutsideOneDay(int seconds)
+    {
+        var mapping = MappingSource().FindMapping(typeof(TimeSpan), "TIME(6)")!;
+        using var command = new DmCommand();
+        var value = TimeSpan.FromSeconds(seconds);
+        Assert.Throws<ArgumentOutOfRangeException>(() => CreateParameter(mapping, command, value));
+        Assert.Throws<ArgumentOutOfRangeException>(() => mapping.GenerateSqlLiteral(value));
+    }
+
+    [Fact]
+    public void ExplicitBareTimeOnlyMappingRejectsFractionsAndKeepsNullScaleZero()
+    {
+        var mapping = MappingSource().FindMapping(typeof(TimeOnly), "TIME")!;
+        using var command = new DmCommand();
+        Assert.Equal(0, CreateParameter(mapping, command, null).Scale);
+        var exact = new TimeOnly(13, 14, 15);
+        Assert.Equal(exact, CreateParameter(mapping, command, exact).Value);
+        Assert.Equal("TIME '13:14:15'", mapping.GenerateSqlLiteral(exact));
+        var lossy = exact.Add(TimeSpan.FromTicks(1));
+        Assert.Throws<ArgumentException>(() => CreateParameter(mapping, command, lossy));
+        Assert.Throws<ArgumentException>(() => mapping.GenerateSqlLiteral(lossy));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(7)]
+    public void TimeSpanTimeMappingRejectsUnsupportedPrecisionFacets(int precision)
+        => Assert.Throws<InvalidOperationException>(() => MappingSource()
+            .FindMapping(typeof(TimeSpan), "TIME", precision: precision));
 
     [Fact]
     public void ModelPrecisionFacetsReachTheParameterScale()

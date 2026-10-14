@@ -27,12 +27,49 @@ public sealed class DamengExtendedTypeMappingFunctionalTests(
             static (expected, actual) => Assert.Equal(expected, actual));
 
     [DamengFact]
+    public Task ExplicitBareTimeOnlyColumnRoundtripsWholeSeconds()
+        => WithValueAsync(
+            "TIME",
+            new TimeOnly(13, 14, 15),
+            static property => property.HasColumnType("TIME"),
+            static (expected, actual) => Assert.Equal(expected, actual));
+
+    [DamengFact]
     public Task DateTimeRoundtripsTheSeventhFractionalSecondDigit()
         => WithValueAsync(
             "TIMESTAMP(7)",
             new DateTime(2026, 7, 23, 14, 15, 16)
                 .AddTicks(1),
             static (expected, actual) => Assert.Equal(expected, actual));
+
+    [DamengTheory]
+    [InlineData("TIME", 0)]
+    [InlineData("TIME(0)", 0)]
+    [InlineData("TIME(3)", 1_230_000)]
+    [InlineData("TIME(6)", 1_234_560)]
+    public Task TimeSpanTimeColumnSupportsWritesAndParameterizedComparisons(string storeType, long fractionalTicks)
+        => ExtendedTypeStore.WithTableAsync(
+            storeType,
+            async store =>
+            {
+                var options = CreateExtendedOptions<TimeSpan>(store);
+                var expected = new TimeSpan(13, 14, 15).Add(TimeSpan.FromTicks(fractionalTicks));
+                await using (var context = new ExtendedTypeContext<TimeSpan>(options, store.TableName,
+                    property => property.HasColumnType(storeType)))
+                {
+                    context.Entities.Add(new ExtendedTypeEntity<TimeSpan> { Value = expected });
+                    await context.SaveChangesAsync();
+                }
+
+                await using (var context = new ExtendedTypeContext<TimeSpan>(options, store.TableName,
+                    property => property.HasColumnType(storeType)))
+                {
+                    var actual = await context.Entities.AsNoTracking()
+                        .Where(entity => entity.Value == expected)
+                        .Select(entity => entity.Value).SingleAsync();
+                    Assert.Equal(expected, actual);
+                }
+            });
 
     [DamengFact]
     public Task DateTimeOffsetRoundtripsThroughDatetimeWithTimeZone()

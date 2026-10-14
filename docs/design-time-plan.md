@@ -209,3 +209,23 @@ D1/D2 与 D0 互不阻塞，可并行；D3 依赖 D0 的目录结论；D6 依赖
 
 
 - 合并后审核与边界收紧（2026-10-04）：对照 issue #1 阶段 1 与 PR #3 逐条复核实现、测试与文档，先以合并后 main 全量回归作基线（单元 682/682、功能 232/232、规范 4/4、管理员 7/7），再落实三项修订。其一，`--table` 过滤中任一限定其他模式的条目从静默跳过改为逐条点名拒绝（原先仅当全部条目属于其他模式才抛错），单元覆盖单条/混合拒绝、限定当前模式与未限定接受、空过滤返回 null，真库用例连接持久用户断言拒绝，无需建表。其二，`SF_GET_SCHEMA_NAME_BY_ID(CURRENT_SCHID())` 返回 null/空串时明确拒绝，不再把 null 绑定进后续全部目录查询；服务器实际不会返回 NULL，属防御性守卫，只有单元证据。其三，`AnsiSizedStringColumnsUseCharSemanticsAndHoldMultibyteText` 与数学夹具一样把 ManyServiceProvidersCreatedWarning 显式改为 Log：0.3.0 的 `EnableServiceProviderCaching(false)` 不足以免疫，EF Core 10 的 `ServiceProviderCache` 在缓存禁用时仍走 `BuildServiceProvider` 并按全局缓存计数（≥20）触发该警告，越过阈值的时刻由并行测试交织决定。issue 中显式 `VARCHAR(n)` 字节语义的取舍经维护者确认保留现状（显式存储类型原样透传、由使用方核对实例容量），矩阵表述不变。修订后首轮完整功能 232/233（上述字符语义用例触发警告）保留在 `artifacts/query-translation/local-test/20261004T044046602Z-21cb7398/functional.trx`，不把首轮记成全量通过；聚焦重跑 1/1 为 `20261004T050453355Z-5fa95939/functional.trx`。最终单元 688/688（新增 6 项）为 `20261004T044013969Z-7eb3546c/unit.trx`，完整功能 233/233 为 `20261004T050508182Z-fb58c0aa/functional.trx`，规范 4/4 为 `20261004T052405752Z-d94ed050/specification.trx`，管理员 7/7 为 `20261004T052419663Z-e72483f7/admin.trx`，format 通过，无失败或跳过。兼容性矩阵的表过滤边界句、README 验证记录与本文件状态行/轮次顺序同步对齐。
+
+
+## 2026-10-07 反向工程审查补足
+
+本轮在 `fix/reverse-engineering-completeness` 上按审查顺序完成：
+
+1. 外键引用的主体列可空时点名拒绝，防止 EF 候选键强制改变可空性；未被选中关系引用的可空唯一列继续支持。真实用例先插入 NULL 验证源表语义，再检查简单/复合关系拒绝和主体表单独筛选。
+2. 显式表/视图筛选逐项核对命中；名称不存在、部分未命中均拒绝返回模型，引用的小写和包含点的视图仍可正常选择。
+3. 主键、唯一约束、索引与外键共用完整列解析；缺列、零列先拒绝再修改目标。约束目录使用 LEFT JOIN，索引目录头无列行也拒绝。目录缺损由合成单元验证，不声称已在真库制造目录损坏。
+4. CLI 增加复合候选键外键、自引用和视图，重新编译生成代码并执行最终 EF 模型断言：关系列序、删除动作、可空性、视图无主键、IDENTITY 分面、字符单位及表/索引存储注解。
+5. 表名最多 128 个时，目录读取使用绑定参数下推筛选；更大选择保留完整扫描及内存筛选，不截断对象。所有当前模式序列仍独立读取。IDENTITY 先从原生目录确认生成类型，再以模式/表限定名称每批最多 64 张表读取分面，最多 128 个绑定参数。独立模式 12 张 IDENTITY 表的最终对比：全量与单表均为 18 条目录命令、1 条分面命令，返回行数为 216 与 18；耗时样本 2247 ms 与 2186 ms，只支持减少目录传输的结论，不承诺明显延迟收益。
+6. 依据[原生目录说明](https://eco.dameng.com/document/dm/zh-cn/pm/dm8-admin-manual-appendix1.html)和实际探测，以 SYSCOLINFOS.INFO1 位 0 判定虚拟列，从 SYSCOLUMNS.DEFVAL 保留表达式，进入 ComputedColumnSql / IsStored=false / OnAddOrUpdate；不作为 DefaultValueSql。引用名称、字符串常量、数值/文本表达式、NULL、插入及更新在源表与迁移重建表上对照验证；CLI 最终模型同样覆盖。表达式缺失和计算生成键继续拒绝，外部函数依赖由目标环境提供。
+
+阶段证据：前三项聚焦单元 321/321、真实库 4/4；扩展后的 CLI 1/1；查询优化真库 7/7；虚拟列表达式探测 1/1（仅探索，不计验收）；虚拟列重建和 CLI 2/2。临时探针源码已移出测试项目，保留在忽略的 artifacts 中。
+
+保留失败证据：首次 CLI 模型断言夹具错误使用 IEntityType.IsKeyless，改为 FindPrimaryKey() is null 后通过；首次查询参数边界单元 695/699，四项失败来自无连接配置的 DmConnection.CreateCommand 触发驱动 useSkyWalking 字典缺项，换为不打开连接的示例配置后完整 699/699。生产依赖版本与锁文件未改变。格式检查发现的新测试初始化器换行已修正。
+
+首次扩大真库切片为 127/130，失败证据 `artifacts/query-translation/local-test/20261007T145111482Z-f2610f6c/functional.trx` 保留。两项无表序列测试同时使用不存在的表名，初版将未命中诊断放在序列枚举之前，改变了既有序列预检顺序；修正为独立枚举当前模式序列后再拒绝未命中选择。另一项 AUTO_INCREMENT 测试确认直接在目录投影中调用 IDENT_SEED/IDENT_INCR 会报无效表名；改为先确认原生 IDENTITY 类型，再仅对已确认表发出有界批量分面查询。恢复覆盖三项失败与新测试的切片 10/10，TRX 为 `20261007T145716815Z-d736fffc/functional.trx`。不把首轮记成完整通过。
+
+最终验证：完整单元 725/725（包含工作区另一轮并行增加的 22 项数值聚合测试，本轮反向工程改动对应原有及新增的 703 项单元）；全部反向工程、CLI 与生成值回读真实切片 130/130，通过且无失败/跳过；完整 dotnet format --no-restore --verify-no-changes 与 git diff --check 通过。单元 TRX 为 `artifacts/query-translation/local-test/20261007T145843832Z-42f70e85/unit.trx`，功能 TRX 为 `20261007T145757205Z-b5e4966d/functional.trx`。生产改动仅位于反向工程工厂，未修改依赖版本或锁文件；本轮未重跑不受影响的管理员迁移通道和规范冒烟，不作发布验收声明。并行聚合审计文件与测试项目引用保留，不归入本轮反向工程交付。

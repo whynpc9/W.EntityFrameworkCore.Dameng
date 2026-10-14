@@ -28,6 +28,7 @@
              Exclude="$(SharedFunctionalTests)/bin/**;$(SharedFunctionalTests)/obj/**"
              LinkBase="Shared" />
     <Compile Include="../Shared/QueryTranslationCases.cs" Link="QueryTranslationCases.cs" />
+    <Compile Include="../Shared/NumericAggregateQueryCases.cs" Link="NumericAggregateQueryCases.cs" />
     <None Include="../../scripts/driver-candidate/w-damengprovider.manifest.json" Link="w-damengprovider.manifest.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

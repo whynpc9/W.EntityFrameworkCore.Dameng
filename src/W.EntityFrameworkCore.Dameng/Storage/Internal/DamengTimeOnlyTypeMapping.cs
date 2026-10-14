@@ -69,7 +69,7 @@ internal sealed class DamengTimeOnlyTypeMapping : TimeOnlyTypeMapping, IDamengDr
     }
 
     private int GetFractionalSecondPrecision()
-        => Precision ?? 6;
+        => Precision ?? 0;
 
     private static long Pow10(int exponent)
     {

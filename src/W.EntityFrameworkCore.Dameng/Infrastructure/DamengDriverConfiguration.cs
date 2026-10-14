@@ -129,6 +129,7 @@ public static class DamengDriverConfiguration
                 DamengParameterBasedSqlProcessorFactory>()
             .TryAdd<IMemberTranslatorProvider, DamengMemberTranslatorProvider>()
             .TryAdd<IMethodCallTranslatorProvider, DamengMethodCallTranslatorProvider>()
+            .TryAdd<IRelationalSqlTranslatingExpressionVisitorFactory, DamengSqlTranslatingExpressionVisitorFactory>()
             .TryAdd<IAggregateMethodCallTranslatorProvider, DamengAggregateMethodCallTranslatorProvider>()
             .TryAdd<IUpdateSqlGenerator, DamengUpdateSqlGenerator>()
             .TryAdd<IModificationCommandBatchFactory, DamengModificationCommandBatchFactory>()

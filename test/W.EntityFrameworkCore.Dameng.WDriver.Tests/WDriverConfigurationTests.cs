@@ -24,6 +24,22 @@ namespace W.EntityFrameworkCore.Dameng.WDriver.Tests;
 
 public sealed class WDriverConfigurationTests
 {
+    [Fact]
+    public void SharedVisitorPreservesBoxedDateTimeTranslationBoundary()
+    {
+        using var context = new BlogContext(new DbContextOptionsBuilder<BlogContext>()
+            .UseDamengWithWDriver(ConnectionString).Options);
+#pragma warning disable CA1305 // Exercise the no-culture overload and boxed DateTime boundary.
+        var error = Assert.Throws<InvalidOperationException>(() => context.Blogs
+            .GroupBy(blog => ((object?)blog.OptionalCreated)!.ToString())
+            .Select(group => group.Count()).ToQueryString());
+        Assert.Contains("boxed DateTime.ToString", error.Message, StringComparison.Ordinal);
+        var directNullable = context.Blogs.GroupBy(blog => blog.OptionalCreated.ToString())
+            .Select(group => group.Count()).ToQueryString();
+#pragma warning restore CA1305
+        Assert.Contains("COALESCE(CAST(", directNullable, StringComparison.Ordinal);
+    }
+
     internal const string ConnectionString
         = "Server=localhost;Port=5236;User=test;Password=SecretSentinel42;transport_security=PlaintextAllowed";
 
@@ -429,6 +445,8 @@ internal sealed class Blog
     public byte[]? Short { get; set; }
 
     public DateTime Created { get; set; }
+
+    public DateTime? OptionalCreated { get; set; }
 
     public DateTime Precise { get; set; }
 

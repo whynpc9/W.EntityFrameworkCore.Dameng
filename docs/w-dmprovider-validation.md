@@ -170,3 +170,47 @@ W 专属 `WDriverTemporalAndMigrationFunctionalTests`（15 项）单独运行 15
 - TLS profile、非 8.1.5.60 服务器的拒绝合同；commit 失 ACK / 发送后断线的 EF 端到端故障注入；`-3510` 负例。
 - 公开发布：需要发布授权、按先基础包后扩展包的顺序打标签。
 - M2（数据源、流式 LOB）、T11（DmDecimal）。
+
+## PR #7 修复与 main 合并回归（2026-10-14）
+
+本轮把 `main` 的 `1b9a85a` 合入候选，处置 Codex 的 TIME 参数桥接 P2 与 Cursor 的 visitor 注册 P1。
+共享桥接注册保留驱动专用 DatabaseProvider，同时加入 DateTime 翻译 visitor。
+`TimeSpan` 显式 TIME 映射通过 TimeOnly 转换器读写，克隆保留驱动、NULL 参数保留精度配置；W 只用 Scale。
+转换器拒绝负值与大于等于一天的值，避免把有符号间隔或天数静默变成时刻。
+显式裸 TIME 按服务器和[达梦官方文档](https://eco.dameng.com/document/dm/zh-cn/sql-dev/dmpl-sql-datatype.html)的缺省 0 位处理，
+TimeOnly 同步修正；默认 TimeOnly 的 `TIME(6)` 与默认 TimeSpan 的 INTERVAL 映射保持原精度。
+参数与字面量对不可精确表示的小数秒均在发送前拒绝。
+用户指定由 GitHub Codex / Cursor 进行修复后的独立复审，详见[审查记录](w-dmprovider-integration-review.md#pr-7-代码独立复审2026-10-14)。
+
+### 失败运行与处置
+
+以下失败均保留在已忽略的本地证据目录，不能作为验收通过：
+
+- `20261014T141045318Z-87f0e38f`：W 单元 49/50。新增测试把非空列转换成 nullable 后期望 COALESCE，EF 已知列非空而省略该表达式；改用真正可空的 DateTime 属性，随后 50/50 通过（`20261014T141125049Z-3ae565f4`）。
+- 初次官方功能构建失败：main 新测试直接构造模型工厂时未传入 DamengDriver；更新为当前通道的服务。没有 TRX，不计运行通过。
+- `20261014T141151894Z-bc8b8a72`：官方功能 294/299。四项 TIME 用例暴露官方 GetFieldValue&lt;TimeSpan&gt; 无法读取 DateTime，另一项目录计数测试的包装连接被生产校验拒绝。增加 TIME 读取适配，计数测试采用只识别 CatalogQueryRecorder 的测试驱动；生产校验保持拒绝包装连接。
+- `20261014T141510397Z-e4efb1db`：官方 unit 789/789、functional 298/299、specification 4/4、admin 7/7；整个 all 命令退出非零。剩余失败是把裸 TIME 误按六位使用，服务器读回没有小数；核对官方契约后改成零位，并补充 TimeOnly 的裸 TIME 单元与实库回归。
+
+- `20261014T141844018Z-5b6395fc`：W unit 58/58、functional 347/351、specification 4/4、admin 7/7；整个 all 退出非零。四项 TIME 写入收到 W 的“TimeSpan requires INTERVAL DAY TO SECOND”，因此最终改为复用 TimeOnly 映射和转换器，而不是直接发送 TimeSpan。
+
+转换器引入时一次构建因静态字段 TimeOnly 遮蔽类型名称而失败（CS1061），改用 System.TimeOnly 限定；没有 TRX，不计通过。
+修正后 W 单元 61/61 通过（`20261014T142413186Z-04901ba3`），五项 TIME 聚焦实库 5/5 通过（`20261014T142449924Z-a48b78f7`）。
+后续验收只使用修复后的干净运行，不以单项重跑抵消失败的 all 通道。
+
+### 修复后的全量验收
+
+冻结修复源码后顺序运行两种驱动的 `all`，使用相同的持久测试模式与 8.1.5.60 / UTF-8 / 明文 profile：
+
+| 通道 | 官方 | W |
+| --- | --- | --- |
+| unit | 791/791 | 61/61 |
+| functional | 300/300 | 351/351 |
+| specification | 4/4 | 4/4 |
+| admin | 7/7 | 7/7 |
+| 运行 ID | `20261014T142527110Z-e5460fd6` | `20261014T142755580Z-06cb58d1` |
+
+两次命令均退出零，各通道宿主 Completed、Total=Executed=Passed，无失败或跳过。
+TRX 位于 `artifacts/query-translation/local-test/<运行 ID>/`，W 文件带 `-w` 后缀。
+规范项目仍是四项冒烟测试。另：解决方案 `--locked-mode` 还原、全解决方案构建（零警告/错误）、
+`dotnet format --no-restore --verify-no-changes` 与 `git diff --check` 通过。
+依赖版本、锁文件与精确包身份未因本轮修复改变。最终独立复审结果以 PR 当前提交上的 Codex / Cursor 记录为准。

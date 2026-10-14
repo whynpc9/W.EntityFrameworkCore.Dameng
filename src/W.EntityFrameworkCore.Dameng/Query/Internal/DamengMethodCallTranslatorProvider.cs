@@ -15,6 +15,9 @@ internal sealed class DamengMethodCallTranslatorProvider : RelationalMethodCallT
         => AddTranslators(
         [
             new DamengDateTimeMethodTranslator(dependencies.SqlExpressionFactory),
+            new DamengDateTimeToStringTranslator(
+                dependencies.SqlExpressionFactory,
+                dependencies.RelationalTypeMappingSource),
             new DamengDateBucketMethodTranslator(
                 dependencies.SqlExpressionFactory,
                 dependencies.RelationalTypeMappingSource),

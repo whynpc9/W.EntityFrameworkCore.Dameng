@@ -16,4 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/W.EntityFrameworkCore.Dameng/W.EntityFrameworkCore.Dameng.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/NumericAggregateQueryCases.cs" Link="NumericAggregateQueryCases.cs" />
+  </ItemGroup>
 </Project>

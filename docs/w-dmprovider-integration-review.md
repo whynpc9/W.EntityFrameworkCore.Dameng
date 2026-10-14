@@ -2,6 +2,21 @@
 
 初始审查：2026-10-08；版本更新记录：2026-10-13。关联[实施计划](w-dmprovider-integration-plan.md)。
 
+## PR #7 代码独立复审（2026-10-14）
+
+用户在修复与合并任务中明确指定沿用 Codex / Cursor 复审，替代原定 Kimi Code。
+两者通过 GitHub 集成独立读取 PR diff；未披露具体模型 ID，没有 T3 委派 taskId。
+初轮均审查 `abc5c292449cf94a69583353dd63cfa4f972b515`，结论不覆盖后续修复提交。
+
+| 审查方 | 结论与出处 | 处置 |
+| --- | --- | --- |
+| Codex（`chatgpt-codex-connector`） | [P2：TimeSpan TIME(n) 未经过驱动桥接](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/7#discussion_r4270910190) | 将 TimeSpan TIME 转为带驱动的 TimeOnly 映射，参数与读取均经转换器，分面克隆保留驱动；W 将小数秒位数转到 Scale、清零 Precision，NULL 同样配置；拒绝负值、超过一天的值与参数/字面量精度损失；显式裸 TIME 按 0 位处理，TimeOnly 同样修正 |
+| Cursor（`cursor`） | [P1：共享服务注册遗漏 DateTime 翻译 visitor](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/7#discussion_r4271088276) | 将 main 新增的 visitor 工厂注册到共享桥接入口，保留驱动专用 DatabaseProvider；两种通道验证 nullable 与 boxed DateTime 的翻译边界 |
+
+同时合并 main 的反向工程补足与 DateTime 翻译：保留 CLI 最终模型断言，更新新增测试的驱动入口、工厂构造和共享聚合用例引用。
+目录命令计数使用仅限测试的 RecordingDriver 识别 CatalogQueryRecorder，生产驱动继续拒绝包装连接。
+当前修复的运行证据见[验证记录](w-dmprovider-validation.md)。修复提交推送后重新请求复审；此处尚不宣称最终复审通过。
+
 ## 执行修订记录（2026-10-14，非独立复审）
 
 用户要求先审阅、按需修订计划，然后执行。本节记录主代理的修订；它不是独立复审，也不覆盖下文任何审查结论。

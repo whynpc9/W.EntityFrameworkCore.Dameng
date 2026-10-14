@@ -386,6 +386,7 @@ public sealed class DamengDriverSelectionTests
             source.FindMapping(typeof(string), null, unicode: true, size: 40000)!,
             source.FindMapping(typeof(byte[]), null, size: 16)!,
             source.FindMapping(typeof(TimeSpan))!,
+            source.FindMapping(typeof(TimeSpan), "TIME(3)")!,
             source.FindMapping(typeof(TimeOnly))!,
             source.FindMapping(typeof(DateTime))!,
             source.FindMapping(typeof(DateTimeOffset))!,
@@ -460,6 +461,11 @@ public sealed class DamengDriverSelectionTests
     [InlineData(typeof(TimeOnly), null, null, 6)]
     [InlineData(typeof(TimeOnly), null, 2, 2)]
     [InlineData(typeof(TimeSpan), null, null, 6)]
+    [InlineData(typeof(TimeSpan), "TIME", null, 0)]
+    [InlineData(typeof(TimeOnly), "TIME", null, 0)]
+    [InlineData(typeof(TimeSpan), "TIME(0)", null, 0)]
+    [InlineData(typeof(TimeSpan), "TIME(3)", null, 3)]
+    [InlineData(typeof(TimeSpan), "TIME(6)", null, 6)]
     public void DriverReceivesTheMappingsFractionalSecondPrecision(
         Type clrType,
         string? storeType,
@@ -484,6 +490,28 @@ public sealed class DamengDriverSelectionTests
         {
             Assert.Equal(expectedScale, parameter.Scale);
             Assert.Equal(0, parameter.Precision);
+        }
+    }
+
+    [Fact]
+    public void TimeSpanTimeMappingUsesTimeOnlyConverterWithBothDrivers()
+    {
+        using var officialContext = new MappingContext(CreateOfficialOptions<MappingContext>());
+        using var typedContext = new MappingContext(CreateFakeOptions<MappingContext>());
+        var official = officialContext.GetService<IRelationalTypeMappingSource>()
+            .FindMapping(typeof(TimeSpan), "TIME(6)")!;
+        var typed = typedContext.GetService<IRelationalTypeMappingSource>()
+            .FindMapping(typeof(TimeSpan), "TIME(6)")!;
+        var expected = TimeSpan.FromHours(13).Add(TimeSpan.FromTicks(1_234_560));
+        foreach (var mapping in new[] { official, typed })
+        {
+            Assert.Equal(typeof(TimeSpan), mapping.ClrType);
+            var getter = mapping.GetDataReaderMethod();
+            Assert.Equal(nameof(DbDataReader.GetFieldValue), getter.Name);
+            Assert.Equal(typeof(TimeOnly), getter.GetGenericArguments().Single());
+            var converter = Assert.IsAssignableFrom<Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter>(mapping.Converter);
+            Assert.Equal(TimeOnly.FromTimeSpan(expected), converter.ConvertToProvider(expected));
+            Assert.Equal(expected, converter.ConvertFromProvider(TimeOnly.FromTimeSpan(expected)));
         }
     }
 
