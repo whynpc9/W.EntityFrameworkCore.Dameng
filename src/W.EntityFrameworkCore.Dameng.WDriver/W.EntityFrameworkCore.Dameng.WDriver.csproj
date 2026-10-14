@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>W.EntityFrameworkCore.Dameng.WDriver</AssemblyName>
+    <RootNamespace>W.EntityFrameworkCore.Dameng.WDriver</RootNamespace>
+    <VersionPrefix>0.3.0</VersionPrefix>
+    <PackageId>W.EntityFrameworkCore.Dameng.WDriver</PackageId>
+    <Title>W.DamengProvider driver for the unofficial Dameng EF Core 10 provider</Title>
+    <Description>Runs the W.EntityFrameworkCore.Dameng provider on the W.DamengProvider ADO.NET driver (asynchronous network I/O, cancellation, failure outcomes, 100ns temporal precision). Select it with UseDamengWithWDriver.</Description>
+    <PackageTags>entity-framework-core;efcore;dameng;dm8;database-provider;w-damengprovider</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="W.DamengProvider" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../W.EntityFrameworkCore.Dameng/W.EntityFrameworkCore.Dameng.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
