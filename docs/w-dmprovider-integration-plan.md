@@ -1,12 +1,12 @@
 # W.DamengProvider 双驱动接入实施计划
 
-初稿：2026-10-08；最新基线核查与修订：2026-10-13。状态：以公开 `W.DamengProvider 0.1.0-preview.1` 为接入目标。Kimi Code CLI 首轮审查的 4 项 P2、4 项 P3 已处置；本次版本更新未经过新一轮独立复审，旧“无 P1”结论不覆盖新稿。版本变化与审查边界见[审查记录](w-dmprovider-integration-review.md)。本文规划后续实现，不表示本项目已接入或通过新版 EF 实库验收。
+初稿：2026-10-08；基线核查与修订：2026-10-13；执行修订：2026-10-14。状态：以公开 `W.DamengProvider 0.1.0-preview.1` 为接入目标，2026-10-14 起按 §10 进入 M1 实施。Kimi Code CLI 首轮审查的 4 项 P2、4 项 P3 已处置；10-13 版本更新与 10-14 执行修订均未经过新一轮独立复审，旧“无 P1”结论不覆盖新稿。版本变化与审查边界见[审查记录](w-dmprovider-integration-review.md)，实施证据见[验证记录](w-dmprovider-validation.md)。支持声明以兼容矩阵和验证记录为准，本计划本身不构成验收。
 
 ## 1. 目标、基线与完成定义
 
 在现有官方驱动版本之外，增加显式选择 W.DamengProvider 的 EF Core 实现版本，复用查询翻译、关系模型、SQL、迁移与反向工程逻辑。首先交付异步网络调用、取消/超时、故障结果识别、时间参数与 100ns 精度适配及已验证隔离级别的保存路径，再扩展数据源与 LOB 使用方式。
 
-本次只交付计划及审查记录，不修改产品、依赖或锁文件，不构建、不访问数据库；按用户追加要求提交并推送文档，不发布产品。进入实施后，依赖变更只限新增 W 接入所必需的引用，保持现有 EF Core 10 与官方驱动版本范围。
+10-13 轮只交付计划及审查记录。10-14 起实施 M1：依赖变更只限新增 W 接入所必需的引用，保持现有 EF Core 10 与官方驱动版本范围；不发布产品、不推送发行标签。
 
 ### 1.1 已核查的输入
 
@@ -23,6 +23,15 @@
 | 来源与发布状态 | nuspec `repository commit` 为上述 `a67a929…`；发布 workflow 和该提交普通 CI 均 success；GitHub Releases 列表为空 | NuGet 可用已证实，不要求 GitHub Release 才算可下载；CI 不替代本项目实库验收 |
 
 本轮仅下载源码/包/构件、读取元数据并做静态比较，没有执行下载的程序集、构建、包安装或数据库调用。MVID 读回不等于测试进程加载证明。T00 仍需落地身份 manifest、可重现还原、当前测试清单和环境清单；“包可获取”这一事实已确认，不再把它列为未知阻塞。
+
+2026-10-14 执行前复核：
+
+| 输入 | 复核结果 | 影响 |
+| --- | --- | --- |
+| 本仓库 | `6238792`，相对 `5863d37` 仅增加两份计划文档 | 产品/测试基线不变，T00 以 `6238792` 重新枚举测试 |
+| W 上游 | main 前进到 `b5786d57836e8aa72f4400cbae1013070e44914f`；`git diff a67a929 b5786d5 -- src tests` 为空，40 个变化文件只涉及文档/工具 | 驱动产品源码与 preview.1 tag 相同，不改变接入目标 |
+| 公开包 | 从精确版本 URL 重新下载：包 SHA-256、DLL SHA-256 与 §1.1 一致 | T00 manifest 以此为准 |
+| 本地实库 profile | 服务器自报 `8.1.5.60`，全局字符集 UTF-8；W 连接需显式 `transport_security=PlaintextAllowed` | 与 W 已验证的七位时间、RU/Serializable、保存点、错误恢复 profile 一致；本地无 TLS profile，TLS 门保持 pending |
 
 旧基线仅供追溯：本地 `824a944 → fe89bd4` 为相同 tree；v23 `W.DmProvider 0.1.0-r3.20261007143838` 的包 SHA 为 `6696a26d89e4caa1b9e7c40a73f024c4df9d8a695da1446bdbecc17757d3bcf9`，DLL SHA/MVID 为 `c70f7d4b7bd37187f55483d186d658206232a2e1f60a662530b3a0282e3231e5` / `69e5632e-75c4-4672-b924-57b8ffb58a52`，下游固定 EF `113014cc74dd1f751ef97226a78d2ec855b32c8c`。其 `production_release_accepted=false` 是历史候选状态，不能覆盖新版已公开发行的事实，也不能把旧 76 项下游通过改记为新版通过。
 
@@ -120,6 +129,22 @@ T01 固定桥接合同，T03 实现：
 
 这不是把默认 schema 从六位自动改成七位。本仓库默认声明已有七位；已有显式六位数据库需要单独迁移。T06 验证 6→7 保留旧值、7→6 在任一待降列含非整微秒值时先拒绝（所有列 guard 在任何 ALTER 之前），DDL 禁止事务，历史表和失败后连接状态正确；回退不能丢弃第七位。M1 不自动为任意用户迁移注入 guard，提供经实库验证的迁移指导与夹具。
 
+### 2.5 已固定的实施决策（2026-10-14）
+
+以下决策取代 §2.1–§2.3 中“拟名/T01 固化”的开放项，T01 不再另建可丢弃原型（见 §4）：
+
+1. **桥接 API**：基础包新增公开命名空间 `W.EntityFrameworkCore.Dameng.Infrastructure`，只放两类驱动包使用的类型：
+   - `DamengDriver`：抽象类，同时充当 descriptor 和无状态 adapter。成员覆盖稳定 `Name`（`Official`/`W`）、EF `ProviderName`、创建/识别连接、设置 BLOB/CLOB/BINARY/VARBINARY/INTERVAL 参数类型、时间参数 Scale 桥接、DateTimeOffset 读取方式、是否允许内建重试、读取错误号，以及脚手架生成的 `Use...` 方法。
+   - `DamengDriverConfiguration`：普通静态方法（不是扩展方法），负责以指定驱动配置 options，并注册运行时/设计时服务。
+   内部实现仍为 internal，不加 `InternalsVisibleTo` 给扩展包。
+2. **驱动身份**：`DamengOptionsExtension.Driver` 未显式配置时视为官方驱动。在同一 builder 上切换到另一驱动立即抛 `InvalidOperationException`，同驱动重复配置遵循现有语义。服务缓存相等/hash、DebugInfo（`Dameng:Driver`）、LogFragment（`UsingDameng Driver=<Name> `）都包含驱动名。
+3. **连接类型**：两种入口都严格检查连接的实际驱动类型，包装类型（profiler 等）一律拒绝。理由：参数类型适配依赖具体驱动参数类型，包装后会静默丢失 LOB/INTERVAL 类型设置。这条收紧作为兼容性变化写入兼容矩阵。
+4. **参数与模型错配**：驱动在设置 provider 专用类型时，若参数不是本驱动的类型就抛异常，不静默跳过。因此“用一个驱动构建的模型被另一驱动的上下文复用”（`UseModel`）会显式失败。
+5. **DI 校验**：`DamengDatabaseProvider` 的 Name/IsConfigured 按注入的驱动决定。每次注册都追加一条驱动登记，`ISingletonOptions` 在 Initialize/Validate 两个阶段都检查：不能同时登记两种驱动，options 的驱动必须与已注册驱动一致。
+6. **重试**：`EnableRetryOnFailure` 各重载在 options 上写入标记。当前驱动不支持内建重试时立即拒绝；若重试先于选择驱动配置，则在选择驱动和 `Validate` 时拒绝。直接构造 `DamengRetryingExecutionStrategy` 时同样检查驱动。异常的 `Data["Dameng:ErrorId"]` 及消息中都带 `Dameng:RetryNotSupportedForWDriver`。
+7. **扩展包**：项目/包/程序集名 `W.EntityFrameworkCore.Dameng.WDriver`，根命名空间同名。扩展方法 `UseDamengWithWDriver`（字符串、DbConnection、所有权、泛型各重载）和 `AddEntityFrameworkDamengWithWDriver` 放在与基础包相同的 `Microsoft.EntityFrameworkCore` / `Microsoft.Extensions.DependencyInjection` 命名空间，便于发现。包依赖精确的 `W.DamengProvider [0.1.0-preview.1]`，并以 ProjectReference 引用基础包（打包后为同版本精确依赖）。
+8. **测试通道**：新增 W 单元项目和 W 功能项目。W 功能项目以链接方式编译官方功能项目的全部源码，并定义 `WDRIVER`。共享源码通过两个项目各自的 `global using`（`Dm` / `W.Dm`）和测试环境中的 `UseDamengUnderTest`/`CreateConnection` 助手切换驱动。必须按驱动区分的断言写成显式的 `#if WDRIVER` 分支，不能删测试。W 连接设置从同一测试连接经 W typed builder 在内存中派生，`transport_security` 由启动器以非敏感参数传入。
+
 ## 3. 故障、安全默认值和能力约束
 
 ### 3.1 W 重试策略
@@ -158,10 +183,10 @@ EF标准 `ExecutionStrategy(...)` 允许用户注入任意自定义策略，应�
 
 | 任务 | 前置 | 主要文件/产出 | 完成门 |
 | --- | --- | --- | --- |
-| T00 基线与候选冻结 | 首轮审查完成且意见已处置 | `docs/w-dmprovider-validation.md`、候选身份/来源清单、feed准备入口、现有测试清单 | 以公开 preview.1 的新身份冻结来源并实现隔离feed复现；核查签名包/CI包差异和归档保留；复核§2.4及§6 API；当前锁文件/实际SDK、服务器profile计划清楚；不挪用旧测试通过数 |
-| T01 API/服务原型 | T00 | options/DI/桥接API与时间 facet/reader 合同、临时双包最小原型及消费者夹具 | 无数据库编译验证；跨程序集可访问性、descriptor感知的Name/IsConfigured与首次/复用错配拒绝、重试API可见性、两驱动并存、重载解析、设计时发现、缓存与日志、基础API兼容均有可执行证明；时间桥接/reader与参数语义完成独立复审；原型不算T03产品完成，失败先修设计 |
+| T00 基线与候选冻结 | 首轮审查完成且意见已处置 | `docs/w-dmprovider-validation.md`、候选身份 manifest、包核验脚本、现有测试清单 | 以公开 preview.1 的身份冻结来源，并按 §5.3 实现可复现的核验；复核§2.4及§6 API；记录当前锁文件/实际SDK、服务器profile；不挪用旧测试通过数 |
+| T01 API与合同（并入产品代码） | T00 | §2.5 的桥接 API、options/DI/重试/日志合同及其离线单元测试 | 不另建可丢弃原型：T01 的门作为 T02/T03 实际代码中的单元测试执行。跨程序集可访问性、descriptor感知的Name/IsConfigured与首次/复用错配拒绝、重试API可见性、两驱动并存、重载解析、设计时发现、缓存与日志、基础API兼容均有可执行证明；失败先修设计再继续 |
 | T02 官方路径抽象化 | T01 | 现有连接、类型映射、异常分类、设计时工厂 | 官方全量单元及受影响实库回归；SQL无非预期改变；旧消费者编译通过 |
-| T03 W基础适配 | T02 | 新 WDriver 项目、桥接实现、UseDamengWithWDriver、解算锁 | 新 PackageId 精确包构建、时间 Precision→Scale/typed reader、参数映射/类型拒绝/NULL/所有权离线单元通过；聚焦实库合同写好但执行门归T04，不使用尚不存在的W启动器 |
+| T03 W基础适配 | T02 | 新 WDriver 项目、桥接实现、UseDamengWithWDriver、解算锁 | 新 PackageId 精确包构建、时间 Precision→Scale/typed reader、参数映射/类型拒绝/NULL/所有权离线单元通过；聚焦实库合同写好但执行门归T04，不使用尚不存在的W启动器；时间桥接/reader与参数语义列入 §8 的独立复审范围 |
 | T04 测试通道与身份审计 | T03 | `scripts/local-test/*`、共享fixture、W单元/功能/规范项目 | 驱动/profile显式选择；独立结果目录；嵌套CLI实际DLL证明；普通/管理员账号隔离；执行T03聚焦实库合同及七位/六位 profile、触发器回归；失败/skip无法被聚合成通过 |
 | T05 异步/故障/事务与错误恢复 | T04 | W专属回归及重试/事务桥接修正 | barrier驱动的取消/超时/Unknown断言、真实最终状态、有条件同会话恢复与Broken负例、RU/Serializable成功及拒绝profile、精确清理 |
 | T06 新版EF完整回归与设计时 | T05 | 完整功能/规范/迁移/CLI/反向工程矩阵 | 当前 `5863d37` 测试意图全量分类；旧76项及上游219/234不替代新版；七位存取/迁移guard与schema精度保真、两种包CLI生成/编译/执行与旧迁移切换通过 |
@@ -229,13 +254,14 @@ T00 冻结当前测试名称与意图；T04 分成共享契约、官方行为表
 
 运行dotnet前设独立可写的DOTNET_CLI_HOME、DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1、DOTNET_CLI_TELEMETRY_OPTOUT=1；构建/测试单节点 `-m:1 /nodeReuse:false /p:UseSharedCompilation=false`，支持时加 `--disable-build-servers`。使用locked restore，不清NuGet全局缓存。
 
-精确候选的还原来源采用以下固定机制，均为T00/T03待实现交付，不是当前已有脚本：
+精确候选的还原来源（2026-10-14 修订：preview.1 已在 NuGet.org 公开发行并签名，原“自建只读候选 feed”机制降为未发行开发候选的后备方案，本轮不实现）：
 
-1. T00增加 `scripts/driver-candidate/prepare-feed.py` 及说明。输入为非敏感候选manifest和显式提供的nupkg路径；默认从公开 NuGet 的精确版本 URL 下载，不解析 latest；manifest固定PackageId、精确版本、包SHA-256、DLL SHA/MVID、producer来源manifest，以及公开包URL、nuspec repository commit、tag commit、发布run/artifact ID（开发候选才用明确的本地交接标识）。首先核包hash、nuspec身份与DLL；拒绝缺件、同版本不同hash或来源无法关联的包。
-2. nupkg只存Git忽略的 `.local/driver-candidates/<package-sha>/feed/`，作为只读候选feed；不提交二进制、私人绝对路径或源凭据。元数据/脚本可提交，原始生产者archive仍按其访问权限管理。使用者和CI从manifest固定的公开NuGet版本下载相同签名包并校验；本次来源见§1.1。CI构件保留期有限（上游workflow为14天），必要manifest及散列归档到可持续取得的证据位置。CI未签名包和NuGet签名包各记录hash，不用前者替代后者还原；若字节变化必须重新解释并核验，不能仅凭版本相同放行。开发候选来源坐标与保留策略未填全时T00未完成，不用“最新成功构建”替代。
-3. 为W通道生成每次运行独立NuGet.Config，显式清除继承源并配置候选目录与公开依赖源；packageSourceMapping将 `W.DamengProvider` 精确映射到候选源。精确EF包消费者另把本轮两个EF候选包映射到受控EF候选feed。配置中不写秘密；需要下载权限时由CI构件获取步骤提供，而非把token塞进NuGet.Config。官方默认通道沿用当前行为。
-4. W验收使用独立 `NUGET_PACKAGES` 目录和显式 `--configfile`，避免用户缓存掩盖候选源缺失。T03首次引入依赖时受控更新相关锁文件并审查diff；冻结后所有验收均 `--locked-mode`，不在验证中force-evaluate/改锁。CI和审查者都从manifest加同一包复现，缺权限/包/来源即pending。
-5. T04审计包括：候选源缺失、错误hash、其他源提供同名版本、旧缓存污染、锁不匹配的负例；来源校验不能代替测试进程和嵌套CLI实际加载DLL的SHA/MVID证明。
+1. 还原来源就是公开 NuGet.org 上的精确版本 `[0.1.0-preview.1]`。不解析 latest，不提交二进制。`packages.lock.json` 记录的 `contentHash`（SHA-512）在 `--locked-mode` 下固定包字节，同版本不同字节的包无法通过还原。
+2. T00 增加不含秘密的 `scripts/driver-candidate/w-damengprovider.manifest.json`，固定 PackageId、精确版本、包 SHA-256、DLL SHA-256/MVID、nuspec repository commit、tag commit、发布 run/artifact ID 与公开 URL。另加 `scripts/driver-candidate/verify-package.py`，从实际还原目录（`NUGET_PACKAGES` 或默认全局缓存）读取 `.nupkg`/`.nupkg.metadata`/DLL，逐项比对 manifest 与锁文件 contentHash。缺件、hash 不符或来源无法关联时退出非零。脚本也可以对显式提供的 nupkg 路径运行，供 CI/审查者复现。
+3. 官方默认通道沿用当前 NuGet 配置与行为，不新增仓库级 `NuGet.config`。需要验证缓存污染时，W 通道可使用独立 `NUGET_PACKAGES` 目录重新还原后再核验。
+4. T03 首次引入依赖时受控更新相关锁文件并审查 diff。冻结后所有验收均使用 `--locked-mode`，不在验证中 force-evaluate 或改锁。
+5. T04 审计包括：错误 hash、锁不匹配的负例（以脚本单元测试或合成输入覆盖）。来源校验不能代替测试进程和嵌套 CLI 实际加载 DLL 的 SHA/MVID 证明；W 功能通道在测试进程内读取已加载 `W.DamengProvider` 程序集的路径与 MVID 并与 manifest 比较。
+6. 若未来需要接入未发行的开发候选，再按原机制（隔离 feed、显式 `--configfile`、packageSourceMapping、独立缓存）另行实现，不能用“最新成功构建”替代固定身份。
 
 每个候选记录：EF/source commit及dirty状态、producer来源manifest、包版本/SHA、加载DLL SHA/MVID、依赖图/锁文件、实际SDK/runtime、profile非敏感标识、测试清单、命令/退出码/TRX计数、预注册预算、前后对象清理结论。CLI子进程也核验其实际加载资产，不能只验证父进程。pack后的精确nupkg消费者与ProjectReference测试分开记录。
 
@@ -267,9 +293,11 @@ JSON标量翻译、更多LINQ算子、LOB排序分组、原子DDL、增加/恢�
 
 本次由主代理编写计划，用户指定的Kimi Code独立审查架构、遗漏和证据门。记录实际provider/model、每轮taskId、所审文档hash、结论、逐项响应；阻断项修订后新开一次委派复审，不能把旧审查结论套到新文档。
 
-本轮输入由用户提供的Kimi Code CLI交互会话完成；原两次T3子代理失败记录保留，CLI审查没有taskId，不能补造。首轮结论为无P1、4项P2和4项P3；计划方已将8项处置和当前修订hash写入审查记录。2026-10-08意见处置满足T00的首轮审查前提；2026-10-13新增包身份、时间桥接和恢复合同，单独记录本次更新hash，不沿用旧“无P1”结论。T00证据准备可以进行，时间桥接/reader和参数语义应在T01设计定稿时提交独立复审，完成后再进入T02/T03产品实现；本轮没有代替用户提供的Kimi review或宣称新复审完成。若T01原型推翻架构、改变包依赖方向/自动重试保护或发现新的阻断项，再提交独立复审。本次任务仍止于计划交付，不自动开始T00实现。
+本轮输入由用户提供的Kimi Code CLI交互会话完成；原两次T3子代理失败记录保留，CLI审查没有taskId，不能补造。首轮结论为无P1、4项P2和4项P3；计划方已将8项处置和当前修订hash写入审查记录。2026-10-08意见处置满足T00的首轮审查前提；2026-10-13新增包身份、时间桥接和恢复合同，单独记录本次更新hash，不沿用旧“无P1”结论。10-13 轮止于计划交付；10-14 执行修订把时间桥接/reader与参数语义的独立复审移到 M1 开发候选的代码 diff 上（见下文“独立复审门”），本计划没有代替用户提供的 Kimi review，也不宣称新复审已完成。实施中若推翻 §2.5 的架构、改变包依赖方向或自动重试保护，或发现新的阻断项，先停下记录，再提交独立复审。
 
-后续实施建议沿用设计/编码/验证分工：Sol High负责产品及测试，Sol Low在源码冻结后独占构建/实库验证；Kimi做独立设计或变更审查。任务按文件归属派发，验证窗口结束后才修复；每轮保留失败证据。这里是实施分工建议，本次不启动产品编码子任务。
+实施分工（2026-10-14 修订）：本轮由单个主代理按任务顺序编码和验证。原“Sol High/Sol Low/Kimi”分工不再作为前置条件，但“源码冻结后再执行验收运行、失败证据保留、修复后另起执行版本”的规则保留。
+
+独立复审门（2026-10-14 修订）：时间桥接/reader、参数语义和重试保护不再阻塞 T02/T03 编码，改为在 M1 开发候选形成后、PR 合并前，对实际代码 diff 做一次独立复审，复审者由用户指定（原定 Kimi Code）。复审记录实际 provider/model、所审提交与结论；未完成复审时 M1 只算开发候选，不能合并为已验收能力。
 
 每个PR合并前检查当前提交的全部review/comment/thread、未决意见与checks；修改后重跑受影响门。M1/M2先形成开发候选及精确包消费证据。公开发布另需：W精确依赖在目标feed可获取（preview.1已确认）、上游证据与本次使用范围相符、两包兼容版本成对验证、license/NOTICE完整、发布自动化能正确选择/顺序发布所需包、当前实库门完成及明确发布授权。上游合并或离线CI通过不等于本项目发布通过。
 
@@ -299,3 +327,10 @@ T07改造构建、推包与GitHub Release任务的统一标签解析及包白名
 - [R3边界与历史证据](https://github.com/whynpc9/W.DamengProvider/blob/a67a9298daaa42b18203a9b405ec05a3357ed4b0/docs/compatibility/R3.md)、[隔离级别合同](https://github.com/whynpc9/W.DamengProvider/blob/a67a9298daaa42b18203a9b405ec05a3357ed4b0/docs/compatibility/T11-isolation.md)。
 
 本仓库实现对照：`Storage/Internal/DamengTypeMappingSource.cs`、`DamengDateTimeOffsetTypeMapping.cs`、`DamengTimeOnlyTypeMapping.cs`、`DamengTimeSpanTypeMapping.cs`（均在 `src/W.EntityFrameworkCore.Dameng/` 下）。当前文件没有W桥接；上游EF patch仅作为设计参考，按本计划双驱动契约重做适配与测试。
+
+## 10. 本轮执行范围（2026-10-14）
+
+- 执行 M1：T00 → T01/T02 → T03 → T04 → T05 → T06 → T07（只到开发候选与本地精确包消费者证据；不推送发行标签、不发布 NuGet、不创建 GitHub Release）。
+- 每个任务一个本地提交；推送分支和创建 PR 需要用户另行确认。
+- 真实数据库门在本地 `8.1.5.60 / UTF-8 / plaintext` profile 上执行，记录在[验证记录](w-dmprovider-validation.md)。TLS profile、其他服务器版本、commit 失 ACK 端到端故障注入、需要额外权限的上游缺口保持 pending，不当作通过。
+- M2（T08–T10）、T11 与 R4 不在本轮执行；M1 闭合并经独立复审后再按本计划启动。
