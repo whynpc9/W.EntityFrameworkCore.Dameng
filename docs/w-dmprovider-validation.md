@@ -100,3 +100,31 @@
 此前的 W functional 运行（140/233 → 225/233 → 229/233）失败原因依次为：一次遗留序列引起的级联、2 项真实驱动差异（已改为按驱动断言）、以及多次 `Connection reset by peer`/连接期限到期。
 
 **环境说明**：本地服务器位于经 WSL2 网络访问的局域网地址，当天两种驱动都间歇出现传输层连接重置（官方 `6001`、W `SocketException`/`DmTimeoutException`），服务器会话数正常（8/1200）。传输层失败不计为通过；验收以完整的干净运行为准，失败运行的 TRX 保留在 `artifacts/query-translation/local-test/`（Git 忽略）。两种驱动的数据库通道共享持久测试模式，必须顺序运行。
+
+## T05 异步、取消、故障与会话恢复（2026-10-14）
+
+W 专属回归 `WDriverRuntimeFunctionalTests`（36 项，只在 W 功能项目中编译）。单独运行 35/36，唯一失败为准备阶段的 `Connection reset by peer`；在全量 W 功能运行中同样通过（见 T06）。经实库验证的行为：
+
+- **异步**：服务器端延迟 2 秒的查询（`DBMS_LOCK.SLEEP` 函数）与带延迟触发器的 `SaveChangesAsync`，调用在 1 秒内返回未完成的 Task，结束后结果正确。普通标量路径以外（LOB 同步 getter）不在此结论内。
+- **取消/期限**：预取消 token 不发送且上下文可继续使用；运行中取消保留原 token，抛 `DmOperationCanceledException`（`CancelSource=User`、`ConnectionReusable=false`），下一次操作使用新会话（`SESSID()` 变化）；EF `CommandTimeout(1)` 抛 `DmTimeoutException`（`ErrorKind=Timeout`、`CancelSource=TotalDeadline`、`Number=0`）；旧 token 不影响新调用。事务内取消写入：`OperationOutcome=Unknown`、提交失败，独立连接核对最终状态为未写入。
+- **有条件同会话恢复**：唯一键 -6602、外键 -6607、NOT NULL -6609、触发器 RAISE -20071、序列耗尽 -7069、零参数未绑定标记 -6804，各在 sync/async × autocommit/事务 共 24 种组合下：EF 异常链中的 W 异常带服务器错误号、`ErrorKind=Server`、`OperationOutcome=ServerReported`、`ConnectionReusable=true`；同一 `SESSID()`；失败语句无部分效果；事务内先前写入在提交后保留；EF 不重试。
+- **准备阶段失败**（语法错误）使 W 会话进入 Broken；EF 下一次操作打开新会话。这是 W 的保守合同，官方驱动保持会话。
+- **事务内匿名块**：W 在本地事务内拒绝动态控制 SQL（`BEGIN … END;`），在发送前抛 `NotSupportedException`，会话与事务保持可用；事务外同一块正常执行。依赖事务内 PL/SQL 块的应用代码需改写。迁移中的块已由提供程序抑制事务，不受影响（T06 守卫用例验证）。
+- **保存点**：事务内 `SaveChanges` 失败后 EF 自动回滚到保存点，事务继续；显式 `CreateSavepoint`/`RollbackToSavepoint` 生效。
+- **严格绑定**：有参数但 SQL 未使用时 W 拒绝且无写入；`ExecuteSqlRaw` 位置参数正常绑定。
+- **诊断**：`W.DmProvider` ActivitySource 在 EF 读写期间产生活动，标签/名称/事件中不含连接串、主机、用户、口令、表名、参数值或 SQL 文本。
+
+pending：commit 失 ACK、写入发送后断线等需故障代理的端到端用例（驱动侧有上游证据，EF 端到端未验证）；非 8.1.5.60 profile 的 RU/Serializable 与恢复拒绝；`-3510` 负例（本环境未能构造）。
+
+## T06 时间精度、迁移与驱动切换（2026-10-14）
+
+W 专属 `WDriverTemporalAndMigrationFunctionalTests`（15 项）单独运行 15/15（运行 ID `20261014T082326165Z-ec750fa7`）：
+
+- DateTime `TIMESTAMP(7)`：`MaxValue`、`MaxValue-1tick`、相邻整微秒/非整微秒值、`MinValue+1tick` 逐 tick 往返；参数化相等/大小比较能区分相邻 tick；服务器 `TO_CHAR(…FF7)` 文本一致。
+- DateTimeOffset `DATETIME(7) WITH TIME ZONE`：ticks、原始偏移（+08:00、-05:30、+13:59、+00:00）与 UtcTicks 保持。
+- `HasPrecision(6)` 列写入非整微秒值在写入前被拒绝且无行写入；整微秒值成功。
+- `TIMESTAMP(9)`：整 tick 值可读；非整 100ns 值读取抛 `OverflowException`；W 拒绝任何 8/9 位写参数（含 NULL），EF 侧不放开。注意：服务器把无精度的 `TIMESTAMP '…'` 字面量按六位解析，构造多位数据需用 `TO_TIMESTAMP(…FF9)`。
+- 迁移：`TIMESTAMP(6)→(7)` 保留旧值；七位→六位时守卫块在任何 ALTER 前检查所有待降列，存在非整微秒值时以 -20071 拒绝且数据与列精度不变；清理数据后守卫通过并完成降精度。生成的 DDL/守卫命令均为 `TransactionSuppressed`。
+- 驱动切换：官方驱动应用迁移 1 → W 读取历史并应用 2、3 → 官方回滚 3 再重新应用 → W 回滚全部；使用 `ActiveProvider` 分支的迁移在两种驱动下分别走对应分支，说明旧迁移若只比较旧名称需显式接受两个名称。离线单元证明两驱动的设计时模型互相 diff 无任何迁移操作。
+
+全量 W 功能（284 项 = 共享 233 + T05 36 + T06 15）：283/284，唯一失败为 `Connection reset by peer`（运行 ID `20261014T082855838Z-27148e00`）。为避免进程内服务提供程序数量告警误报，共享测试助手把 EF `ManyServiceProvidersCreatedWarning` 改为记录日志（测试代码有意创建多种模型变体）。最终干净运行见 T07。

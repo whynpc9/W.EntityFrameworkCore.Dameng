@@ -160,6 +160,21 @@ public sealed class WDriverConfigurationTests
         Assert.Equal(official.Database.GenerateCreateScript(), w.Database.GenerateCreateScript());
     }
 
+    [Fact]
+    public void SwitchingDriversProducesNoMigrationOperations()
+    {
+        using var official = new BlogContext(
+            new DbContextOptionsBuilder<BlogContext>().UseDameng(OfficialConnectionString).Options);
+        using var w = new BlogContext(WOptions<BlogContext>());
+        var differ = w.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrationsModelDiffer>();
+
+        var officialModel = official.GetService<IDesignTimeModel>().Model.GetRelationalModel();
+        var wModel = w.GetService<IDesignTimeModel>().Model.GetRelationalModel();
+
+        Assert.Empty(differ.GetDifferences(officialModel, wModel));
+        Assert.Empty(differ.GetDifferences(wModel, officialModel));
+    }
+
     public static TheoryData<string> RetryOverloads
         => ["none", "count", "empty-collection", "collection", "full", "full-null"];
 

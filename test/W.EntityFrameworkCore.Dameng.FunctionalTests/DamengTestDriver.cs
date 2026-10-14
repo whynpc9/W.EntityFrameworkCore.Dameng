@@ -29,9 +29,9 @@ internal static class DamengTestDriver
         string? connectionString,
         Action<DamengDbContextOptionsBuilder>? damengOptionsAction = null)
 #if WDRIVER
-        => optionsBuilder.UseDamengWithWDriver(connectionString, damengOptionsAction);
+        => TolerateManyServiceProviders(optionsBuilder).UseDamengWithWDriver(connectionString, damengOptionsAction);
 #else
-        => optionsBuilder.UseDameng(connectionString, damengOptionsAction);
+        => TolerateManyServiceProviders(optionsBuilder).UseDameng(connectionString, damengOptionsAction);
 #endif
 
     public static DbContextOptionsBuilder UseDamengUnderTest(
@@ -46,9 +46,9 @@ internal static class DamengTestDriver
         bool contextOwnsConnection,
         Action<DamengDbContextOptionsBuilder>? damengOptionsAction = null)
 #if WDRIVER
-        => optionsBuilder.UseDamengWithWDriver(connection, contextOwnsConnection, damengOptionsAction);
+        => TolerateManyServiceProviders(optionsBuilder).UseDamengWithWDriver(connection, contextOwnsConnection, damengOptionsAction);
 #else
-        => optionsBuilder.UseDameng(connection, contextOwnsConnection, damengOptionsAction);
+        => TolerateManyServiceProviders(optionsBuilder).UseDameng(connection, contextOwnsConnection, damengOptionsAction);
 #endif
 
     public static DbContextOptionsBuilder<TContext> UseDamengUnderTest<TContext>(
@@ -75,6 +75,12 @@ internal static class DamengTestDriver
         where TContext : DbContext
         => (DbContextOptionsBuilder<TContext>)((DbContextOptionsBuilder)optionsBuilder)
             .UseDamengUnderTest(connection, contextOwnsConnection, damengOptionsAction);
+
+    // The suites deliberately build many model/service variants in one process; EF's
+    // more-than-twenty-providers guard is meant for applications, so tests only log it.
+    private static DbContextOptionsBuilder TolerateManyServiceProviders(DbContextOptionsBuilder optionsBuilder)
+        => optionsBuilder.ConfigureWarnings(
+            warnings => warnings.Log(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.ManyServiceProvidersCreatedWarning));
 
     /// <summary>
     /// Derives the driver's connection string from the shared test connection without printing it.
