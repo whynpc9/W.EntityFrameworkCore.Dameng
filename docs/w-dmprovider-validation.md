@@ -214,3 +214,56 @@ TRX 位于 `artifacts/query-translation/local-test/<运行 ID>/`，W 文件带 `
 规范项目仍是四项冒烟测试。另：解决方案 `--locked-mode` 还原、全解决方案构建（零警告/错误）、
 `dotnet format --no-restore --verify-no-changes` 与 `git diff --check` 通过。
 依赖版本、锁文件与精确包身份未因本轮修复改变。最终独立复审结果以 PR 当前提交上的 Codex / Cursor 记录为准。
+
+## 升级到 W.DamengProvider 0.2.0（2026-10-15）
+
+### 包身份
+
+| 项 | 值 |
+| --- | --- |
+| 包 | `W.DamengProvider 0.2.0`，约束 `[0.2.0]`；[GitHub Release](https://github.com/whynpc9/W.DamengProvider/releases/tag/v0.2.0) 非预发布 |
+| 包 SHA-256 | `6db5972551506f9510f563239b360afabd2b6ef31f99b678599d6e9d9733d848`，与上游[发布记录](https://github.com/whynpc9/W.DamengProvider/blob/main/docs/release-0.2.0.md)中的 NuGet 公开签名包一致；`dotnet nuget verify --all` 为有效的 NuGet.org 仓库签名 |
+| NuGet contentHash | `nBvZJyYk+CvdZq8fgZSZGfXYcxp4zEarIo1/F5ADLLlYcrDYK7E4PiF3CPWbKsGZFrdoHUNNdh6N2rbROlbVbw==` |
+| net10.0 DLL SHA-256 / MVID | `d4bc3f28…1f18` / `1756fef6-b801-4182-91ab-ed3ef6945264` |
+| 来源 | nuspec repository commit 与 tag `v0.2.0` 均为 `aef142f0…`；tag 发布运行 `38749310165` |
+| 依赖 | 包多目标（net6/8/9/10，含 en、zh-CN、zh-HK、zh-TW 资源）；net10.0 依赖组为空，net6.0/net8.0 组的依赖不进入本仓库还原图 |
+
+`verify-package.py` 原先要求整个 nuspec 没有依赖；多目标包的 net6.0/net8.0 组有依赖，因此改为只检查 manifest
+`targetFramework`（net10.0）对应组及未分组依赖。对实际还原目录执行 `--require-lock-reference` 全部通过。
+本机经 `api.nuget.org` 访问时被重定向到 `nuget.azure.cn` 镜像，当时镜像只有 `0.1.0-preview.1`；包从
+`globalcdn.nuget.org` 取得，散列与签名核验后以临时本地源加 nuget.org 还原。锁文件只记录 contentHash，与来源无关。
+
+### 行为变化与回归
+
+- **8/9 位时间写入**：测试模型不再忽略 `TIMESTAMP(9)` 列，并新增 `TIMESTAMP(9) WITH TIME ZONE` 列；
+  `NineDigitColumnsAcceptNullAndWholeTickWrites` 四组（NULL、`.1234567`、`MaxValue`、`MinValue+1tick`）先核对
+  `ServerCapabilities.MaxTemporalWriteScale=9`，再异步插入、同步更新为互换后的 NULL/值，`FF9` 文本为七位加 `00`。
+  `EightDigitColumnsAcceptTheProviderParameterShape` 以提供程序的 `Precision=0`、`Scale=8` 写入值和 NULL。
+  原 `EightAndNineDigitWritesStayClosed` 在 0.2.0 下不再抛出（运行 `20261015T151758858Z-79136028`），已删除。
+- **事务内匿名块**：`DmlOnlyAnonymousBlocksRunInsideATransaction` 在事务内执行带参数的 UPDATE + INSERT 块，
+  回滚后无效果、提交后可见，`SESSID()` 不变；`ControlAnonymousBlocksAreRejectedInsideATransactionBeforeSending`
+  对 `DECLARE`、`IF`、块内 `COMMIT` 仍得到发送前 `NotSupportedException`，会话与事务可继续提交，事务外 `IF` 块正常执行。
+- **传输失败**：新增本地 TCP 中继（零 linger 关闭发送 RST）。连接被拒报 `ErrorKind=Transport`、`NotSent`；
+  接受后立即重置报 `Unknown`（登录请求已开始发送，符合 W 的阶段规则）。事务内带 2 秒延迟触发器的 `SaveChanges`
+  在 500 ms 时重置，sync/async 均得到 `DbUpdateException`，内部 `DmException` 为 `Transport`、`OperationOutcome=Unknown`、
+  `TransactionOutcome=OutcomeUnknown`、不可复用、`Number=0`，原 `SocketException`/`IOException` 在异常链中；
+  3 秒后新连接核对无提交行。首次编写时连接重置用例按 `NotSent` 断言而失败（运行 `20261015T152659410Z-5ae302cd`），
+  核对 W 规则后拆为“拒绝”和“接受后重置”两种情形。
+- **准备阶段恢复**：`ParameterizedPrepareFailuresKeepTheSessionAndTheTransaction` 对带参数命令的 `-2007` 与 `-2106`
+  在 sync/async 事务内核对同一会话、事务继续、失败语句无效果。无参数直接执行的
+  `PrepareFailureBreaksTheSessionAndEfOpensANewOne` 在 0.2.0 下仍成立，保持不变。
+- **能力描述**：RU/Serializable 用例先核对 `ServerCapabilities.SupportsReadUncommitted`/`SupportsSerializable`。
+- **CLI 嵌套项目**：原先把 `W.DamengProvider` 版本写死为 `[0.1.0-preview.1]`，升级后加载旧 DLL 并在 SHA-256 断言失败；
+  改为读取 manifest 的 `versionConstraint`。
+
+### 验收
+
+| 运行 | 结果 | 运行 ID |
+| --- | --- | --- |
+| W all（首次） | unit 61/61、functional 364/365（CLI 嵌套项目版本写死）、specification 4/4、admin 7/7；退出 1，不计验收 | `20261015T152855256Z-19f087db` |
+| W all（修复后） | unit 61/61、functional 365/365、specification 4/4、admin 7/7；退出 0 | `20261015T153238756Z-6a4f1143` |
+| 官方 all | unit 791/791、functional 300/300、specification 4/4、admin 7/7；退出 0 | `20261015T153624161Z-cd632258` |
+
+W 功能通道从 351 项增至 365 项。证据只来自自报 `8.1.5.60`、UTF-8、明文的本地 profile；TLS 与其他服务器版本仍未验证。
+commit 失 ACK 的端到端注入、`-3510` 负例仍 pending。W 0.2.0 的 `DbBatch` 逐条往返、数组绑定只报告总影响行数且不能回读生成值，
+本轮不改变单命令修改批次；数据源、流式 LOB、DmDecimal 仍未接入。

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>W.EntityFrameworkCore.Dameng.WDriver</AssemblyName>
     <RootNamespace>W.EntityFrameworkCore.Dameng.WDriver</RootNamespace>
-    <!-- Depends on the preview W.DamengProvider, so the package is a prerelease (NU5104). -->
+    <!-- M1 development candidate; the release version is set by the wdriver-v<SemVer> tag. -->
     <VersionPrefix>0.4.0</VersionPrefix>
     <VersionSuffix>preview.1</VersionSuffix>
     <PackageId>W.EntityFrameworkCore.Dameng.WDriver</PackageId>

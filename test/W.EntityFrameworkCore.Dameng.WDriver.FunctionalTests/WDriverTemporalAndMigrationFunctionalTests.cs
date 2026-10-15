@@ -13,7 +13,8 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// <summary>
 /// W.DamengProvider 100ns temporal precision, the guarded seven-to-six digit migration fixture,
 /// and switching a database between the official and W drivers across migrations.
-/// The verified seven-digit profile is the server's self-reported 8.1.5.60.
+/// The verified seven-digit profile is the server's self-reported 8.1.5.60; W publishes its
+/// temporal write limit as <c>ServerCapabilities.MaxTemporalWriteScale</c>.
 /// </summary>
 public sealed class WDriverTemporalAndMigrationFunctionalTests
 {
@@ -258,22 +259,93 @@ public sealed class WDriverTemporalAndMigrationFunctionalTests
     private static string Nine(string value)
         => $"TO_TIMESTAMP('{value}', 'YYYY-MM-DD HH24:MI:SS.FF9')";
 
+    public static TheoryData<DateTime?> NineDigitWrites
+        => new()
+        {
+            null,
+            new DateTime(2026, 10, 15, 1, 2, 3).AddTicks(1234567),
+            DateTime.MaxValue,
+            DateTime.MinValue.AddTicks(1)
+        };
+
+    // W 0.2.0 binds Scale 9 on the verified profile: NULL and whole-tick values are written
+    // without loss, so EF can write TIMESTAMP(9) columns instead of excluding them.
+    [DamengTheory]
+    [MemberData(nameof(NineDigitWrites))]
+    public Task NineDigitColumnsAcceptNullAndWholeTickWrites(DateTime? value)
+        => TemporalStore.WithTableAsync(
+            async store =>
+            {
+                await using (var connection = new DmConnection(store.ConnectionString))
+                {
+                    await connection.OpenAsync();
+                    Assert.Equal(9, connection.ServerCapabilities.MaxTemporalWriteScale);
+                }
+
+                var changed = new DateTime(2026, 10, 15, 4, 5, 6).AddTicks(7654321);
+                var offset = value is null ? (DateTimeOffset?)null : new DateTimeOffset(value.Value.Ticks, TimeSpan.Zero);
+                long id;
+                await using (var context = store.CreateContext())
+                {
+                    var row = new TemporalRow { Value = new DateTime(2026, 1, 1), Nano = value, NanoOffset = offset };
+                    context.Rows.Add(row);
+                    await context.SaveChangesAsync();
+                    id = row.Id;
+                }
+
+                Assert.Equal(NineDigitText(value), await store.ScalarStringAsync(
+                    $"SELECT TO_CHAR(\"NANO\", 'YYYY-MM-DD HH24:MI:SS.FF9') FROM \"{store.TableName}\" WHERE \"ID\" = {id}"));
+                Assert.Equal(NineDigitText(value), await store.ScalarStringAsync(
+                    $"SELECT TO_CHAR(\"NANO_OFFSET\", 'YYYY-MM-DD HH24:MI:SS.FF9') FROM \"{store.TableName}\" WHERE \"ID\" = {id}"));
+
+                await using (var context = store.CreateContext())
+                {
+                    var row = await context.Rows.SingleAsync(current => current.Id == id);
+                    Assert.Equal(value, row.Nano);
+                    Assert.Equal(offset, row.NanoOffset);
+
+                    // The synchronous update path swaps NULL and a value in both columns.
+                    row.Nano = value is null ? changed : null;
+                    row.NanoOffset = value is null ? new DateTimeOffset(changed, TimeSpan.FromHours(8)) : null;
+                    Assert.Equal(1, context.SaveChanges());
+                }
+
+                await using (var context = store.CreateContext())
+                {
+                    var row = await context.Rows.SingleAsync(current => current.Id == id);
+                    Assert.Equal(value is null ? changed : null, row.Nano);
+                    Assert.Equal(value is null ? new DateTimeOffset(changed, TimeSpan.FromHours(8)) : null, row.NanoOffset);
+                }
+            });
+
     [DamengFact]
-    public Task EightAndNineDigitWritesStayClosed()
+    public Task EightDigitColumnsAcceptTheProviderParameterShape()
         => TemporalStore.WithRawTableAsync(
-            "\"NANO\" TIMESTAMP(9)",
+            "\"EIGHT\" TIMESTAMP(8)",
             async store =>
             {
                 await using var connection = new DmConnection(store.ConnectionString);
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
-                command.CommandText = $"INSERT INTO \"{store.TableName}\" (\"NANO\") VALUES (:v)";
-                var parameter = new DmParameter("v", new DateTime(2026, 1, 1)) { Scale = 9 };
-                command.Parameters.Add(parameter);
+                command.CommandText = $"INSERT INTO \"{store.TableName}\" (\"EIGHT\") VALUES (:v)";
 
-                await Assert.ThrowsAsync<NotSupportedException>(() => command.ExecuteNonQueryAsync());
-                Assert.Equal("0", await store.ScalarStringAsync($"SELECT COUNT(*) FROM \"{store.TableName}\""));
+                // The provider configures temporal parameters with Precision 0 and Scale only.
+                var parameter = new DmParameter("v", new DateTime(2026, 1, 1).AddTicks(1234567)) { Precision = 0, Scale = 8 };
+                command.Parameters.Add(parameter);
+                Assert.Equal(1, await command.ExecuteNonQueryAsync());
+                parameter.Value = DBNull.Value;
+                Assert.Equal(1, await command.ExecuteNonQueryAsync());
+
+                Assert.Equal("00:00:00.12345670", await store.ScalarStringAsync(
+                    $"SELECT TO_CHAR(\"EIGHT\", 'HH24:MI:SS.FF8') FROM \"{store.TableName}\" WHERE \"EIGHT\" IS NOT NULL"));
+                Assert.Equal("1", await store.ScalarStringAsync(
+                    $"SELECT COUNT(*) FROM \"{store.TableName}\" WHERE \"EIGHT\" IS NULL"));
             });
+
+    private static string NineDigitText(DateTime? value)
+        => value is null
+            ? ""
+            : value.Value.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture) + "00";
 
     private static AlterColumnOperation AlterPrecision(string table, string column, int from, int to)
         => new()
@@ -432,10 +504,8 @@ public sealed class WDriverTemporalAndMigrationFunctionalTests
                     entity.Property(row => row.Value).HasColumnName("VALUE");
                     entity.Property(row => row.Offset).HasColumnName("OFFSET");
                     entity.Property(row => row.Micro).HasColumnName("MICRO").HasPrecision(6);
-                    // W keeps 8/9-digit writes closed (even NULL), so EF never writes this column.
-                    var nano = entity.Property(row => row.Nano).HasColumnName("NANO").HasColumnType("TIMESTAMP(9)").Metadata;
-                    nano.SetBeforeSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
-                    nano.SetAfterSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
+                    entity.Property(row => row.Nano).HasColumnName("NANO").HasColumnType("TIMESTAMP(9)");
+                    entity.Property(row => row.NanoOffset).HasColumnName("NANO_OFFSET").HasColumnType("TIMESTAMP(9) WITH TIME ZONE");
                 });
     }
 
@@ -456,6 +526,8 @@ public sealed class WDriverTemporalAndMigrationFunctionalTests
         public DateTime? Micro { get; set; }
 
         public DateTime? Nano { get; set; }
+
+        public DateTimeOffset? NanoOffset { get; set; }
     }
 }
 

@@ -84,8 +84,9 @@ dotnet ef dbcontext scaffold "Name=ConnectionStrings:Dameng" W.EntityFrameworkCo
 - 两种驱动生成相同的迁移 SQL，可以对同一数据库、同一历史表交替执行；切换驱动不会产生新的模型差异。
 - `migrationBuilder.ActiveProvider` 在 W 下为 `W.EntityFrameworkCore.Dameng.WDriver`。已有迁移若只比较
   `"W.EntityFrameworkCore.Dameng"`，切换后会走另一分支；执行前审阅这类迁移，显式接受两个名称。
-- W 在本地事务内拒绝匿名 `BEGIN … END;` 块。迁移中的块由提供程序抑制事务；自定义 `migrationBuilder.Sql(...)`
-  块需写 `suppressTransaction: true`。
+- W 0.2.0 在本地事务内只放行由 DML 组成的匿名 `BEGIN … END;` 块；含 `DECLARE`、控制流、过程调用或事务控制的块
+  仍被拒绝。迁移中提供程序生成的块已抑制事务；自定义 `migrationBuilder.Sql(...)` 中的这类块需写
+  `suppressTransaction: true`。
 - 时间列默认七位（`TIMESTAMP(7)`、`DATETIME(7) WITH TIME ZONE`）。六位→七位是保值的独立变更；七位→六位前必须先检查，
   否则第七位会丢失。守卫与 ALTER 分开、`suppressTransaction: true`，同一迁移内所有待降列先检查再 ALTER：
 

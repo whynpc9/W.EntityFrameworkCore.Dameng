@@ -5,6 +5,8 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -225,8 +227,10 @@ public sealed class WDriverRuntimeFunctionalTests
                 Assert.Equal(2, await store.CountAsync(null));
             });
 
-    [DamengFact]
-    public Task AnonymousBlocksAreRejectedInsideATransactionBeforeSending()
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task DmlOnlyAnonymousBlocksRunInsideATransaction(bool commit)
         => RuntimeStore.WithStoreAsync(
             async store =>
             {
@@ -238,12 +242,56 @@ public sealed class WDriverRuntimeFunctionalTests
                     context.Items.Add(new RuntimeItem { Name = "块前" });
                     await context.SaveChangesAsync();
 
-                    // W refuses dynamic control SQL in a local transaction; nothing is sent.
-                    await Assert.ThrowsAsync<NotSupportedException>(
-                        () => context.Database.ExecuteSqlRawAsync(
-                            $"BEGIN UPDATE \"{store.TableName}\" SET \"NAME\" = 'block'; END;"));
-
+                    // W 0.2.0 sends a block made only of DML inside the local transaction.
+                    await context.Database.ExecuteSqlRawAsync(
+                        $"BEGIN UPDATE \"{store.TableName}\" SET \"NAME\" = {{0}} WHERE \"NAME\" = {{1}}; INSERT INTO \"{store.TableName}\" (\"NAME\") VALUES ({{2}}); END;",
+                        "块内更新",
+                        "块前",
+                        "块内插入");
                     Assert.Equal(sessionBefore, await SessionIdAsync(context));
+
+                    if (commit)
+                    {
+                        await transaction.CommitAsync();
+                    }
+                    else
+                    {
+                        await transaction.RollbackAsync();
+                    }
+                }
+
+                var expected = commit ? 1 : 0;
+                Assert.Equal(0, await store.CountAsync("块前"));
+                Assert.Equal(expected, await store.CountAsync("块内更新"));
+                Assert.Equal(expected, await store.CountAsync("块内插入"));
+            });
+
+    [DamengFact]
+    public Task ControlAnonymousBlocksAreRejectedInsideATransactionBeforeSending()
+        => RuntimeStore.WithStoreAsync(
+            async store =>
+            {
+                var update = $"UPDATE \"{store.TableName}\" SET \"NAME\" = 'block' WHERE \"NAME\" = '块前'";
+                await using (var context = store.CreateContext())
+                {
+                    await context.Database.OpenConnectionAsync();
+                    var sessionBefore = await SessionIdAsync(context);
+                    await using var transaction = await context.Database.BeginTransactionAsync();
+                    context.Items.Add(new RuntimeItem { Name = "块前" });
+                    await context.SaveChangesAsync();
+
+                    // Declarations, control flow and transaction control stay refused; nothing is sent.
+                    foreach (var sql in new[]
+                    {
+                        $"DECLARE V INT; BEGIN {update}; END;",
+                        $"BEGIN IF 1 = 1 THEN {update}; END IF; END;",
+                        $"BEGIN {update}; COMMIT; END;"
+                    })
+                    {
+                        await Assert.ThrowsAsync<NotSupportedException>(() => context.Database.ExecuteSqlRawAsync(sql));
+                        Assert.Equal(sessionBefore, await SessionIdAsync(context));
+                    }
+
                     await transaction.CommitAsync();
                 }
 
@@ -253,11 +301,79 @@ public sealed class WDriverRuntimeFunctionalTests
                 // Outside a transaction the same block runs.
                 await using (var context = store.CreateContext())
                 {
-                    await context.Database.ExecuteSqlRawAsync(
-                        $"BEGIN UPDATE \"{store.TableName}\" SET \"NAME\" = 'block'; END;");
+                    await context.Database.ExecuteSqlRawAsync($"BEGIN IF 1 = 1 THEN {update}; END IF; END;");
                 }
 
                 Assert.Equal(1, await store.CountAsync("block"));
+            });
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConnectFailuresAreTransportFailures(bool refused)
+    {
+        // A refused TCP connect never sends; after an accepted connect the login has started.
+        await using var relay = new ResettingRelay(
+            DamengTestEnvironment.GetRequiredConnectionString(),
+            resetOnAccept: true,
+            listen: !refused);
+        await using var context = new RuntimeContext(
+            new DbContextOptionsBuilder<RuntimeContext>().UseDamengUnderTest(relay.ConnectionString).Options,
+            "EF10_WRT_UNUSED");
+
+        var error = await Assert.ThrowsAnyAsync<DbException>(() => context.Database.OpenConnectionAsync());
+
+        // W 0.2.0 reports socket failures as DmException instead of a bare SocketException.
+        var driverError = FindDriverException(error);
+        Assert.NotNull(driverError);
+        Assert.Equal(W.Dm.DmErrorKind.Transport, driverError.ErrorKind);
+        Assert.Equal(
+            refused ? W.Dm.DmOperationOutcome.NotSent : W.Dm.DmOperationOutcome.Unknown,
+            driverError.FailureInfo.OperationOutcome);
+        Assert.False(driverError.FailureInfo.ConnectionReusable);
+        Assert.Equal(0, driverError.Number);
+        Assert.Contains(Chain(driverError), current => current is SocketException or IOException);
+    }
+
+    [DamengTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AResetAfterSaveChangesWasSentReportsAnUnknownOutcomeThatIsNotCommitted(bool async)
+        => RuntimeStore.WithStoreAsync(
+            async store =>
+            {
+                await store.CreateSlowInsertTriggerAsync(seconds: 2);
+                await using (var relay = new ResettingRelay(store.ConnectionString, resetOnAccept: false))
+                {
+                    await using var context = store.CreateContext(connectionString: relay.ConnectionString);
+                    await using var transaction = await context.Database.BeginTransactionAsync();
+                    context.Items.Add(new RuntimeItem { Name = "断线写入" });
+
+                    // The insert is on the server, waiting in the trigger, when the relay resets both sides.
+                    var reset = Task.Run(
+                        async () =>
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(500));
+                            relay.ResetAll();
+                        });
+                    var error = async
+                        ? await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync())
+                        : Assert.Throws<DbUpdateException>(() => context.SaveChanges());
+                    await reset;
+
+                    var driverError = FindDriverException(error);
+                    Assert.NotNull(driverError);
+                    Assert.Equal(W.Dm.DmErrorKind.Transport, driverError.ErrorKind);
+                    Assert.Equal(W.Dm.DmOperationOutcome.Unknown, driverError.FailureInfo.OperationOutcome);
+                    Assert.Equal(W.Dm.DmTransactionOutcome.OutcomeUnknown, driverError.FailureInfo.TransactionOutcome);
+                    Assert.False(driverError.FailureInfo.ConnectionReusable);
+                    Assert.Equal(0, driverError.Number);
+                    Assert.Contains(Chain(driverError), current => current is SocketException or IOException);
+                }
+
+                // The server loses the session with its uncommitted transaction; nothing is committed.
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                Assert.Equal(0, await store.CountAsync(null));
             });
 
     [DamengFact]
@@ -310,6 +426,58 @@ public sealed class WDriverRuntimeFunctionalTests
                 Assert.False(FindDriverException(error)?.FailureInfo?.ConnectionReusable ?? false);
                 Assert.Empty(await context.Items.ToListAsync());
                 Assert.NotEqual(sessionBefore, await SessionIdAsync(context));
+            });
+
+    // W 0.2.0 keeps the session after these prepare-time errors of an explicit or implicit
+    // (parameterized) prepare on the measured profile; direct execution keeps the rule above.
+    [DamengTheory]
+    [InlineData(-2007, false)]
+    [InlineData(-2007, true)]
+    [InlineData(-2106, false)]
+    [InlineData(-2106, true)]
+    public Task ParameterizedPrepareFailuresKeepTheSessionAndTheTransaction(int number, bool async)
+        => RuntimeStore.WithStoreAsync(
+            async store =>
+            {
+                await using (var context = store.CreateContext())
+                {
+                    await context.Database.OpenConnectionAsync();
+                    var sessionBefore = await SessionIdAsync(context);
+                    await using var transaction = await context.Database.BeginTransactionAsync();
+                    context.Items.Add(new RuntimeItem { Name = "准备前" });
+                    await context.SaveChangesAsync();
+
+                    var sql = number == -2007
+                        ? $"UPDATE \"{store.TableName}\" SET \"NAME\" = {{0}} WHERE"
+                        : $"UPDATE \"{store.TableName}_MISSING\" SET \"NAME\" = {{0}}";
+                    var error = await CaptureAsync(
+                        async () =>
+                        {
+                            if (async)
+                            {
+                                await context.Database.ExecuteSqlRawAsync(sql, "准备失败");
+                            }
+                            else
+                            {
+                                context.Database.ExecuteSqlRaw(sql, "准备失败");
+                            }
+                        });
+
+                    var driverError = FindDriverException(error);
+                    Assert.True(driverError is not null, error.ToString());
+                    Assert.Equal(number, driverError.Number);
+                    Assert.Equal(W.Dm.DmErrorKind.Server, driverError.ErrorKind);
+                    Assert.True(driverError.FailureInfo.ConnectionReusable);
+                    Assert.Equal(sessionBefore, await SessionIdAsync(context));
+
+                    context.Items.Add(new RuntimeItem { Name = "准备后" });
+                    await context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+
+                Assert.Equal(1, await store.CountAsync("准备前"));
+                Assert.Equal(1, await store.CountAsync("准备后"));
+                Assert.Equal(0, await store.CountAsync("准备失败"));
             });
 
     [DamengFact]
@@ -503,6 +671,14 @@ public sealed class WDriverRuntimeFunctionalTests
         throw new Xunit.Sdk.XunitException("Expected the statement to fail.");
     }
 
+    private static IEnumerable<Exception> Chain(Exception? error)
+    {
+        for (var current = error; current is not null; current = current.InnerException)
+        {
+            yield return current;
+        }
+    }
+
     private static W.Dm.DmException? FindDriverException(Exception? error)
     {
         for (var current = error; current is not null; current = current.InnerException)
@@ -588,10 +764,12 @@ public sealed class WDriverRuntimeFunctionalTests
             }
         }
 
-        public RuntimeContext CreateContext(Action<DamengDbContextOptionsBuilder>? damengOptionsAction = null)
+        public RuntimeContext CreateContext(
+            Action<DamengDbContextOptionsBuilder>? damengOptionsAction = null,
+            string? connectionString = null)
             => new(
                 new DbContextOptionsBuilder<RuntimeContext>()
-                    .UseDamengUnderTest(ConnectionString, damengOptionsAction)
+                    .UseDamengUnderTest(connectionString ?? ConnectionString, damengOptionsAction)
                     .ReplaceService<Microsoft.EntityFrameworkCore.Infrastructure.IModelCacheKeyFactory, RuntimeModelCacheKeyFactory>()
 
                     // Per-table model keys add internal service providers across the suite.
@@ -686,6 +864,151 @@ public sealed class WDriverRuntimeFunctionalTests
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>
+    /// A loopback TCP relay to the test server that can abort every relayed connection with RST.
+    /// The derived connection string points at the relay, so it only fits plaintext test profiles.
+    /// </summary>
+    private sealed class ResettingRelay : IAsyncDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _stop = new();
+        private readonly List<Socket> _sockets = [];
+        private readonly string _host;
+        private readonly int _port;
+        private readonly bool _resetOnAccept;
+        private readonly Task _accepting;
+
+        public ResettingRelay(string connectionString, bool resetOnAccept, bool listen = true)
+        {
+            var builder = new DmConnectionStringBuilder(connectionString);
+            var server = Convert.ToString(builder["server"], CultureInfo.InvariantCulture)!;
+            _port = builder.TryGetValue("port", out var port) && port is not null && !string.IsNullOrEmpty(port.ToString())
+                ? Convert.ToInt32(port, CultureInfo.InvariantCulture)
+                : 5236;
+            var separator = server.LastIndexOf(':');
+            if (separator > 0 && !server.StartsWith('[') && server.IndexOf(':') == separator)
+            {
+                _port = int.Parse(server[(separator + 1)..], CultureInfo.InvariantCulture);
+                server = server[..separator];
+            }
+
+            _host = server.Trim('[', ']');
+            _resetOnAccept = resetOnAccept;
+            _listener.Start();
+            builder.Remove("server");
+            builder["server"] = IPAddress.Loopback.ToString();
+            builder.Remove("port");
+            builder["port"] = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            ConnectionString = builder.ConnectionString;
+
+            // Without a listener the reserved loopback port refuses the connection.
+            if (!listen)
+            {
+                _listener.Stop();
+            }
+
+            _accepting = listen ? AcceptAsync() : Task.CompletedTask;
+        }
+
+        public string ConnectionString { get; }
+
+        public void ResetAll()
+        {
+            lock (_sockets)
+            {
+                foreach (var socket in _sockets)
+                {
+                    Reset(socket);
+                }
+
+                _sockets.Clear();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stop.CancelAsync();
+            _listener.Stop();
+            ResetAll();
+            await _accepting;
+            _stop.Dispose();
+        }
+
+        private async Task AcceptAsync()
+        {
+            while (true)
+            {
+                Socket client;
+                try
+                {
+                    client = await _listener.AcceptSocketAsync(_stop.Token);
+                }
+                catch (Exception error) when (error is OperationCanceledException or SocketException or ObjectDisposedException)
+                {
+                    return;
+                }
+
+                if (_resetOnAccept)
+                {
+                    Reset(client);
+                    continue;
+                }
+
+                var upstream = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                try
+                {
+                    await upstream.ConnectAsync(_host, _port, _stop.Token);
+                }
+                catch (Exception error) when (error is OperationCanceledException or SocketException)
+                {
+                    Reset(client);
+                    upstream.Dispose();
+                    continue;
+                }
+
+                lock (_sockets)
+                {
+                    _sockets.Add(client);
+                    _sockets.Add(upstream);
+                }
+
+                _ = PumpAsync(client, upstream);
+                _ = PumpAsync(upstream, client);
+            }
+        }
+
+        private static async Task PumpAsync(Socket source, Socket target)
+        {
+            var buffer = new byte[64 * 1024];
+            try
+            {
+                int read;
+                while ((read = await source.ReceiveAsync(buffer, SocketFlags.None)) > 0)
+                {
+                    await target.SendAsync(buffer.AsMemory(0, read), SocketFlags.None);
+                }
+
+                target.Shutdown(SocketShutdown.Send);
+            }
+            catch (Exception error) when (error is SocketException or ObjectDisposedException)
+            {
+            }
+        }
+
+        // A zero linger time makes Close send RST instead of a graceful FIN.
+        private static void Reset(Socket socket)
+        {
+            try
+            {
+                socket.LingerState = new LingerOption(true, 0);
+                socket.Close();
+            }
+            catch (Exception error) when (error is SocketException or ObjectDisposedException)
+            {
+            }
         }
     }
 

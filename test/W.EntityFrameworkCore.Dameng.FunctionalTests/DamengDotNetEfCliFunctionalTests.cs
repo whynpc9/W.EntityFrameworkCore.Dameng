@@ -279,8 +279,16 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
     private const string UseProviderMethod = "UseDamengWithWDriver";
 
-    private const string DriverPackageReferences
-        = """<PackageReference Include="W.DamengProvider" Version="[0.1.0-preview.1]" />""";
+    // The nested project restores the exact version pinned by the driver identity manifest.
+    private static readonly string DriverPackageReferences
+        = $"""<PackageReference Include="W.DamengProvider" Version="{PinnedDriverVersionConstraint()}" />""";
+
+    private static string PinnedDriverVersionConstraint()
+    {
+        using var manifest = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "w-damengprovider.manifest.json")));
+        return manifest.RootElement.GetProperty("versionConstraint").GetString()!;
+    }
 
     // The nested project prints the MVID of the W assembly it actually loads; the copy in its
     // output directory must also be byte-identical to the pinned package DLL.
@@ -291,7 +299,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
     private const string UseProviderMethod = "UseDameng";
 
-    private const string DriverPackageReferences = "";
+    private static readonly string DriverPackageReferences = "";
 
     private const string CliProgram = """Console.WriteLine("cli roundtrip");""";
 #endif

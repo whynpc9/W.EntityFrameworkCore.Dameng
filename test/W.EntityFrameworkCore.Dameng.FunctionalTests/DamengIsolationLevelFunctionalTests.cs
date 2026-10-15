@@ -79,9 +79,9 @@ public sealed class DamengIsolationLevelFunctionalTests
 
 #if WDRIVER
     // W.DamengProvider supports tracked SaveChanges in RU/Serializable transactions on the
-    // server profile it has verified (self-reported 8.1.5.60); the official driver fails with
-    // "CommandText has no value" (see the #else test). Other profiles must reject before send,
-    // which needs a different server and stays pending.
+    // server profile it has verified (self-reported 8.1.5.60, published as ServerCapabilities);
+    // the official driver fails with "CommandText has no value" (see the #else test). Other
+    // profiles must reject before send, which needs a different server and stays pending.
     [DamengTheory]
     [InlineData(IsolationLevel.ReadUncommitted)]
     [InlineData(IsolationLevel.Serializable)]
@@ -104,6 +104,13 @@ public sealed class DamengIsolationLevelFunctionalTests
 
                 await using (var context = CreateContext(store))
                 {
+                    await context.Database.OpenConnectionAsync();
+                    var capabilities = ((DmConnection)context.Database.GetDbConnection()).ServerCapabilities;
+                    Assert.True(
+                        isolationLevel == IsolationLevel.ReadUncommitted
+                            ? capabilities.SupportsReadUncommitted
+                            : capabilities.SupportsSerializable,
+                        $"This server profile does not publish {isolationLevel} support.");
                     await using var transaction = await context.Database.BeginTransactionAsync(isolationLevel);
                     Assert.Equal(isolationLevel, transaction.GetDbTransaction().IsolationLevel);
                     var loaded = await context.Entities.SingleAsync(item => item.Id == id);

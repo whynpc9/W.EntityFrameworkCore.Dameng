@@ -49,7 +49,7 @@
 | 非键生成值回读 | 真实环境已验证 / 子集 | 2026-10-02 使用现有 DML + SELECT 路径验证：客户端单键/复合键、IDENTITY 和序列键插入后，Unicode/数值/NULL 默认值及虚拟计算列在同步/异步 SaveChanges 返回时已回填；无需 Reload。当前值和原始值、独立查询及外部事务回滚均有回归。其他策略的库端生成键继续拒绝，未引入 RETURNING 或输出参数 |
 | 乐观并发 | 真实环境已验证 / 子集 | 原有应用管理的过期并发标记通过 `SQL%ROWCOUNT` 协议抛出异常。2026-10-02 新增显式配置的 BEFORE UPDATE 行触发器版本标记：更新后回读标记与虚拟计算列、连续两次更新、陈旧标记和已删除行的零行更新均有同步/异步回归；失败方不传播生成值。HasTrigger 只声明元数据，触发器需自行创建；不支持自动生成 SQL Server 风格 rowversion |
 | `ExecuteUpdate` / `ExecuteDelete` | 真实环境已验证 | 受影响行数以及持久化的布尔值/转换值更新 |
-| 修改批处理 | 受驱动程序限制 | 驱动程序没有提供程序专用的 `DbBatch`；提供程序使用 `SingularModificationCommandBatch` |
+| 修改批处理 | 受驱动程序限制 | 官方驱动没有提供程序专用的 `DbBatch`；W 0.2.0 的 `DbBatch` 按命令逐条往返、不减少往返次数，数组绑定只报告总影响行数且不能回读生成值。两种驱动都使用 `SingularModificationCommandBatch` |
 | 常见标量映射 | 真实环境已验证 | 有符号整数、无分面 decimal 与 decimal(38,20)、bool、GUID、Unicode/CJK、可空值、`DateOnly`、微秒精度 `TimeOnly` 和精度为 7 的 `DateTime`。2026-09-30 起，非 Unicode 定界字符串生成 `VARCHAR2(n CHAR)` / `CHAR(n CHAR)`：`LENGTH_IN_CHAR=0` 实例上 `VARCHAR(n)` 按字节截断中文，字符语义声明经真实库回读验证（`CHAR_USED='C'`）；自动推导按最小受支持页的保守 1900 字节预算，即 `n × 4 ≤ 1900`（475 字符）；变长超出转 CLOB，定长推导模型/无显式类型迁移拒绝，不会自动转换成二进制。显式存储类型仍按声明保留，由使用方核对实例页大小与整行预算。参考实例（页 32768、UTF-8）验证 2/3/475 字符 CHAR 语义与 476/1000 字符 CLOB 的 EF 往返；本轮未运行 4 KB/8 KB 实例，新预算依据官方最小页容量保守选取；页大小探针仅记录探索结果，遇到 SQL 错误不会失败，不能作为容量边界验收。建表接受不等于能存满。键/索引字符串默认长度统一为 450 个字符（最坏 1800 字节），在文档表最小 4 KB 页的列上限（1900 字节）内。`NVARCHAR2(n)` 已是字符语义，保持不变 |
 | `DateTimeOffset` | 真实环境已验证 / 查询部分支持 | 存储映射为 `DATETIME(7) WITH TIME ZONE`；已有往返样本通过提供程序文本回读保留原始偏移量，包括 `+08:00`。列比较及 `Year`/`Month`/`Day`/`Hour`/`Minute`/`Second` 六个本地日期部件已验证，部件按列上保存的原偏移提取。`Offset`、`UtcDateTime`、`DateTime`、`Now`/`UtcNow` 和 `Add*` 仍不翻译；映射精度声明不构成第七位小数保真保证 |
 | `TimeSpan` | 真实环境已验证 | 默认 `INTERVAL DAY(9) TO SECOND(6)`，包括超过两位天数的精确正值和负值；字面量保留天/小数秒精度，并拒绝造成信息损失的 tick。2026-10-14 两种驱动验证显式 `TIME` / `TIME(0/3/6)` 的写入、读取及参数比较：通过 TimeOnly 转换器读写，只接受一天内非负时刻，负值和大于等于一天的值明确拒绝；小数秒不可精确表示时拒绝参数与字面量。裸 TIME 为零位，默认 TimeOnly 仍为 TIME(6) |
@@ -123,7 +123,7 @@
 
 ## W.DamengProvider 驱动（开发候选）
 
-扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.1.0-preview.1]`
+扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.2.0]`
 （身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
 未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
 证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
@@ -132,15 +132,15 @@
 | 领域 | W 状态 | 范围与边界 |
 | --- | --- | --- |
 | 配置 | 单元级已验证 | 六个 `UseDamengWithWDriver` 重载、`AddEntityFrameworkDamengWithWDriver`；同一 options 混用两种驱动、手工服务与 options 驱动不符、同一服务集合注册两种驱动均明确失败 |
-| 共享功能套件 | 真实环境已验证 | 合并 main 并修复 PR #7 后，官方 300 项功能在 W 下全部通过；W 功能通道共 351 项，另有 4 项规范冒烟、7 项管理员迁移脚本全部通过；按驱动区分的断言与最新运行 ID 见验证记录 |
+| 共享功能套件 | 真实环境已验证 | 升级到 W 0.2.0 后，官方 300 项功能在 W 下全部通过；W 功能通道共 365 项，另有 4 项规范冒烟、7 项管理员迁移脚本全部通过；按驱动区分的断言与最新运行 ID 见验证记录 |
 | 异步与取消 | 真实环境已验证 | 查询与 `SaveChangesAsync` 在服务器未完成时返回；预取消不发送；运行中取消保留原 token 并关闭会话，EF 下一次操作用新会话；`CommandTimeout` 报客户端期限（`TotalDeadline`）。LOB 同步 getter 不在此结论内 |
 | 自动重试 | 明确拒绝 | `EnableRetryOnFailure` 全部重载及直接构造 `DamengRetryingExecutionStrategy` 抛 `Dameng:RetryNotSupportedForWDriver`；默认策略执行一次；自定义 `ExecutionStrategy` 由应用负责 |
-| 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。commit 失 ACK 与发送后断线的端到端注入 pending |
-| 错误后的会话 | 真实环境已验证（8.1.5.60） | 唯一键、外键、NOT NULL、触发器 RAISE、序列耗尽、未绑定标记 -6804 在 sync/async × 自动提交/事务下保留同一会话且事务不被暗中结束；准备阶段失败（语法错误）使会话 Broken，EF 重新打开 |
-| 事务内匿名块 | W 拒绝 | W 在本地事务内发送前拒绝 `BEGIN … END;`，会话与事务仍可用；事务外正常。迁移中的块由提供程序抑制事务，不受影响 |
-| 隔离级别 | 真实环境已验证（8.1.5.60） | RU / Serializable 下跟踪式 `SaveChanges` 成功（官方驱动失败）；RepeatableRead/Snapshot 仍拒绝；其他 profile 的发送前拒绝 pending |
+| 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。W 0.2.0 把套接字失败包装为 `DmException`（`ErrorKind=Transport`、`Number=0`，原异常为 `InnerException`）：经本地 TCP 中继注入 RST，连接被拒报 `NotSent`，接受后重置报 `Unknown`；事务内 `SaveChanges` 发送后重置（sync/async）得到 `DbUpdateException`，`OperationOutcome=Unknown`、`TransactionOutcome=OutcomeUnknown`、不可复用，新连接核对未提交。commit 失 ACK 的端到端注入 pending |
+| 错误后的会话 | 真实环境已验证（8.1.5.60） | 唯一键、外键、NOT NULL、触发器 RAISE、序列耗尽、未绑定标记 -6804 在 sync/async × 自动提交/事务下保留同一会话且事务不被暗中结束。W 0.2.0 起带参数命令（隐式 Prepare）的 `-2007` 语法错误与 `-2106` 无效表在 sync/async 事务内保留同一会话与事务；无参数的直接执行仍按执行阶段白名单，例如 `SELECT SLEEP(1) FROM DUAL` 使会话 Broken，EF 重新打开 |
+| 事务内匿名块 | 真实环境已验证 / 子集 | W 0.2.0 在本地事务内放行只含 DML 的 `BEGIN … END;`：带参数的 UPDATE + INSERT 块回滚后无效果、提交后可见，会话不变。`DECLARE`、`IF` 等控制流、块内 `COMMIT` 仍在发送前抛 `NotSupportedException`，会话与事务保持可用；事务外正常执行。完整判定规则见 W 的 [issue #16 说明](https://github.com/whynpc9/W.DamengProvider/blob/v0.2.0/docs/compatibility/I16-ef-integration-feedback.md)。迁移中的块由提供程序抑制事务，不受影响 |
+| 隔离级别 | 真实环境已验证（8.1.5.60） | RU / Serializable 下跟踪式 `SaveChanges` 成功（官方驱动失败），测试先核对 `DmConnection.ServerCapabilities` 公布对应能力；RepeatableRead/Snapshot 仍拒绝；其他 profile 的发送前拒绝 pending |
 | 保存点 | 真实环境已验证 | EF 自动保存点在 `SaveChanges` 失败后回滚并继续事务；显式保存点可用 |
-| 时间精度 | 真实环境已验证（8.1.5.60） | 默认 `TIMESTAMP(7)` / `DATETIME(7) WITH TIME ZONE` 逐 tick 往返（含 Min/Max 边界、原偏移、相邻 tick 参数比较）；时间参数只用 `Scale`；六位列写入非整微秒值在发送前拒绝；8/9 位列禁止写入（含 NULL），读取非整 100ns 值拒绝；TIME/INTERVAL 最多六位；显式裸 TIME 为零位，TIME(0/3/6) 的 TimeSpan 转换与 TimeOnly 路径均有回归 |
+| 时间精度 | 真实环境已验证（8.1.5.60） | 默认 `TIMESTAMP(7)` / `DATETIME(7) WITH TIME ZONE` 逐 tick 往返（含 Min/Max 边界、原偏移、相邻 tick 参数比较）；时间参数只用 `Scale`；六位列写入非整微秒值在发送前拒绝；W 0.2.0 起 `TIMESTAMP(9)` 与 `TIMESTAMP(9) WITH TIME ZONE` 列可经 EF 写入 NULL 和整 tick 值（异步插入、同步更新，NULL 与值互换，`.1234567` 存为 `.123456700`，含 Min/Max 边界），`TIMESTAMP(8)` 接受提供程序的参数形状；该能力只在 `ServerCapabilities.MaxTemporalWriteScale` 为 9 的 profile 开放，其他 profile 由 W 拒绝。读取非整 100ns 值拒绝；TIME/INTERVAL 最多六位；显式裸 TIME 为零位，TIME(0/3/6) 的 TimeSpan 转换与 TimeOnly 路径均有回归 |
 | 原始 ADO 读取 | 行为差异 | 带时区列 `GetValue` 返回 `DateTimeOffset`（官方为 `DateTime`）；EF 物化对 DateTimeOffset/INTERVAL 使用 typed getter |
 | 迁移与切换 | 真实环境已验证 | 6→7 位保值；7→6 位需先运行守卫（见[迁移说明](migrations.md)）；同一历史表可在官方与 W 之间交替应用/回滚迁移；比较 `ActiveProvider` 的迁移须同时接受两个提供程序名称；两驱动的模型互相 diff 无操作 |
 | 设计时 | 真实环境已验证 | `dotnet ef migrations add/script`、`database update`、`dbcontext scaffold`（提供程序名 `W.EntityFrameworkCore.Dameng.WDriver`）与生成代码编译；嵌套项目加载的 W DLL 与 manifest 一致 |
