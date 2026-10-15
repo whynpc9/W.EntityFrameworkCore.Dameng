@@ -153,10 +153,20 @@ def verify(arguments: argparse.Namespace) -> list[str]:
         repository = metadata_node.find(f"{prefix}repository", namespace) if metadata_node is not None else None
         check(repository is not None and repository.get("commit") == manifest["source"]["repositoryCommit"],
               "nuspec repository commit matches", failures)
+        # The package multi-targets; only the consumed framework's group (and any
+        # ungrouped dependency) reaches this repository's restore graph.
+        target_framework = manifest["targetFramework"]
         dependencies = metadata_node.find(f"{prefix}dependencies", namespace) if metadata_node is not None else None
-        dependency_ids = [] if dependencies is None else [
-            node.get("id") for node in dependencies.iter() if node.get("id")]
-        check(not dependency_ids, "package declares no runtime NuGet dependencies", failures)
+        dependency_ids = []
+        if dependencies is not None:
+            for node in dependencies:
+                if node.tag.endswith("group"):
+                    if node.get("targetFramework", "").lower() == target_framework.lower():
+                        dependency_ids.extend(child.get("id") for child in node if child.get("id"))
+                elif node.get("id"):
+                    dependency_ids.append(node.get("id"))
+        check(not dependency_ids,
+              f"package declares no {target_framework} runtime NuGet dependencies", failures)
 
         assembly = archive.read(manifest["assemblyPath"])
         check(sha256(assembly) == manifest["assemblySha256"], "packaged DLL SHA-256 matches", failures)

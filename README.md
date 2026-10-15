@@ -73,7 +73,7 @@ modelBuilder.Entity<AuditEvent>()
 ### 使用 W.DamengProvider 驱动（开发候选）
 
 引用 `W.EntityFrameworkCore.Dameng.WDriver`（精确依赖同版本的基础包和
-`W.DamengProvider 0.1.0-preview.1`），改用 `UseDamengWithWDriver`：
+`W.DamengProvider 0.2.0`），改用 `UseDamengWithWDriver`：
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
@@ -89,7 +89,7 @@ services.AddDbContext<AppDbContext>(options =>
   不提供自动重放；需要时在独立连接上核对最终状态后再由业务决定。
 - 每个 `DbContextOptions` 只能选择一种驱动；同一进程可以同时有官方与 W 两类上下文。
 - 与官方驱动的行为差异（真正的异步网络调用与取消、七位小数秒、RU/Serializable 跟踪保存、
-  错误后的会话保留、事务内拒绝匿名块等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动开发候选)。
+  错误后的会话保留、事务内只放行纯 DML 匿名块、传输失败的 `FailureInfo` 等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动开发候选)。
 
 ## 构建与测试
 
@@ -126,7 +126,8 @@ scripts/local-test/run.sh test all
 - 无界 `string` 和 `byte[]` 属性分别映射为 `NCLOB` 和 `BLOB`。
   键、索引、排序/分组以及其他需要普通可比较行内值的操作必须配置有限最大长度。
   实际可用的行内值和索引长度还取决于数据库页面及行存储配置。
-- 两种驱动都没有提供程序专用的 `DbBatch`；EF 修改命令会有意以单命令批次执行。
+- 官方驱动没有提供程序专用的 `DbBatch`；W 0.2.0 的 `DbBatch` 按命令逐条往返，不减少往返次数。
+  因此 EF 修改命令在两种驱动下都有意以单命令批次执行。
 - 官方驱动在已测试资产中的异步 ADO.NET 方法回退到同步实现，因此 EF 异步 API
   并不意味着非阻塞网络 I/O 或及时取消。W 驱动的打开/执行/读取/事务异步路径已在实库验证为非阻塞，
   发送后取消会关闭会话；LOB 同步 getter 仍可能发起同步 I/O。

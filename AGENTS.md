@@ -52,7 +52,8 @@ dotnet test test/W.EntityFrameworkCore.Dameng.Specification.Tests/W.EntityFramew
   `docs/datetime-string-translation.md`。
 - 达梦 DDL 会隐式提交。生成 DDL 时应正确禁止事务，为测试对象使用唯一名称，并在
   `finally` 中精确清理对象。
-- 两种驱动都没有提供程序专用的 `DbBatch`；在真实证据支持其他策略之前，保持单命令修改批次。
+- 官方驱动没有提供程序专用的 `DbBatch`，W 的 `DbBatch` 逐条往返；在真实证据支持其他策略之前，
+  两种驱动都保持单命令修改批次。
 - 官方驱动的异步视为同步回退，取消能力有限；W 驱动的异步与取消按其 `FailureInfo` 合同处理，
   不得据此增加自动重试。
 - 驱动相关行为只经 `DamengDriver` 桥接；共享代码不得直接判断某个驱动的 ADO.NET 类型。

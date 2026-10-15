@@ -4,9 +4,9 @@
     "net10.0": {
       "W.DamengProvider": {
         "type": "Direct",
-        "requested": "[0.1.0-preview.1, 0.1.0-preview.1]",
-        "resolved": "0.1.0-preview.1",
-        "contentHash": "Gah+YlqywSqIhj9qvnQ2LYDADCJFdSJzYu6isg4P2XqsLARos9813Qa/D9hifhNAvvgz/f5uoyEgddLN3Ud+EQ=="
+        "requested": "[0.2.0, 0.2.0]",
+        "resolved": "0.2.0",
+        "contentHash": "nBvZJyYk+CvdZq8fgZSZGfXYcxp4zEarIo1/F5ADLLlYcrDYK7E4PiF3CPWbKsGZFrdoHUNNdh6N2rbROlbVbw=="
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "Transitive",
