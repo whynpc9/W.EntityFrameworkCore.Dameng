@@ -244,7 +244,7 @@ TRX 位于 `artifacts/query-translation/local-test/<运行 ID>/`，W 文件带 `
   回滚后无效果、提交后可见，`SESSID()` 不变；`ControlAnonymousBlocksAreRejectedInsideATransactionBeforeSending`
   对 `DECLARE`、`IF`、块内 `COMMIT` 仍得到发送前 `NotSupportedException`，会话与事务可继续提交，事务外 `IF` 块正常执行。
 - **传输失败**：新增本地 TCP 中继（零 linger 关闭发送 RST）。连接被拒报 `ErrorKind=Transport`、`NotSent`；
-  接受后立即重置报 `Unknown`（登录请求已开始发送，符合 W 的阶段规则）。事务内带 2 秒延迟触发器的 `SaveChanges`
+  中继收到客户端的首段登录字节后再重置，报 `Unknown`（登录请求已发送，符合 W 的阶段规则）。事务内带 2 秒延迟触发器的 `SaveChanges`
   在 500 ms 时重置，sync/async 均得到 `DbUpdateException`，内部 `DmException` 为 `Transport`、`OperationOutcome=Unknown`、
   `TransactionOutcome=OutcomeUnknown`、不可复用、`Number=0`，原 `SocketException`/`IOException` 在异常链中；
   3 秒后新连接核对无提交行。首次编写时连接重置用例按 `NotSent` 断言而失败（运行 `20261015T152659410Z-5ae302cd`），
@@ -267,7 +267,9 @@ TRX 位于 `artifacts/query-translation/local-test/<运行 ID>/`，W 文件带 `
 PR #8 Codex 审查（2026-10-15）指出两处中继问题并已修正：转发时 `SendAsync` 可能只发送部分字节，改为循环直到整段转发；
 发送后重置原先按固定 500 ms 计时，不能证明 INSERT 已发出，改为由中继在“最近一次转发来自客户端、服务器 500 ms 内未应答”时
 才重置。只影响这四项传输用例，聚焦重跑连续三次 4/4（`20261015T154646739Z-43ccf2c4`、`20261015T154700188Z-ef4d661b`、
-`20261015T154713619Z-c6de8590`）；上表全量运行早于该修正。
+`20261015T154713619Z-c6de8590`）。第二轮审查指出“接受后重置”只证明 TCP 握手完成，可能在登录请求发出前就重置；
+中继改为先读到客户端字节（10 秒超时）再重置，用例断言读到的字节数大于零，聚焦重跑连续三次 4/4
+（`20261015T155244353Z-4ebb2ed6`、`20261015T155258560Z-1ce70229`、`20261015T155312043Z-c0112254`）。上表全量运行早于这两处修正。
 
 W 功能通道从 351 项增至 365 项。证据只来自自报 `8.1.5.60`、UTF-8、明文的本地 profile；TLS 与其他服务器版本仍未验证。
 commit 失 ACK 的端到端注入、`-3510` 负例仍 pending。W 0.2.0 的 `DbBatch` 逐条往返、数组绑定只报告总影响行数且不能回读生成值，

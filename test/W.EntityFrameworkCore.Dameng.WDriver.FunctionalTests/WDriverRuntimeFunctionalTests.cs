@@ -333,6 +333,10 @@ public sealed class WDriverRuntimeFunctionalTests
         Assert.False(driverError.FailureInfo.ConnectionReusable);
         Assert.Equal(0, driverError.Number);
         Assert.Contains(Chain(driverError), current => current is SocketException or IOException);
+        if (!refused)
+        {
+            Assert.True(relay.ClientBytesBeforeReset > 0, "The relay reset the connection before the login request arrived.");
+        }
     }
 
     [DamengTheory]
@@ -882,6 +886,7 @@ public sealed class WDriverRuntimeFunctionalTests
         private long _lastClientForward;
         private long _lastServerForward;
         private long _lastClientForwardTimestamp;
+        private long _clientBytesBeforeReset;
 
         public ResettingRelay(string connectionString, bool resetOnAccept, bool listen = true)
         {
@@ -916,6 +921,10 @@ public sealed class WDriverRuntimeFunctionalTests
         }
 
         public string ConnectionString { get; }
+
+        /// <summary>Gets the client bytes a reset-on-accept relay received before resetting.</summary>
+        public long ClientBytesBeforeReset
+            => Interlocked.Read(ref _clientBytesBeforeReset);
 
         /// <summary>
         /// Resets every relayed connection once the latest forwarded data came from the client and
@@ -983,6 +992,18 @@ public sealed class WDriverRuntimeFunctionalTests
 
                 if (_resetOnAccept)
                 {
+                    // Reset only after the client's first (login) bytes arrived, so the failure is after send.
+                    try
+                    {
+                        using var receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+                        receiveTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                        var received = await client.ReceiveAsync(new byte[1024], SocketFlags.None, receiveTimeout.Token);
+                        Interlocked.Add(ref _clientBytesBeforeReset, received);
+                    }
+                    catch (Exception error) when (error is OperationCanceledException or SocketException)
+                    {
+                    }
+
                     Reset(client);
                     continue;
                 }
