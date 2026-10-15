@@ -349,13 +349,11 @@ public sealed class WDriverRuntimeFunctionalTests
                     await using var transaction = await context.Database.BeginTransactionAsync();
                     context.Items.Add(new RuntimeItem { Name = "断线写入" });
 
-                    // The insert is on the server, waiting in the trigger, when the relay resets both sides.
-                    var reset = Task.Run(
-                        async () =>
-                        {
-                            await Task.Delay(TimeSpan.FromMilliseconds(500));
-                            relay.ResetAll();
-                        });
+                    // The relay resets both sides only after it forwarded a client request that the server
+                    // has left unanswered for 500 ms: the insert was sent and is waiting in the trigger.
+                    var reset = relay.ResetWhileARequestIsOutstandingAsync(
+                        TimeSpan.FromMilliseconds(500),
+                        TimeSpan.FromSeconds(10));
                     var error = async
                         ? await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync())
                         : Assert.Throws<DbUpdateException>(() => context.SaveChanges());
@@ -880,6 +878,10 @@ public sealed class WDriverRuntimeFunctionalTests
         private readonly int _port;
         private readonly bool _resetOnAccept;
         private readonly Task _accepting;
+        private long _forwarded;
+        private long _lastClientForward;
+        private long _lastServerForward;
+        private long _lastClientForwardTimestamp;
 
         public ResettingRelay(string connectionString, bool resetOnAccept, bool listen = true)
         {
@@ -914,6 +916,34 @@ public sealed class WDriverRuntimeFunctionalTests
         }
 
         public string ConnectionString { get; }
+
+        /// <summary>
+        /// Resets every relayed connection once the latest forwarded data came from the client and
+        /// the server has not answered it for <paramref name="outstandingFor" />.
+        /// </summary>
+        public async Task ResetWhileARequestIsOutstandingAsync(TimeSpan outstandingFor, TimeSpan timeout)
+        {
+            var started = Stopwatch.GetTimestamp();
+            while (true)
+            {
+                lock (_sockets)
+                {
+                    if (_lastClientForward > _lastServerForward
+                        && Stopwatch.GetElapsedTime(_lastClientForwardTimestamp) >= outstandingFor)
+                    {
+                        ResetAll();
+                        return;
+                    }
+                }
+
+                if (Stopwatch.GetElapsedTime(started) > timeout)
+                {
+                    throw new TimeoutException("No forwarded client request stayed unanswered at the relay.");
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(20));
+            }
+        }
 
         public void ResetAll()
         {
@@ -975,12 +1005,12 @@ public sealed class WDriverRuntimeFunctionalTests
                     _sockets.Add(upstream);
                 }
 
-                _ = PumpAsync(client, upstream);
-                _ = PumpAsync(upstream, client);
+                _ = PumpAsync(client, upstream, fromClient: true);
+                _ = PumpAsync(upstream, client, fromClient: false);
             }
         }
 
-        private static async Task PumpAsync(Socket source, Socket target)
+        private async Task PumpAsync(Socket source, Socket target, bool fromClient)
         {
             var buffer = new byte[64 * 1024];
             try
@@ -988,7 +1018,25 @@ public sealed class WDriverRuntimeFunctionalTests
                 int read;
                 while ((read = await source.ReceiveAsync(buffer, SocketFlags.None)) > 0)
                 {
-                    await target.SendAsync(buffer.AsMemory(0, read), SocketFlags.None);
+                    // SendAsync may accept only part of the segment; forward every received byte.
+                    for (var sent = 0; sent < read;)
+                    {
+                        sent += await target.SendAsync(buffer.AsMemory(sent, read - sent), SocketFlags.None);
+                    }
+
+                    lock (_sockets)
+                    {
+                        _forwarded++;
+                        if (fromClient)
+                        {
+                            _lastClientForward = _forwarded;
+                            _lastClientForwardTimestamp = Stopwatch.GetTimestamp();
+                        }
+                        else
+                        {
+                            _lastServerForward = _forwarded;
+                        }
+                    }
                 }
 
                 target.Shutdown(SocketShutdown.Send);
