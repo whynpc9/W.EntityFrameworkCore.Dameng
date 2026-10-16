@@ -5,6 +5,8 @@
     <!-- M1 development candidate; the release version is set by the wdriver-v<SemVer> tag. -->
     <VersionPrefix>0.4.0</VersionPrefix>
     <VersionSuffix>preview.1</VersionSuffix>
+    <!-- 发行工作流只覆盖扩展包版本，避免全局 PackageVersion 污染基础包引用版本。 -->
+    <PackageVersion Condition="'$(WDriverPackageVersion)' != ''">$(WDriverPackageVersion)</PackageVersion>
     <PackageId>W.EntityFrameworkCore.Dameng.WDriver</PackageId>
     <Title>W.DamengProvider driver for the unofficial Dameng EF Core 10 provider</Title>
     <Description>Runs the W.EntityFrameworkCore.Dameng provider on the W.DamengProvider ADO.NET driver (asynchronous network I/O, cancellation, failure outcomes, 100ns temporal precision). Select it with UseDamengWithWDriver.</Description>

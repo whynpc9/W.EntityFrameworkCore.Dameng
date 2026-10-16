@@ -2,6 +2,19 @@
 
 初始审查：2026-10-08；版本更新记录：2026-10-13。关联[实施计划](w-dmprovider-integration-plan.md)。
 
+## 发布准备复核（2026-10-16）
+
+本轮通过 GitHub 在线读取已合并 PR 的 reviews、checks 和全部 review threads：
+
+| PR | 最终 head / 合并提交 | 审查闭合 |
+| --- | --- | --- |
+| [#7](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/7) | `6279bcb` / `d4df636` | 2 条 threads 均 resolved；最终 head 的 Cursor review 为 No findings，check 为 SUCCESS；Codex 初轮 TIME 桥接意见已修复 |
+| [#8](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/8) | `59370af` / `b3e8da3` | 3 条 threads 均 resolved；最终 head 的 Cursor review 为 No findings，check 为 SUCCESS；Codex 中继意见已修复 |
+
+Codex 的审查评论对应较早提交，不将其当成最终 head 上新生成的审查结果。
+下面的“尚未完成复审”等措辞保留为各次执行时的历史记录；本轮发布准备与验收见
+[0.4.0 发布准备](release-0.4.0.md)。本轮本地依赖及工作流变更不在上述旧 PR 审查范围内。
+
 ## PR #7 代码独立复审（2026-10-14）
 
 用户在修复与合并任务中明确指定沿用 Codex / Cursor 复审，替代原定 Kimi Code。

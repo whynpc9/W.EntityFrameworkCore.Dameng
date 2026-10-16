@@ -30,6 +30,9 @@
 全部通过且无跳过。实例参数与证据路径见[兼容性矩阵](docs/compatibility.md)和
 [0.3.0 发布准备](docs/release-0.3.0.md)。
 
+当前准备基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1`，版本配对、升级变化、
+本轮验收和发布顺序见 [0.4.0 发布准备](docs/release-0.4.0.md)。发布状态以该记录为准。
+
 这并不是一个完整的 EF Core 提供程序：
 
 - 反向工程（`dotnet ef dbcontext scaffold`）覆盖当前模式的表、视图、列、默认值、注释、
@@ -72,8 +75,8 @@ modelBuilder.Entity<AuditEvent>()
 
 ### 使用 W.DamengProvider 驱动（开发候选）
 
-引用 `W.EntityFrameworkCore.Dameng.WDriver`（精确依赖同版本的基础包和
-`W.DamengProvider 0.2.0`），改用 `UseDamengWithWDriver`：
+候选扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.4.0-preview.1` 精确依赖基础包
+`W.EntityFrameworkCore.Dameng 0.4.0` 和 `W.DamengProvider 0.2.0`，改用 `UseDamengWithWDriver`：
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>

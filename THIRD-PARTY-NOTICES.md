@@ -8,6 +8,10 @@
 - `Microsoft.EntityFrameworkCore.Relational` 采用 MIT License。
 - `DM.DmProvider` 由达梦依据 Apache License 2.0 分发。该驱动程序仍是独立的
   NuGet 依赖项，不会由本包嵌入或再分发。
+- 可选扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 依赖的 `W.DamengProvider 0.2.0`
+  声明采用 Apache License 2.0；其版权声明为“Portions Copyright (C) DM;
+  modifications Copyright (C) W.DamengProvider contributors”。该驱动程序保持独立
+  NuGet 依赖，不嵌入本项目包；其许可证与第三方声明随驱动包分发。
 
 实现参考：
 

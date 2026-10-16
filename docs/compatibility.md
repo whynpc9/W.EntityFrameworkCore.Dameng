@@ -121,13 +121,20 @@
 - 当前实例参数、失败历史、修复及最终证据路径见[0.3.0 发布准备](release-0.3.0.md)。
   此处记录本地候选验收，不表示版本已发布。
 
+2026-10-16 的基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 本地发布准备验收：
+官方单元/功能/规范冒烟/管理员脚本分别 791/300/4/7，W 分别 61/365/4/7，
+全部 Completed，无失败或跳过。Release 构建、两组 Release 单元、格式、双包及三个精确包消费者检查通过。
+本轮运行 ID、测试依赖安全修复、升级注意事项和未验证边界见
+[0.4.0 发布准备](release-0.4.0.md)。两个候选包尚未公开发布。
+
 ## W.DamengProvider 驱动（开发候选）
 
 扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.2.0]`
 （身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
 未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
 证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
-完整记录见 [W 接入验证记录](w-dmprovider-validation.md)；独立复审完成前不作为已发布能力。
+完整记录见 [W 接入验证记录](w-dmprovider-validation.md)。PR #7 / #8 已合并，审查线程
+均已解决（[复核记录](w-dmprovider-integration-review.md)）；扩展包仍未公开发布。
 
 | 领域 | W 状态 | 范围与边界 |
 | --- | --- | --- |

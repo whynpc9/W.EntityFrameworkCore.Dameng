@@ -8,6 +8,9 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="[10.0.12,11.0.0)" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational.Specification.Tests" Version="[10.0.12,11.0.0)" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="[10.0.12,11.0.0)" />
+    <!-- 仅修复 SqlServer 对照单元测试的传递依赖，不进入提供程序包的依赖图。 -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="[9.0.21]"
+                    Condition="'$(MSBuildProjectName)' == 'W.EntityFrameworkCore.Dameng.Tests' Or '$(MSBuildProjectName)' == 'W.EntityFrameworkCore.Dameng.WDriver.Tests'" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="W.DamengProvider" Version="[0.2.0]" />

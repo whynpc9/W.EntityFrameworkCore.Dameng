@@ -2,6 +2,11 @@
 
 本文按[实施计划](w-dmprovider-integration-plan.md)任务顺序记录实际执行的验证证据。区分离线单元证据与真实服务器行为证据；未执行或缺环境的门标为 pending，不计为通过。支持范围以[兼容矩阵](compatibility.md)为准。
 
+2026-10-16 发布准备以 `b3e8da3` 为源码基线，使用 `W.DamengProvider 0.2.0`，
+重新运行完整双驱动验收与 Release/精确包消费者检查，结果统一记录在
+[0.4.0 发布准备](release-0.4.0.md)。下文保留各阶段历史结果及当时的 pending 状态；
+当前复审状态见[审查记录](w-dmprovider-integration-review.md)。
+
 ## T00 基线与候选冻结（2026-10-14）
 
 ### 候选身份
