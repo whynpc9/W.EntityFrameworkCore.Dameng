@@ -2,7 +2,7 @@
 
 这是一个独立维护的非官方达梦数据库 Entity Framework Core 10 关系数据库提供程序。
 默认使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖任何具体应用框架。可选的扩展包
-`W.EntityFrameworkCore.Dameng.WDriver`（开发候选）让同一提供程序运行在
+`W.EntityFrameworkCore.Dameng.WDriver`（预览版）让同一提供程序运行在
 [`W.DamengProvider`](https://github.com/whynpc9/W.DamengProvider) 驱动上，见下文“使用 W.DamengProvider 驱动”。
 
 当前预览版基线面向：
@@ -30,7 +30,7 @@
 全部通过且无跳过。实例参数与证据路径见[兼容性矩阵](docs/compatibility.md)和
 [0.3.0 发布准备](docs/release-0.3.0.md)。
 
-基础包 `0.4.0` 已公开发布；W 扩展包 `0.4.0-preview.1` 已上传，正在核验公共可用性。
+基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 已公开发布，公共包及 NuGet 签名均已验证。
 版本配对、升级变化和本轮验收见 [0.4.0 发布记录](docs/release-0.4.0.md)。发布状态以该记录为准。
 
 这并不是一个完整的 EF Core 提供程序：
@@ -73,9 +73,9 @@ modelBuilder.Entity<AuditEvent>()
     .UseDamengSequence("AuditEventIds");
 ```
 
-### 使用 W.DamengProvider 驱动（开发候选）
+### 使用 W.DamengProvider 驱动（预览版）
 
-候选扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.4.0-preview.1` 精确依赖基础包
+扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.4.0-preview.1` 精确依赖基础包
 `W.EntityFrameworkCore.Dameng 0.4.0` 和 `W.DamengProvider 0.2.0`，改用 `UseDamengWithWDriver`：
 
 ```csharp
@@ -92,7 +92,7 @@ services.AddDbContext<AppDbContext>(options =>
   不提供自动重放；需要时在独立连接上核对最终状态后再由业务决定。
 - 每个 `DbContextOptions` 只能选择一种驱动；同一进程可以同时有官方与 W 两类上下文。
 - 与官方驱动的行为差异（真正的异步网络调用与取消、七位小数秒、RU/Serializable 跟踪保存、
-  错误后的会话保留、事务内只放行纯 DML 匿名块、传输失败的 `FailureInfo` 等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动开发候选)。
+  错误后的会话保留、事务内只放行纯 DML 匿名块、传输失败的 `FailureInfo` 等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动预览版)。
 
 ## 构建与测试
 
