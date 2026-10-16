@@ -1,7 +1,9 @@
-# 0.4.0 发布准备
+# 0.4.0 发布记录
 
 检查日期：2026-10-16（Asia/Shanghai）。源码基线：`b3e8da3ab31a4eeae99718adbcf05444868ddd6b`。
-状态：**本地验收通过，已获公开发布授权；公共发布执行结果待补**。
+状态：**基础包已公开发布并核验；W 扩展包已上传，公共下载核验进行中**。
+
+发行提交：`b5cd2aa0f3748ec1e9ad9b034693885dc6b3e6f6`，两个附注发行标签均指向该提交。
 
 ## 版本与顺序
 
@@ -126,7 +128,7 @@ W 使用显式 `--w-transport-security PlaintextAllowed`，两种驱动数据库
 
 W 工作流补充依赖 `publish` 成功后才执行的 GitHub Release job，权限仅该 job 为
 `contents: write`；幂等检查已有 Release，预发布版本标记为 prerelease。
-工作流尚未触发，本地检查不构成远端 Actions 成功。
+准备阶段工作流尚未触发，本地检查不构成远端 Actions 成功；实际公开发布结果见下文。
 两个发布工作流的 YAML 解析、Release shell 语法以及稳定版/预览版/已有 Release/创建失败四类
 本地 mock 检查通过；检查未调用真实 GitHub 写入。记录在 `artifacts/release-0.4.0/workflow-checks/`。
 
@@ -147,6 +149,28 @@ W 工作流补充依赖 `publish` 成功后才执行的 GitHub Release job，权
 3. 验证基础包 Actions 的 `publish` / `release`、GitHub Release 和 NuGet 公共包内容。
 4. 基础包可下载后，在同一提交创建并推送 `wdriver-v0.4.0-preview.1`。
 5. 分别验证 W 扩展包 Actions、预发布 GitHub Release、NuGet 精确依赖及公共包内容。
+
+## 公共发布验证（2026-10-16）
+
+两个附注标签 `v0.4.0` / `wdriver-v0.4.0-preview.1` 均已推送，指向上述发行提交。
+
+| 通道 | Actions | GitHub Release | NuGet |
+| --- | --- | --- | --- |
+| 基础包 | [38842009174](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/38842009174)，publish / release 均 success | [v0.4.0](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/v0.4.0)，非草稿、非预发布 | [0.4.0](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng/0.4.0)，版本页、公共包与签名已验证 |
+| W 扩展包 | [38843009619](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/38843009619)，publish / release 均 success | [wdriver-v0.4.0-preview.1](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/wdriver-v0.4.0-preview.1)，非草稿、预发布 | 上传成功，等待公开版本页与下载验证 |
+
+基础包 CI Release 单元 791/791，W CI Release 单元分别 791/791 和 61/61，无失败或跳过；
+两条推包日志均为 `Your package was pushed.`。GitHub Release 已补充中文变更、安装和边界说明。
+
+基础包公共签名包 SHA-256 为
+`27ca299e9a5732539fe495b03dffcb281ce6bd0f73b00929f78b0458c4c7a309`。
+已核对 ZIP、PackageId/版本、net10.0 DLL/XML、README/第三方声明、依赖范围和 nuspec repository commit，
+后者与发行提交一致；`dotnet nuget verify --all` 验证 NuGet.org Repository 签名成功。
+
+基础包上传后，命令行访问最初返回 404；随后 CDN 公共包及版本页可用，浏览器访问同一 V3
+精确包 URL 返回 200，W Actions 的基础包依赖门亦通过。不同访问路径的短暂延迟未通过重传包或移动标签处理。
+W 扩展包公共下载、ZIP/元数据和签名仍待验证，不能把上传成功视为该层验收通过。
+公共包、元数据和 Actions/Release 记录保存在本地 `artifacts/release-0.4.0/public/`。
 
 ## 保留的验证边界
 
