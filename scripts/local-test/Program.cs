@@ -21,9 +21,9 @@ internal static class Program
                 1 when args[0] == "info" => Info(),
                 1 when args[0] == "inspect" => Inspect(),
                 1 when args[0] == "grow" => Grow(),
-                1 when args[0] == "selftest" => TestLauncher.SelfTest(),
+                1 when args[0] == "selftest" => SelfTest(),
                 >= 2 when args[0] == "test" => TestLauncher.Run(args[1..], Root,
-                    LoadSecrets(required: false)),
+                    () => LoadSecrets(required: false)),
                 _ => Usage()
             };
         }
@@ -38,7 +38,7 @@ internal static class Program
 
     private static int Usage()
     {
-        Console.Error.WriteLine("Usage: scripts/local-test/run.sh provision | info | inspect | grow | selftest | test <unit|functional|specification|admin|probes|all> [--filter <expression>]");
+        Console.Error.WriteLine("Usage: scripts/local-test/run.sh provision | info | inspect | grow | selftest | test <unit|offline-fixtures|functional|specification|admin|probes|all> [--filter <expression>] [--driver official|w] [--w-transport-security RequireTls|PlaintextAllowed] [--configuration Debug|Release]");
         return 2;
     }
 
@@ -396,11 +396,37 @@ internal static class Program
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         Span<char> result = stackalloc char[32];
         result[0] = 'A';
-        for (var index = 1; index < result.Length; index++)
+        result[1] = 'a';
+        result[2] = '7';
+        result[3] = '!';
+        for (var index = 4; index < result.Length; index++)
         {
             result[index] = alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)];
         }
         return new string(result);
+    }
+
+    private static bool SatisfiesPasswordPolicy(string candidate)
+        => candidate.Length == 32
+            && candidate.All(character => character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '!')
+            && candidate.Any(character => character is >= 'A' and <= 'Z')
+            && candidate.Any(character => character is >= 'a' and <= 'z')
+            && candidate.Any(character => character is >= '0' and <= '9')
+            && candidate.Contains('!', StringComparison.Ordinal);
+
+    private static int SelfTest()
+    {
+        var valid = "Aa7!" + new string('x', 28);
+        if (!SatisfiesPasswordPolicy(valid)) throw new InvalidOperationException("Password policy positive self-test failed.");
+        foreach (var invalid in new[] {
+            "aa7!" + new string('x', 28), "AA7!" + new string('X', 28),
+            "Aaa!" + new string('x', 28), "Aa77" + new string('x', 28),
+            valid[..31], valid + "x", "Aa7!" + new string('x', 27) + "'" })
+            if (SatisfiesPasswordPolicy(invalid)) throw new InvalidOperationException("Password policy negative self-test failed.");
+        for (var index = 0; index < 1000; index++)
+            if (!SatisfiesPasswordPolicy(NewPassword())) throw new InvalidOperationException("Generated password policy self-test failed.");
+        Console.WriteLine("Password policy self-test passed.");
+        return TestLauncher.SelfTest();
     }
 
     private static JsonObject? LoadSecrets(bool required)

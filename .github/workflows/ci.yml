@@ -1,0 +1,43 @@
+name: 离线验收
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: 验证离线编排
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/ci/test_verify_offline.py
+      - name: 执行离线总门
+        run: scripts/ci/verify-offline.sh
+      - name: 保存成功的安全 TRX
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-trx-${{ github.run_id }}
+          path: artifacts/query-translation/local-test/*/*.trx
+          if-no-files-found: error
+          retention-days: 7
+      - name: 保存失败前已有的安全 TRX
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-trx-${{ github.run_id }}
+          path: artifacts/query-translation/local-test/*/*.trx
+          if-no-files-found: warn
+          retention-days: 7

@@ -9,7 +9,7 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export NUGET_PACKAGES="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
 trap 'rm -rf "$DOTNET_CLI_HOME"' EXIT
 compatible_host() {
-  [[ -x "$1" ]] && (cd "$repo_root" && "$1" --version >/dev/null 2>&1)
+  [[ -x "$1" ]] && (cd "$repo_root" && env -u DAMENG_TEST_CONNECTION_STRING -u ConnectionStrings__DamengCliFixture "$1" --version >/dev/null 2>&1)
 }
 if [[ -n "${DOTNET_HOST_PATH:-}" ]]; then
   dotnet_host="$DOTNET_HOST_PATH"
@@ -24,6 +24,6 @@ if ! compatible_host "$dotnet_host"; then
 fi
 export DOTNET_HOST_PATH="$dotnet_host"
 
-"$dotnet_host" restore "$script_dir/LocalTest.csproj" --locked-mode --disable-parallel -m:1 /nodeReuse:false /p:UseSharedCompilation=false
-"$dotnet_host" build "$script_dir/LocalTest.csproj" --no-restore -m:1 /nodeReuse:false /p:UseSharedCompilation=false --disable-build-servers
+env -u DAMENG_TEST_CONNECTION_STRING -u ConnectionStrings__DamengCliFixture "$dotnet_host" restore "$script_dir/LocalTest.csproj" --locked-mode --disable-parallel -m:1 /nodeReuse:false /p:UseSharedCompilation=false
+env -u DAMENG_TEST_CONNECTION_STRING -u ConnectionStrings__DamengCliFixture "$dotnet_host" build "$script_dir/LocalTest.csproj" --no-restore -m:1 /nodeReuse:false /p:UseSharedCompilation=false --disable-build-servers
 "$dotnet_host" "$script_dir/bin/Debug/net10.0/LocalTest.dll" "$@"
