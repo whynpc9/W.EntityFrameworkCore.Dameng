@@ -83,6 +83,8 @@ W 的精度能力仍受 `ServerCapabilities` 与本文对应边界约束。本�
 | 筛选索引 | 不支持 | 提供程序会拒绝迁移索引筛选器，而不是生成其他数据库的语法 |
 | 修改标识列 | 部分支持 / 子集真实环境已验证 | 只移除 IDENTITY、其他列定义和语义注解不变时，生成表级 `ALTER TABLE ... DROP IDENTITY`，禁止事务且不附加 MODIFY。真实 EF 模型差异、已有数据/主键保留、目录自增属性消失、显式键插入及缺键失败已验证；限定/转义标识符、幂等动态 SQL 包装具有单元证据。增加/恢复 IDENTITY、修改种子/增量、同次切换序列或改变其他列定义继续拒绝；自动 Down 不保证可执行，参见[迁移说明](migrations.md#移除-identity) |
 | 跨模式重命名 | 不支持 | 不能通过表/序列重命名将对象移动到其他模式 |
+| 共享列值生成一致性 | 单元级已验证 / 子集 | 表拆分中同一物理列的多个有效生成器必须具有相同策略、identity seed/increment 或序列名称/有效 schema；冲突在模型校验拒绝。有效 `None` 复制、相同 identity/sequence、默认/显式等效 schema 及 TPT/TPC 合法对照保留；不是全面表拆分一致性声明 |
+| 复杂属性并发标记校验 | 单元级已验证 / 子集 | 平铺、单层及两层引用复杂属性使用同一 rowversion 拒绝合同；异常定位拥有者和完整属性路径。同 CLR 类型的两个路径独立校验。应用管理标记保留；计算列和拥有者对应表的 HasTrigger 声明沿用例外，无关表触发器不放行；保留仅映射视图的平铺计算列并发标记例外。不增加复杂类型、JSON、值生成或触发器执行的实库支持声明 |
 | TPT/TPC 值生成 | 单元级已验证 / 部分支持 | TPT 仅向根表应用标识列/序列生成。由于多个具体表可能发生冲突，因此拒绝 TPC 标识列；可改用共享达梦序列 |
 | 模式创建与不常见 DDL | 部分支持 | 2026-09-22 已执行 `CREATE SCHEMA` 以及该模式中的表。2026-09-30 起 `EnsureSchema` 生成带 `SYS.SYSOBJECTS`（`TYPE$ = 'SCH'`）存在性守卫的匿名块，模式已存在时不重复创建；服务器不支持 `CREATE SCHEMA IF NOT EXISTS`。其余未测试的 DDL 不能据此视为已支持 |
 | 设计时迁移代码生成 | 真实环境已验证 | 提供程序和注解代码生成器会生成 `UseDameng` 和达梦值生成 API。进程内 `GenerateCreateScript`、`IMigrator.GenerateScript` 和 `Database.Migrate()` 已在服务器执行。2026-09-30 起 `dotnet ef migrations add` / `migrations script`（含幂等）/ `database update` / `dbcontext scaffold` 在以版本匹配的 dotnet-ef 本地工具（`artifacts/dotnet-ef-tool`）驱动下完成真实库端到端回归：注释、`IDENTITY` 种子/增量、`NEXTVAL` 默认和降序索引均往返。人工步骤见 [迁移操作说明](migrations.md) |
@@ -268,3 +270,7 @@ W固定明文profile补齐持续持有连接的正常/预取消对照、完整Ex
 ### M3 当前验收状态
 
 M3此前最终W真实集成失败及20分钟中止记录保持。用户授权后，在相同源码上从启动前全程防休眠重试原57项，57/57 Completed、零失败/跳过；最终版本Release四项4/4通过，末次表/序列/回收站均0，当前本地门已闭合，远端整合状态见`plans/evidence/M3.md`。此次通过不确定此前失败的根因，不新增自动重试或其他profile支持。
+
+## M4 模型校验补强（2026-10-28）
+
+I02/I06 均已通过公开 EF 最终化路径证实缺口并补充模型拒绝规则。锁定 EF Core 10.0.12 下，共享表实际列映射和复杂属性实际关系映射均有正向断言；两驱动使用各自服务。合法共享列的生成 SQL 与 M3 合并基线逐字节相同，未改值生成解析、注解输出或 SQL 生成器。此轮为离线模型/SQL 证据，没有执行 DDL、创建触发器或更新历史实库计数。详情见 `plans/evidence/012.md`、`013.md` 和 `M4.md`。

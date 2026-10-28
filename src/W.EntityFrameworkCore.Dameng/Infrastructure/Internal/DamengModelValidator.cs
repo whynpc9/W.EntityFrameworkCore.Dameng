@@ -26,6 +26,67 @@ internal sealed class DamengModelValidator(
         ValidateIdentityColumns(model);
     }
 
+    protected override void ValidateSharedColumnsCompatibility(
+        IReadOnlyList<IEntityType> mappedTypes,
+        in StoreObjectIdentifier storeObject,
+        IDiagnosticsLogger<DbLoggerCategory.Model.Validation> logger)
+    {
+        base.ValidateSharedColumnsCompatibility(mappedTypes, storeObject, logger);
+
+        var generators = new Dictionary<string, IProperty>(StringComparer.Ordinal);
+        foreach (var entityType in mappedTypes)
+        {
+            foreach (var property in entityType.GetFlattenedProperties())
+            {
+                var columnName = property.GetColumnName(storeObject);
+                if (columnName is null
+                    || property.GetDamengValueGenerationStrategy(storeObject) == DamengValueGenerationStrategy.None)
+                {
+                    continue;
+                }
+
+                if (generators.TryGetValue(columnName, out var duplicateProperty))
+                {
+                    ValidateCompatibleGeneration(property, duplicateProperty, columnName, storeObject);
+                }
+                else
+                {
+                    generators.Add(columnName, property);
+                }
+            }
+        }
+    }
+
+    private static void ValidateCompatibleGeneration(
+        IProperty property,
+        IProperty duplicateProperty,
+        string columnName,
+        in StoreObjectIdentifier storeObject)
+    {
+        var strategy = property.GetDamengValueGenerationStrategy(storeObject);
+        var duplicateStrategy = duplicateProperty.GetDamengValueGenerationStrategy(storeObject);
+        var facet = strategy != duplicateStrategy
+            ? "ValueGenerationStrategy"
+            : strategy == DamengValueGenerationStrategy.IdentityColumn
+                ? property.GetDamengIdentitySeed() != duplicateProperty.GetDamengIdentitySeed()
+                    ? "IdentitySeed"
+                    : property.GetDamengIdentityIncrement() != duplicateProperty.GetDamengIdentityIncrement()
+                        ? "IdentityIncrement" : null
+                : !StringComparer.Ordinal.Equals(property.GetDamengSequenceName(), duplicateProperty.GetDamengSequenceName())
+                    ? "SequenceName"
+                    : !StringComparer.Ordinal.Equals(property.GetDamengSequenceSchema(), duplicateProperty.GetDamengSequenceSchema())
+                        ? "SequenceSchema" : null;
+
+        if (facet is not null)
+        {
+            throw new InvalidOperationException(
+                $"The properties '{property.DeclaringType.DisplayName()}.{property.Name}' and "
+                + $"'{duplicateProperty.DeclaringType.DisplayName()}.{duplicateProperty.Name}' "
+                + $"share column '{columnName}' in table '{storeObject.DisplayName()}' "
+                + $"but have conflicting Dameng {facet} values.");
+        }
+    }
+
     private static void ValidateLobKeysAndIndexes(IModel model)
     {
         foreach (var property in model.GetEntityTypes()
@@ -108,21 +169,42 @@ internal sealed class DamengModelValidator(
     {
         foreach (var entityType in model.GetEntityTypes())
         {
-            foreach (var property in entityType.GetDeclaredProperties())
+            ValidateType(entityType, entityType, entityType.DisplayName());
+        }
+
+        static void ValidateType(ITypeBase type, IEntityType owner, string path)
+        {
+            foreach (var property in type.GetDeclaredProperties())
             {
                 if (!property.IsConcurrencyToken
-                    || property.ValueGenerated != ValueGenerated.OnAddOrUpdate
-                    || property.GetComputedColumnSql() is not null
-                    || entityType.GetTriggers().Any())
+                    || property.ValueGenerated != ValueGenerated.OnAddOrUpdate)
+                {
+                    continue;
+                }
+
+                var tables = property.GetMappedStoreObjects(StoreObjectType.Table).ToArray();
+                var hasGenerationMechanism = tables.Length == 0
+                    ? property.GetComputedColumnSql() is not null
+                    : tables.All(table =>
+                        property.GetComputedColumnSql(table) is not null
+                        || owner.GetTriggers().Any(trigger =>
+                            StringComparer.Ordinal.Equals(trigger.GetTableName(), table.Name)
+                            && StringComparer.Ordinal.Equals(trigger.GetTableSchema(), table.Schema)));
+                if (hasGenerationMechanism)
                 {
                     continue;
                 }
 
                 throw new InvalidOperationException(
-                    $"The property '{property.DeclaringType.DisplayName()}.{property.Name}' is configured "
+                    $"The property '{path}.{property.Name}' is configured "
                     + "as a row version, but Dameng does not automatically generate SQL Server-style "
                     + "rowversion values. Use an application-managed concurrency token, a computed column, "
                     + "or a database trigger.");
+            }
+
+            foreach (var complexProperty in type.GetDeclaredComplexProperties())
+            {
+                ValidateType(complexProperty.ComplexType, owner, path + "." + complexProperty.Name);
             }
         }
     }
