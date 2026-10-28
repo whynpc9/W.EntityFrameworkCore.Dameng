@@ -1,6 +1,6 @@
 # 修复路线图：六个里程碑
 
-全部 **14 项问题/验证缺口 + 6 项调查**分为 **20 份计划、6 批**，每个里程碑完成一批。M1 实施与验收中，当前证据见 [M1 执行记录](evidence/M1.md)；M2–M6 保持 TODO。计划本身不代表修复或实库验收完成。
+全部 **14 项问题/验证缺口 + 6 项调查**分为 **20 份计划、6 批**，每个里程碑完成一批。M1 已完成，本地及远端验收证据见 [M1 执行记录](evidence/M1.md)；M2–M6 保持 TODO。计划本身不代表修复或实库验收完成。
 
 原始基线：`c80c788fb3cd34d97626d578db580264a28a11f3`。证据见[深度审查](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)，逐项步骤、白名单和命令见[计划索引](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/README.md)。
 
