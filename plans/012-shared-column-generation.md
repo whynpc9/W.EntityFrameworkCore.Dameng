@@ -4,7 +4,7 @@
 
 ## 状态
 
-- 状态：IN_PROGRESS
+- 状态：DONE
 - 批次：M4
 - 审查 ID：I02
 - 优先级：P2
@@ -155,12 +155,12 @@ rg -n 'SharedColumn|Plan.*012' test/W.EntityFrameworkCore.Dameng.Tests/DamengSha
 
 ## 完成标准
 
-- [ ] 最小有效模型证明所有负例与正常对照确实进入目标共享列形状，反向注册顺序有覆盖。
-- [ ] identity seed/increment、identity/sequence、sequence name/schema 的冲突都有准确拒绝或可重复上游阻断证据。
-- [ ] 约定性共享主键 None、相同 identity/sequence、TPT 和 TPC 正常模型继续通过。
-- [ ] 两个聚焦和两套完整单元通道 Completed、无失败/跳过；必要时双驱动实库正向回归串行通过。
-- [ ] 正常 SQL 未改变的结论有断言；若改变，真实插入/回读及清理有证据。
-- [ ] 证据文件、兼容性边界和本计划状态已更新；`git diff --check` 通过，未越界修改。
+- [x] 最小有效模型证明所有负例与正常对照确实进入目标共享列形状，反向注册顺序有覆盖。
+- [x] identity seed/increment、identity/sequence、sequence name/schema 的冲突都有准确拒绝或可重复上游阻断证据。
+- [x] 约定性共享主键 None、相同 identity/sequence、TPT 和 TPC 正常模型继续通过。
+- [x] 两个聚焦和两套完整单元通道 Completed、无失败/跳过；必要时双驱动实库正向回归串行通过。
+- [x] 正常 SQL 未改变的结论有断言；若改变，真实插入/回读及清理有证据。
+- [x] 证据文件、兼容性边界和本计划状态已更新；`git diff --check` 通过，未越界修改。
 
 ## STOP 条件与维护
 
@@ -179,3 +179,5 @@ EF 共享列最终化、PropertyMappings 顺序、值生成策略推导和设计
 ## 本轮实施结果（2026-10-28）
 
 从已合并 M3 `eb79cc8fb8b91e8cb2d6fb4ede255c61759b4056` 开始，在 `codex/m4-model-consistency` 串行集成；M1–M3 的漂移可归因，未回退。调查确认缺口并已补充精确模型校验，合法对照保持。正式证据见 [执行记录](evidence/012.md)；最终批次与远端门见 [M4](evidence/M4.md)。仅 M4，不启动 M5。
+
+实施提交：`485b5c44ccd147a967a4e85ac76791050a983406`。最终产品/测试指纹、独立审查和 PR #12 远端验收见 [M4](evidence/M4.md)；未新增实库能力声明，不启动 M5。
