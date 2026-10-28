@@ -2,7 +2,7 @@
 
 ## 状态与执行约定
 
-- 状态：TODO。
+- 状态：DONE（本地验收）。
 - 里程碑：M2，查询与时间正确性；对应调查 I03。
 - 优先级 P2；工作量 M；风险 MED；置信度 MED。此计划先调查，不预定一定存在产品缺陷。
 - 依赖：[004-offline-ci.md](004-offline-ci.md) 完成，以及 [006-temporal-literal-fidelity.md](006-temporal-literal-fidelity.md) 已产出可审查结论。006 涉及时态字面量/参数精度；本计划不得将其尚未解决的精度差异误归因于值转换器。
@@ -169,14 +169,14 @@ W 功能项目会自动链接新官方功能类；W 独立单元没有该链接�
 
 ## 完成标准
 
-- [ ] 004 完成、006 已有审查结论，当前源码漂移已核对。
-- [ ] 调查覆盖有效映射、强制服务器查询位置、实际 SQL/拒绝阶段和两驱动结果，不以顶层客户端计算证明翻译支持。
-- [ ] 有明确的 `I03-结论`：确认并修复，或有证据证明既有保护而关闭；证据不足保持 BLOCKED。
-- [ ] 两个最终单元方法和两个最终功能方法均存在、非零命中且通过；诊断型表征绿色不能替代这些契约断言。
-- [ ] 既有 DateTime/DateTimeOffset、分桶和 ToString 单元及功能回归通过；无参 ToString 服务器文本契约未变。
-- [ ] 失败基线与最终通过结果分开保存，真实对象精确清理，文档只描述已验证范围。
-- [ ] 未改 Storage 字面量、依赖锁、公共 API 或白名单外产品代码；差异格式检查通过。
-- [ ] 向协调者报告 DONE（含调查关闭依据）或 BLOCKED；不自动 commit/push/PR。
+- [x] 004 完成、006 已有审查结论，当前源码漂移已核对。
+- [x] 调查覆盖有效映射、强制服务器查询位置、实际 SQL/拒绝阶段和两驱动结果，不以顶层客户端计算证明翻译支持。
+- [x] 有明确的 `I03-结论`：确认并修复，或有证据证明既有保护而关闭；证据不足保持 BLOCKED。
+- [x] 两个最终单元方法和两个最终功能方法均存在、非零命中且通过；诊断型表征绿色不能替代这些契约断言。
+- [x] 既有 DateTime/DateTimeOffset、分桶和 ToString 单元及功能回归通过；无参 ToString 服务器文本契约未变。
+- [x] 失败基线与最终通过结果分开保存，真实对象精确清理，文档只描述已验证范围。
+- [x] 未改 Storage 字面量、依赖锁、公共 API 或白名单外产品代码；差异格式检查通过。
+- [x] 向协调者报告 DONE（含调查关闭依据）或 BLOCKED；不自动 commit/push/PR。
 
 ## STOP 条件与维护提示
 
@@ -191,3 +191,28 @@ W 功能项目会自动链接新官方功能类；W 独立单元没有该链接�
 本段补充前述文件白名单：必须新增或更新 `plans/evidence/008.md` 作为唯一正式执行记录。本文可保留状态摘要，原始 TRX/脱敏日志仍存放统一入口的忽略目录；不再另建带标题后缀的同号证据文件。记录实际 SHA、命令、用例名及通过/失败/跳过数、TRX 路径、环境边界、结论、临时资源精确清理和复核结果。若被测文件尚未提交，还须记录白名单内被测文件的哈希清单或脱敏补丁指纹，不能只用 HEAD 标识不同工作区内容；不为获得 SHA 自动提交。
 
 本项为调查：确认后修复并验证，或用充分可重复证据确证无缺陷；缺环境、跳过和单次未复现不能闭合。必需检查缺失时保持 BLOCKED 并记录解除条件，不修改状态凑齐验收。完成后向协调者交付证据位置，作为本批 `plans/evidence/M2.md` 的输入。
+
+## 本轮执行摘要（2026-10-28）
+
+实施基线 `14acdae6753c7e7a796f0e32cf5787de889684ba`；详见 [唯一执行记录](evidence/008.md)。
+
+## I03-结论
+
+选择“确认缺口并实施最小守卫”分支。完整单元矩阵为 14 种列 × 相应 8/6 种操作，共 100 格；DateTime 原生/恒等及 nullable 对照共 32 格、DateTimeOffset 原生/nullable 对照 12 格。转换到 long/text 的 56 格基线均能生成 SQL 并发送，结果错误或发生服务器类型错误；没有被模型入口阻断。
+
+| 触发列/表达式（含 nullable） | 有效映射 | 基线真实结果与预期 |
+| --- | --- | --- |
+| DateTime→long，Year/Quarter | BIGINT，DateTimeToTicksConverter | 数据溢出；预期独立 CLR 年/季度 |
+| DateTime→long，Date | BIGINT | 非午夜原值 2024-02-29 13:14:15；预期 2024-02-29 00:00:00 |
+| DateTime→long，AddDays/AddMonths | BIGINT | 数据溢出；预期 CLR 整数日期运算 |
+| DateTime→long，Hour/Minute/IsoWeek 分桶 | BIGINT | 无效的数字；预期小时/分钟/周一起点 |
+| DateTime→带 D: 前缀可往返文本，全部八操作 | NVARCHAR2(200)，ProviderClrType=string | 日期/数字解析失败；不推断用户自定义编码 |
+| DateTimeOffset→long，六个本地成员 | BIGINT，DateTimeOffsetToBinaryConverter | 数据溢出；预期原 -05:30 偏移的本地部件 |
+| DateTimeOffset→带 Z: 前缀可往返文本，六成员 | NVARCHAR2(200)，ProviderClrType=string | 日期解析失败；预期原偏移的本地部件 |
+| 原生 DateTime/DateTimeOffset、DateTime 恒等转换 | TIMESTAMP(7)/DATETIME(7) WITH TIME ZONE | 44 格投影及谓词均正确，直接往返保留原 ticks/offset/UTC ticks |
+
+基线官方 `20261028T062536622Z-16f948da/functional.trx`、W `20261028T062608356Z-edf8578f/functional-w.trx`（位于 `artifacts/query-translation/local-test/`）：两者均 2 总数/2 执行/1 通过/1 失败/0 跳过，失败是断言收集到上述 56 格错误；原生独立测试通过。每格 SQL/映射与结果保存于单元/功能 TRX 输出。初版预期行集写错的失败另存，不当作产品缺陷证据。
+
+守卫在已支持的日期成员、整数 DATEADD 和分桶入口按有效 provider CLR 类型及完整存储名判断；保留带精度的 WITH TIME ZONE 后缀，不因 Converter 非 null 误拒恒等转换，不改变静态日期入口或既有 ToString。最终谓词/分组须证明零发送；原生对照及清理证据详见 008 唯一执行记录。
+
+006 已有可审查的精度结论但保持 BLOCKED；本项先用整秒隔离转换器，再用整微秒验证原生控制。没有把官方七位参数差异纳入转换器缺陷或宣称新 100ns 算术能力。

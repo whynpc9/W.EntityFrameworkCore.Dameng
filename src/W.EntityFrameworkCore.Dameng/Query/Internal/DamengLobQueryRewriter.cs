@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
-using Microsoft.EntityFrameworkCore.Storage;
+using static W.EntityFrameworkCore.Dameng.Query.Internal.DamengLobTypeClassifier;
 
 namespace W.EntityFrameworkCore.Dameng.Query.Internal;
 
@@ -123,7 +123,8 @@ internal sealed class DamengLobQueryRewriter(
         if (visited.IsDistinct)
         {
             ThrowIfContainsLob(
-                visited.Source1.Projection.Select(projection => projection.Expression),
+                visited.Source1.Projection.Concat(visited.Source2.Projection)
+                    .Select(projection => projection.Expression),
                 visited switch
                 {
                     UnionExpression => "UNION",
@@ -178,19 +179,4 @@ internal sealed class DamengLobQueryRewriter(
     private static bool IsLob(SqlExpression expression)
         => GetLobKind(expression.TypeMapping) is not null;
 
-    private static LobKind? GetLobKind(RelationalTypeMapping? typeMapping)
-        => typeMapping?.StoreTypeNameBase.ToUpperInvariant() switch
-        {
-            "CLOB" or "NCLOB" or "TEXT" or "NTEXT" or "LONG" or "LONGVARCHAR"
-                => LobKind.Text,
-            "BLOB" or "IMAGE" or "LONGVARBINARY" or "BFILE"
-                => LobKind.Binary,
-            _ => null
-        };
-
-    private enum LobKind
-    {
-        Text,
-        Binary
-    }
 }

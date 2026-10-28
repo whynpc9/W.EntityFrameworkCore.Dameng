@@ -192,11 +192,13 @@ internal sealed class DamengStringMethodTranslator(ISqlExpressionFactory sqlExpr
                 [
                     instance,
                     ApplyStringMapping(arguments[0], instance.TypeMapping),
-                    ApplyStringMapping(arguments[1], instance.TypeMapping)
+                    sqlExpressionFactory.Coalesce(
+                        ApplyStringMapping(arguments[1], instance.TypeMapping),
+                        sqlExpressionFactory.Constant(string.Empty, instance.TypeMapping))
                 ],
                 typeof(string),
                 instance.TypeMapping,
-                [true, true, true]);
+                [true, true, false]);
         }
 
         if (method == ToLower || method == ToUpper)

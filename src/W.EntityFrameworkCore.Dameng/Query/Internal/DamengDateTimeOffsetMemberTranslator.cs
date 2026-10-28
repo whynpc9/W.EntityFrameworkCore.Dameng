@@ -44,9 +44,9 @@ internal sealed class DamengDateTimeOffsetMemberTranslator(
                                 ? "second"
                                 : null;
 
-        return part is null
-            ? null
-            : sqlExpressionFactory.Function(
+        if (part is null) return null;
+        DamengTemporalTranslationGuard.EnsureNative(instance);
+        return sqlExpressionFactory.Function(
                 "DATEPART",
                 [sqlExpressionFactory.Fragment(part), instance],
                 nullable: true,

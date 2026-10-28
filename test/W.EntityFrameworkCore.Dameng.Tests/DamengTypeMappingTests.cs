@@ -761,10 +761,10 @@ public sealed class DamengTypeMappingTests
                 .AddTicks(1);
 
         Assert.Equal(
-            "TIMESTAMP '2026-07-24 13:14:15.0000001'",
+            "CAST(TO_TIMESTAMP('2026-07-24 13:14:15.0000001', 'YYYY-MM-DD HH24:MI:SS.FF7') AS TIMESTAMP(7))",
             source.FindMapping(typeof(DateTime))!.GenerateSqlLiteral(timestamp));
         Assert.Equal(
-            "TIMESTAMP '2026-07-24 13:14:15.0000001+08:00'",
+            "CAST(TO_TIMESTAMP_TZ('2026-07-24 13:14:15.0000001+08:00', 'YYYY-MM-DD HH24:MI:SS.FF7TZH:TZM') AS DATETIME(7) WITH TIME ZONE)",
             source.FindMapping(typeof(DateTimeOffset))!
                 .GenerateSqlLiteral(timestampWithTimeZone));
     }

@@ -34,7 +34,10 @@ internal sealed class DamengDateBucketMethodTranslator(
             return null;
         }
 
+        if (method.DeclaringType != Functions) return null;
+
         var value = arguments[1];
+        DamengTemporalTranslationGuard.EnsureNative(value);
         var resultType = Nullable.GetUnderlyingType(method.ReturnType) ?? method.ReturnType;
         if (method == Quarter || method == NullableQuarter)
         {

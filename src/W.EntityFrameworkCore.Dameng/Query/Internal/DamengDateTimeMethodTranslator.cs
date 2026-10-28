@@ -48,6 +48,8 @@ internal sealed class DamengDateTimeMethodTranslator(ISqlExpressionFactory sqlEx
             return null;
         }
 
+        DamengTemporalTranslationGuard.EnsureNative(instance);
+
         return sqlExpressionFactory.Function(
             "DATEADD",
             [
