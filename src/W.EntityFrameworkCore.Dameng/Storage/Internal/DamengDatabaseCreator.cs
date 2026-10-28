@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace W.EntityFrameworkCore.Dameng.Storage.Internal;
 
@@ -9,9 +10,15 @@ internal sealed class DamengDatabaseCreator : RelationalDatabaseCreator
         = "Creating or deleting a Dameng database is a server administration operation. "
         + "Configure an existing database and use migrations or EnsureCreated to manage objects in the current schema.";
 
-    public DamengDatabaseCreator(RelationalDatabaseCreatorDependencies dependencies)
+    private const string HasTablesSql = "SELECT COUNT(*) FROM USER_TABLES";
+    private readonly IRawSqlCommandBuilder _rawSqlCommandBuilder;
+
+    public DamengDatabaseCreator(
+        RelationalDatabaseCreatorDependencies dependencies,
+        IRawSqlCommandBuilder rawSqlCommandBuilder)
         : base(dependencies)
     {
+        _rawSqlCommandBuilder = rawSqlCommandBuilder;
     }
 
     public override bool Exists()
@@ -72,28 +79,25 @@ internal sealed class DamengDatabaseCreator : RelationalDatabaseCreator
         => throw new NotSupportedException(PhysicalDatabaseMessage);
 
     public override bool HasTables()
+        => Convert.ToInt64(
+            _rawSqlCommandBuilder.Build(HasTablesSql).ExecuteScalar(CreateCommandParameters()),
+            CultureInfo.InvariantCulture) > 0;
+
+    public override async Task<bool> HasTablesAsync(CancellationToken cancellationToken = default)
     {
-        var openedHere = Dependencies.Connection.DbConnection.State != System.Data.ConnectionState.Open;
-
-        try
-        {
-            if (openedHere)
-            {
-                Dependencies.Connection.Open();
-            }
-
-            using var command = Dependencies.Connection.DbConnection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*) FROM USER_TABLES";
-            var result = command.ExecuteScalar();
-
-            return Convert.ToInt64(result, CultureInfo.InvariantCulture) > 0;
-        }
-        finally
-        {
-            if (openedHere)
-            {
-                Dependencies.Connection.Close();
-            }
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        var count = await _rawSqlCommandBuilder.Build(HasTablesSql)
+            .ExecuteScalarAsync(CreateCommandParameters(), cancellationToken)
+            .ConfigureAwait(false);
+        return Convert.ToInt64(count, CultureInfo.InvariantCulture) > 0;
     }
+
+    private RelationalCommandParameterObject CreateCommandParameters()
+        => new(
+            Dependencies.Connection,
+            parameterValues: null,
+            readerColumns: null,
+            Dependencies.CurrentContext.Context,
+            Dependencies.CommandLogger,
+            CommandSource.Migrations);
 }

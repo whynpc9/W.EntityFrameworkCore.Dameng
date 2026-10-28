@@ -4,7 +4,7 @@
 - [2026-10-28 深度审查](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)：原始发现、证据、置信度及排除项。
 - 原始审查基线：`c80c788fb3cd34d97626d578db580264a28a11f3`。
 - 当前范围：按用户后续要求，将全部 **14 项问题/验证缺口 + 6 项调查**拆为 **20 份独立计划、6 个里程碑**。先前“本次只保留审查报告”的选择已由本次制定计划请求更新。
-- 当前进度：M1（001–004）已完成，本地/远端验收与 review 均闭环；M2 已按维护者接受官方驱动风险后的边界完成本地与首轮远端验收/审查（最终文档提交仍须自身门槛通过后合并），M3–M6 保持 TODO；M1记录见[M1执行证据](evidence/M1.md)，M2提交/PR/验证与风险接受决定见[M2执行证据](evidence/M2.md)。
+- 当前进度：M1（001–004）与 M2（005–008）已合并（PR #9/#10）；M2 合并为 `c3ca2fb53b783c271dd89ef8ce460f96f5e85661`，官方参数已知风险保留。M3（009–011）功能、本地与实施提交远端CI/Codex及线程已闭环（PR #11），最后状态文档提交仍须自身CI/复审通过后按既有授权合并；M4–M6 保持 TODO；M1记录见[M1执行证据](evidence/M1.md)，M2提交/PR/验证与风险接受决定见[M2执行证据](evidence/M2.md)。
 - D01–D03 为未来方向，单独保留在路线图中，不计入缺陷批次或验收分母。
 
 ## 批次
@@ -13,7 +13,7 @@
 | --- | --- | ---: | --- | --- |
 | M1 | 安全与验收基础 | 4 | F01、F08、F10、F05 | DONE |
 | M2 | 查询与时间正确性 | 4 | F02、I01、F06、I03 | DONE |
-| M3 | 驱动与连接生命周期 | 3 | F03、F09、F12 | TODO |
+| M3 | 驱动与连接生命周期 | 3 | F03、F09、F12 | DONE |
 | M4 | 模型一致性 | 2 | I02、I06 | TODO |
 | M5 | 迁移与资源恢复 | 4 | F11、F04、F07、F13 | TODO |
 | M6 | 目录、独立 profile 与文档收口 | 3 | I04、I05、F14 | TODO |
@@ -33,10 +33,10 @@
 | M2 | [005 · Replace 空替换值语义](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/005-replace-null-semantics.md) | F02 | 004 | DONE（本地） |
 | M2 | [006 · 时间字面量精度](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/006-temporal-literal-fidelity.md) | I01 | 004 | DONE（本地，官方风险已接受） |
 | M2 | [007 · LOB 查询守卫完整性](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/007-lob-query-guards.md) | F06 | 004 | DONE（本地） |
-| M2 | [008 · 转换器后的时间翻译](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/008-converted-temporal-translation.md) | I03 | 004、006 | DONE（本地） |
-| M3 | [009 · 驱动一致性守卫](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/009-driver-invariants.md) | F03 | 004；M2 验收 | TODO |
-| M3 | [010 · 会话淘汰证据](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/010-session-eviction-evidence.md) | F09 | 009 | TODO |
-| M3 | [011 · HasTables 异步、超时和诊断](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/011-has-tables-async.md) | F12 | 009、010 | TODO |
+| M2 | [008 · 转换器后的时间翻译](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/008-converted-temporal-translation.md) | I03 | 004、006 | DONE |
+| M3 | [009 · 驱动一致性守卫](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/009-driver-invariants.md) | F03 | 004；M2 验收 | DONE |
+| M3 | [010 · 会话淘汰证据](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/010-session-eviction-evidence.md) | F09 | 009 | DONE |
+| M3 | [011 · HasTables 异步、超时和诊断](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/011-has-tables-async.md) | F12 | 009、010 | DONE |
 | M4 | [012 · 共享列值生成一致性](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/012-shared-column-generation.md) | I02 | 009 | TODO |
 | M4 | [013 · 复杂属性中的 rowversion 校验](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/013-complex-rowversion-validation.md) | I06 | 012 | TODO |
 | M5 | [014 · 管理员 DDL 不确定结果恢复](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/014-admin-ddl-recovery.md) | F11 | 003、010 | TODO |
@@ -55,4 +55,6 @@
 - 协调者统一更新状态和证据链接；执行者不并发改索引。原始报告保持历史证据属性，新结论写入实施证据。
 - 已考虑并排除项继续保留在[审查报告](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)，避免将已决定的设计边界重复报为缺陷。
 
-本轮M2证据：[005](evidence/005.md)、[006](evidence/006.md)、[007](evidence/007.md)、[008](evidence/008.md)及[M2汇总](evidence/M2.md)。005/007/008已完成本地验收及独立review；006官方参数问题已获维护者接受为已知风险，整批已按修订边界完成验收，最终文档提交待自身CI/复审后合并。
+本轮M2证据：[005](evidence/005.md)、[006](evidence/006.md)、[007](evidence/007.md)、[008](evidence/008.md)及[M2汇总](evidence/M2.md)。005–008已按维护者接受官方参数已知风险后的边界合并PR #10；历史验证与风险决定原文保留。
+
+M3本地证据：[009](evidence/009.md)、[010](evidence/010.md)、[011](evidence/011.md)及[M3汇总](evidence/M3.md)。先前失败/BLOCKED历史保留；当前9fe源码指纹的实库57/57、Release四项4/4、屏障Debug/Release各14/14及精确清理通过；实施提交远端CI/Codex及P2线程闭环，M3功能/验收DONE，最后文档提交需自身门后合并，不启动M4。
