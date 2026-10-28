@@ -48,6 +48,58 @@ public sealed class WDriverRequestBarrierRelayTests
     }
 
     [Theory]
+    [InlineData(5, 1)]
+    [InlineData(6, 0)]
+    [InlineData(13, 0)]
+    public async Task NextRequestWaitsForPreviousResponseForwardAccounting(short opcode, byte flag)
+    {
+        using var observer = new WDriverRequestBarrierObserver();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var generation = await observer.ArmExecuteAsync(deadline.Token);
+        await Forward(observer, true, Frame(3));
+        var barrier = observer.WaitExecuteForwardedAsync(generation, deadline.Token);
+        var responseBytes = Frame(0, bodyLength: 4);
+        var delivered = NewSignal(); var finishAccounting = NewSignal(); var written = 0;
+        var response = Forward(observer, false, responseBytes, writer: async (bytes, token) =>
+        {
+            written += bytes.Length; // The client can consume these bytes before this await resumes.
+            if (written == responseBytes.Length)
+            {
+                delivered.TrySetResult();
+                await finishAccounting.Task.WaitAsync(token);
+            }
+            return bytes.Length;
+        }, cancellationToken: deadline.Token);
+        Task<byte[]>? next = null;
+        try
+        {
+            await delivered.Task.WaitAsync(deadline.Token);
+            var before = observer.ClientBytesForwarded;
+            var request = Frame(opcode, flag, bodyLength: 4);
+            next = Forward(observer, true, request, cancellationToken: deadline.Token);
+            Assert.False(next.IsCompleted);
+            Assert.False(barrier.IsCompleted);
+            Assert.Equal(before, observer.ClientBytesForwarded);
+            Assert.Equal([WRequestStage.Allocate], observer.Stages);
+            finishAccounting.TrySetResult();
+            await response.WaitAsync(deadline.Token);
+            Assert.Equal(request, await next.WaitAsync(deadline.Token));
+            await barrier.WaitAsync(deadline.Token);
+            observer.AssertExecutePending(generation, NewSignal().Task);
+            Assert.Equal(before + request.Length, observer.ClientBytesForwarded);
+            Assert.Equal([WRequestStage.Allocate, opcode == 5 ? WRequestStage.DirectExecute : WRequestStage.PreparedExecute], observer.Stages);
+        }
+        finally
+        {
+            finishAccounting.TrySetResult();
+            observer.Dispose();
+            var tasks = new List<Task> { response, barrier };
+            if (next is not null) tasks.Add(next);
+            foreach (var task in tasks) _ = await Record.ExceptionAsync(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(2)]
     public async Task PrepareOnlyDoesNotCompleteExecuteBarrier(byte flag)
@@ -172,6 +224,25 @@ public sealed class WDriverRequestBarrierRelayTests
             await Assert.ThrowsAsync<IOException>(() => waiting);
             Assert.Throws<InvalidOperationException>(() => observer.AssertExecutePending(generation, NewSignal().Task));
         }
+        foreach (var dispose in new[] { false, true })
+        {
+            using var observer = new WDriverRequestBarrierObserver();
+            using var stop = new CancellationTokenSource();
+            await Forward(observer, true, Frame(3));
+            var next = Forward(observer, true, Frame(6), cancellationToken: stop.Token);
+            Assert.False(next.IsCompleted);
+            if (dispose)
+            {
+                observer.Dispose();
+                await Assert.ThrowsAsync<ObjectDisposedException>(() => next.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+            else
+            {
+                await stop.CancelAsync();
+                var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => next.WaitAsync(TimeSpan.FromSeconds(5)));
+                Assert.Equal(stop.Token, error.CancellationToken);
+            }
+        }
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -188,7 +259,8 @@ public sealed class WDriverRequestBarrierRelayTests
     }
     private static async Task<byte[]> Forward(WDriverRequestBarrierObserver observer, bool fromClient, byte[] bytes,
         int maxRead = int.MaxValue, int maxWrite = int.MaxValue,
-        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask<int>>? writer = null)
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask<int>>? writer = null,
+        CancellationToken cancellationToken = default)
     {
         var offset = 0; var sink = new List<byte>();
         await observer.ForwardFramesAsync(fromClient, (buffer, _) =>
@@ -198,7 +270,7 @@ public sealed class WDriverRequestBarrierRelayTests
         }, writer ?? ((data, _) =>
         {
             var count = Math.Min(maxWrite, data.Length); sink.AddRange(data.Span[..count].ToArray()); return ValueTask.FromResult(count);
-        }));
+        }), cancellationToken);
         return sink.ToArray();
     }
 }

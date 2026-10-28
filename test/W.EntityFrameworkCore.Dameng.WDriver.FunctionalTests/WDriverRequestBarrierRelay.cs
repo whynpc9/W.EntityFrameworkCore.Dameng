@@ -358,7 +358,7 @@ internal sealed class WDriverRequestBarrierObserver : IDisposable
                 Exchange? exchange = null;
                 if (fromClient)
                 {
-                    if (!heartbeat) exchange = BeginRequest(Classify(opcode, header[21]));
+                    if (!heartbeat) exchange = await BeginRequestAsync(Classify(opcode, header[21]), cancellationToken).ConfigureAwait(false);
                 }
                 else if (!heartbeat) ResponseStarted();
 
@@ -409,16 +409,29 @@ internal sealed class WDriverRequestBarrierObserver : IDisposable
         }
     }
 
-    private Exchange BeginRequest(WRequestStage stage)
+    private async Task<Exchange> BeginRequestAsync(WRequestStage stage, CancellationToken cancellationToken)
     {
-        lock (_sync)
+        while (true)
         {
-            if (_pending is not null) throw new InvalidOperationException("The observed session must use sequential exchanges.");
-            var target = _observation is { Selected: false } && stage is WRequestStage.DirectExecute or WRequestStage.PreparedExecute
-                ? _observation : null;
-            if (target is not null) target.Selected = true;
-            _pending = new Exchange(stage, target);
-            return _pending;
+            cancellationToken.ThrowIfCancellationRequested();
+            Task changed;
+            lock (_sync)
+            {
+                ThrowIfUnavailable();
+                if (_pending is null)
+                {
+                    var target = _observation is { Selected: false } && stage is WRequestStage.DirectExecute or WRequestStage.PreparedExecute
+                        ? _observation : null;
+                    if (target is not null) target.Selected = true;
+                    _pending = new Exchange(stage, target);
+                    return _pending;
+                }
+
+                // A client can receive the last response byte and send its next request before
+                // the server pump resumes to account for that byte. Let that pump finish first.
+                changed = _changed.Task;
+            }
+            await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
