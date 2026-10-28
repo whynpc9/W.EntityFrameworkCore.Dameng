@@ -115,6 +115,7 @@ public static class DamengDriverConfiguration
             .TryAdd<IDatabaseProvider, DamengDatabaseProvider>()
             .TryAdd<ISingletonOptions, DamengDriverSingletonOptions>()
             .TryAdd<IModelValidator, DamengModelValidator>()
+            .TryAdd<IModelRuntimeInitializer, DamengModelRuntimeInitializer>()
             .TryAdd<IRelationalAnnotationProvider, DamengRelationalAnnotationProvider>()
             .TryAdd<IRelationalTypeMappingSource, DamengTypeMappingSource>()
             .TryAdd<ISqlGenerationHelper, DamengSqlGenerationHelper>()

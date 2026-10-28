@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 
@@ -19,7 +20,7 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// network calls, cancellation and deadlines, failure metadata, conditional session recovery,
 /// EF savepoints, and credential-free diagnostics. These tests only run in the W lane.
 /// </summary>
-public sealed class WDriverRuntimeFunctionalTests
+public sealed class WDriverRuntimeFunctionalTests(ITestOutputHelper output)
 {
     private static readonly TimeSpan ServerDelay = TimeSpan.FromSeconds(2);
 
@@ -78,29 +79,100 @@ public sealed class WDriverRuntimeFunctionalTests
             });
 
     [DamengFact]
+    [Trait("AuditPlan", "010")]
+    public Task OpenSessionSurvivesSuccessfulQueriesWithoutReopening()
+        => RuntimeStore.WithStoreAsync(async store =>
+        {
+            var builder = new DmConnectionStringBuilder(store.ConnectionString) { Pooling = false };
+            await using var context = store.CreateContext(connectionString: builder.ConnectionString);
+            await context.Database.OpenConnectionAsync();
+            var connection = context.Database.GetDbConnection();
+            var session = await SessionIdAsync(context);
+            Assert.Empty(await context.Items.ToListAsync());
+            Assert.Equal(1, (await context.Database.SqlQueryRaw<int>("SELECT 1 AS \"Value\" FROM DUAL").ToListAsync()).Single());
+            Assert.Same(connection, context.Database.GetDbConnection());
+            Assert.Equal(ConnectionState.Open, connection.State);
+            Assert.Equal(session, await SessionIdAsync(context));
+            output.WriteLine("Normal control: same held connection, Open, same session after successful queries.");
+        });
+
+    [DamengFact]
+    [Trait("AuditPlan", "010")]
     public Task CancelingARunningQueryKeepsTheTokenAndUsesANewSessionAfterwards()
-        => RuntimeStore.WithStoreAsync(
-            async store =>
+        => RuntimeStore.WithStoreAsync(async store =>
+        {
+            var builder = new DmConnectionStringBuilder(store.ConnectionString) { Pooling = false };
+            await using var relay = new WDriverRequestBarrierRelay(builder.ConnectionString, resetOnAccept: false, observeFrames: true);
+            await using var context = store.CreateContext(connectionString: relay.ConnectionString);
+            using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await context.Database.OpenConnectionAsync(watchdog.Token);
+            var connection = context.Database.GetDbConnection();
+            var sessionBefore = await SessionIdAsync(context);
+            Assert.Empty(await context.Items.ToListAsync());
+            var observer = relay.Observer;
+            var generation = await observer.ArmExecuteAsync(watchdog.Token);
+            using var cancellation = new CancellationTokenSource();
+            var pending = context.Database.SqlQueryRaw<int>($"SELECT \"{store.SleepFunction}\"(5) AS \"Value\" FROM DUAL")
+                .ToListAsync(cancellation.Token);
+            try
             {
-                await using var context = store.CreateContext();
-                var sessionBefore = await SessionIdAsync(context);
-                using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-                var watch = Stopwatch.StartNew();
-
-                var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(
-                    () => context.Database
-                        .SqlQueryRaw<int>($"SELECT \"{store.SleepFunction}\"(5) AS \"Value\" FROM DUAL")
-                        .ToListAsync(cancellation.Token));
-
-                Assert.True(watch.Elapsed < TimeSpan.FromSeconds(4), $"Cancellation took {watch.Elapsed}.");
+                using var barrierDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await observer.WaitExecuteForwardedAsync(generation, barrierDeadline.Token);
+                observer.AssertExecutePending(generation, pending);
+                output.WriteLine("ExecuteForwarded -> PendingResult -> CancelRequested");
+                await cancellation.CancelAsync();
+                var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(watchdog.Token));
                 Assert.Equal(cancellation.Token, error.CancellationToken);
                 var canceled = Assert.IsType<W.Dm.DmOperationCanceledException>(error);
                 Assert.Equal(W.Dm.DmCancelSource.User, canceled.FailureInfo.CancelSource);
                 Assert.False(canceled.FailureInfo.ConnectionReusable);
-
-                // Sent-then-canceled closes the session; EF opens a new one for the next operation.
+                Assert.Same(connection, context.Database.GetDbConnection());
+                Assert.True(connection.State is ConnectionState.Broken or ConnectionState.Closed);
+                output.WriteLine("CancelRequested -> Broken/Closed before recovery; FailureInfo nonreusable; original token retained.");
+                await context.Database.OpenConnectionAsync(watchdog.Token);
                 Assert.NotEqual(sessionBefore, await SessionIdAsync(context));
-            });
+                Assert.Empty(await context.Items.ToListAsync());
+                Assert.Same(connection, context.Database.GetDbConnection());
+                Assert.Equal(ConnectionState.Open, connection.State);
+                output.WriteLine("Explicit EF recovery -> new session -> successful query.");
+            }
+            finally
+            {
+                if (!pending.IsCompleted)
+                {
+                    await cancellation.CancelAsync();
+                    try { await pending.WaitAsync(watchdog.Token); } catch (OperationCanceledException) { }
+                }
+            }
+        });
+
+    [DamengFact]
+    [Trait("AuditPlan", "010")]
+    public Task PreCanceledHeldSessionDoesNotForwardACommand()
+        => RuntimeStore.WithStoreAsync(async store =>
+        {
+            var builder = new DmConnectionStringBuilder(store.ConnectionString) { Pooling = false };
+            await using var relay = new WDriverRequestBarrierRelay(builder.ConnectionString, resetOnAccept: false, observeFrames: true);
+            await using var context = store.CreateContext(connectionString: relay.ConnectionString);
+            await context.Database.OpenConnectionAsync();
+            var connection = context.Database.GetDbConnection();
+            var session = await SessionIdAsync(context);
+            var observer = relay.Observer;
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            _ = await observer.ArmExecuteAsync(deadline.Token);
+            var before = observer.ClientBytesForwarded;
+            using var cancellation = new CancellationTokenSource();
+            await cancellation.CancelAsync();
+            var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => context.Items.ToListAsync(cancellation.Token));
+            Assert.Equal(cancellation.Token, error.CancellationToken);
+            Assert.Equal(before, observer.ClientBytesForwarded);
+            Assert.Same(connection, context.Database.GetDbConnection());
+            Assert.Equal(ConnectionState.Open, connection.State);
+            // Health check is deliberately after the zero-forward assertion.
+            Assert.Equal(session, await SessionIdAsync(context));
+            Assert.Empty(await context.Items.ToListAsync());
+            output.WriteLine("PreCanceled -> zero client bytes forwarded -> same held healthy session.");
+        });
 
     [DamengFact]
     public Task CommandTimeoutReportsAClientDeadline()
@@ -313,7 +385,7 @@ public sealed class WDriverRuntimeFunctionalTests
     public async Task ConnectFailuresAreTransportFailures(bool refused)
     {
         // A refused TCP connect never sends; after an accepted connect the login has started.
-        await using var relay = new ResettingRelay(
+        await using var relay = new WDriverRequestBarrierRelay(
             DamengTestEnvironment.GetRequiredConnectionString(),
             resetOnAccept: true,
             listen: !refused);
@@ -347,7 +419,7 @@ public sealed class WDriverRuntimeFunctionalTests
             async store =>
             {
                 await store.CreateSlowInsertTriggerAsync(seconds: 2);
-                await using (var relay = new ResettingRelay(store.ConnectionString, resetOnAccept: false))
+                await using (var relay = new WDriverRequestBarrierRelay(store.ConnectionString, resetOnAccept: false))
                 {
                     await using var context = store.CreateContext(connectionString: relay.ConnectionString);
                     await using var transaction = await context.Database.BeginTransactionAsync();
@@ -413,22 +485,30 @@ public sealed class WDriverRuntimeFunctionalTests
             });
 
     [DamengFact]
+    [Trait("AuditPlan", "010")]
     public Task PrepareFailureBreaksTheSessionAndEfOpensANewOne()
-        => RuntimeStore.WithStoreAsync(
-            async store =>
-            {
-                await using var context = store.CreateContext();
-                var sessionBefore = await SessionIdAsync(context);
-
-                // A statement the server rejects while preparing is outside the measured
-                // execute-time recovery contract: W marks the session Broken.
-                var error = await Assert.ThrowsAnyAsync<DbException>(
-                    () => context.Database.ExecuteSqlRawAsync("SELECT SLEEP(1) FROM DUAL"));
-
-                Assert.False(FindDriverException(error)?.FailureInfo?.ConnectionReusable ?? false);
-                Assert.Empty(await context.Items.ToListAsync());
-                Assert.NotEqual(sessionBefore, await SessionIdAsync(context));
-            });
+        => RuntimeStore.WithStoreAsync(async store =>
+        {
+            var builder = new DmConnectionStringBuilder(store.ConnectionString) { Pooling = false };
+            await using var context = store.CreateContext(connectionString: builder.ConnectionString);
+            await context.Database.OpenConnectionAsync();
+            var connection = context.Database.GetDbConnection();
+            var sessionBefore = await SessionIdAsync(context);
+            Assert.Empty(await context.Items.ToListAsync());
+            Assert.Equal(sessionBefore, await SessionIdAsync(context));
+            // This fixed direct-execute rejection is nonreusable on the pinned W version/profile.
+            var error = await Assert.ThrowsAnyAsync<DbException>(
+                () => context.Database.ExecuteSqlRawAsync("SELECT SLEEP(1) FROM DUAL"));
+            var driverError = Assert.IsType<W.Dm.DmException>(FindDriverException(error));
+            Assert.False(driverError.FailureInfo.ConnectionReusable);
+            Assert.Same(connection, context.Database.GetDbConnection());
+            Assert.True(connection.State is ConnectionState.Broken or ConnectionState.Closed);
+            output.WriteLine("Known direct-execute rejection -> Broken/Closed before recovery; FailureInfo nonreusable.");
+            await context.Database.OpenConnectionAsync();
+            Assert.NotEqual(sessionBefore, await SessionIdAsync(context));
+            Assert.Empty(await context.Items.ToListAsync());
+            output.WriteLine("Explicit EF recovery -> new session -> successful query.");
+        });
 
     // W 0.2.0 keeps the session after these prepare-time errors of an explicit or implicit
     // (parameterized) prepare on the measured profile; direct execution keeps the rule above.
@@ -866,218 +946,6 @@ public sealed class WDriverRuntimeFunctionalTests
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             await command.ExecuteNonQueryAsync();
-        }
-    }
-
-    /// <summary>
-    /// A loopback TCP relay to the test server that can abort every relayed connection with RST.
-    /// The derived connection string points at the relay, so it only fits plaintext test profiles.
-    /// </summary>
-    private sealed class ResettingRelay : IAsyncDisposable
-    {
-        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
-        private readonly CancellationTokenSource _stop = new();
-        private readonly List<Socket> _sockets = [];
-        private readonly string _host;
-        private readonly int _port;
-        private readonly bool _resetOnAccept;
-        private readonly Task _accepting;
-        private long _forwarded;
-        private long _lastClientForward;
-        private long _lastServerForward;
-        private long _lastClientForwardTimestamp;
-        private long _clientBytesBeforeReset;
-
-        public ResettingRelay(string connectionString, bool resetOnAccept, bool listen = true)
-        {
-            var builder = new DmConnectionStringBuilder(connectionString);
-            var server = Convert.ToString(builder["server"], CultureInfo.InvariantCulture)!;
-            _port = builder.TryGetValue("port", out var port) && port is not null && !string.IsNullOrEmpty(port.ToString())
-                ? Convert.ToInt32(port, CultureInfo.InvariantCulture)
-                : 5236;
-            var separator = server.LastIndexOf(':');
-            if (separator > 0 && !server.StartsWith('[') && server.IndexOf(':') == separator)
-            {
-                _port = int.Parse(server[(separator + 1)..], CultureInfo.InvariantCulture);
-                server = server[..separator];
-            }
-
-            _host = server.Trim('[', ']');
-            _resetOnAccept = resetOnAccept;
-            _listener.Start();
-            builder.Remove("server");
-            builder["server"] = IPAddress.Loopback.ToString();
-            builder.Remove("port");
-            builder["port"] = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            ConnectionString = builder.ConnectionString;
-
-            // Without a listener the reserved loopback port refuses the connection.
-            if (!listen)
-            {
-                _listener.Stop();
-            }
-
-            _accepting = listen ? AcceptAsync() : Task.CompletedTask;
-        }
-
-        public string ConnectionString { get; }
-
-        /// <summary>Gets the client bytes a reset-on-accept relay received before resetting.</summary>
-        public long ClientBytesBeforeReset
-            => Interlocked.Read(ref _clientBytesBeforeReset);
-
-        /// <summary>
-        /// Resets every relayed connection once the latest forwarded data came from the client and
-        /// the server has not answered it for <paramref name="outstandingFor" />.
-        /// </summary>
-        public async Task ResetWhileARequestIsOutstandingAsync(TimeSpan outstandingFor, TimeSpan timeout)
-        {
-            var started = Stopwatch.GetTimestamp();
-            while (true)
-            {
-                lock (_sockets)
-                {
-                    if (_lastClientForward > _lastServerForward
-                        && Stopwatch.GetElapsedTime(_lastClientForwardTimestamp) >= outstandingFor)
-                    {
-                        ResetAll();
-                        return;
-                    }
-                }
-
-                if (Stopwatch.GetElapsedTime(started) > timeout)
-                {
-                    throw new TimeoutException("No forwarded client request stayed unanswered at the relay.");
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(20));
-            }
-        }
-
-        public void ResetAll()
-        {
-            lock (_sockets)
-            {
-                foreach (var socket in _sockets)
-                {
-                    Reset(socket);
-                }
-
-                _sockets.Clear();
-            }
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _stop.CancelAsync();
-            _listener.Stop();
-            ResetAll();
-            await _accepting;
-            _stop.Dispose();
-        }
-
-        private async Task AcceptAsync()
-        {
-            while (true)
-            {
-                Socket client;
-                try
-                {
-                    client = await _listener.AcceptSocketAsync(_stop.Token);
-                }
-                catch (Exception error) when (error is OperationCanceledException or SocketException or ObjectDisposedException)
-                {
-                    return;
-                }
-
-                if (_resetOnAccept)
-                {
-                    // Reset only after the client's first (login) bytes arrived, so the failure is after send.
-                    try
-                    {
-                        using var receiveTimeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-                        receiveTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-                        var received = await client.ReceiveAsync(new byte[1024], SocketFlags.None, receiveTimeout.Token);
-                        Interlocked.Add(ref _clientBytesBeforeReset, received);
-                    }
-                    catch (Exception error) when (error is OperationCanceledException or SocketException)
-                    {
-                    }
-
-                    Reset(client);
-                    continue;
-                }
-
-                var upstream = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                try
-                {
-                    await upstream.ConnectAsync(_host, _port, _stop.Token);
-                }
-                catch (Exception error) when (error is OperationCanceledException or SocketException)
-                {
-                    Reset(client);
-                    upstream.Dispose();
-                    continue;
-                }
-
-                lock (_sockets)
-                {
-                    _sockets.Add(client);
-                    _sockets.Add(upstream);
-                }
-
-                _ = PumpAsync(client, upstream, fromClient: true);
-                _ = PumpAsync(upstream, client, fromClient: false);
-            }
-        }
-
-        private async Task PumpAsync(Socket source, Socket target, bool fromClient)
-        {
-            var buffer = new byte[64 * 1024];
-            try
-            {
-                int read;
-                while ((read = await source.ReceiveAsync(buffer, SocketFlags.None)) > 0)
-                {
-                    // SendAsync may accept only part of the segment; forward every received byte.
-                    for (var sent = 0; sent < read;)
-                    {
-                        sent += await target.SendAsync(buffer.AsMemory(sent, read - sent), SocketFlags.None);
-                    }
-
-                    lock (_sockets)
-                    {
-                        _forwarded++;
-                        if (fromClient)
-                        {
-                            _lastClientForward = _forwarded;
-                            _lastClientForwardTimestamp = Stopwatch.GetTimestamp();
-                        }
-                        else
-                        {
-                            _lastServerForward = _forwarded;
-                        }
-                    }
-                }
-
-                target.Shutdown(SocketShutdown.Send);
-            }
-            catch (Exception error) when (error is SocketException or ObjectDisposedException)
-            {
-            }
-        }
-
-        // A zero linger time makes Close send RST instead of a graceful FIN.
-        private static void Reset(Socket socket)
-        {
-            try
-            {
-                socket.LingerState = new LingerOption(true, 0);
-                socket.Close();
-            }
-            catch (Exception error) when (error is SocketException or ObjectDisposedException)
-            {
-            }
         }
     }
 
