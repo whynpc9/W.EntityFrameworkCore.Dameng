@@ -5,6 +5,7 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// <summary>
 /// Pure script-splitting coverage for <see cref="DamengScriptExecutor"/>; no database needed.
 /// </summary>
+[Trait("Category", "OfflineFixture")]
 public sealed class DamengScriptExecutorTests
 {
     [Theory]
