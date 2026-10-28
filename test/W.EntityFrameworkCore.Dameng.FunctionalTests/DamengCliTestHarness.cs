@@ -15,6 +15,26 @@ internal static class DamengCliTestHarness
     internal const string ConnectionVariable = "ConnectionStrings__DamengCliFixture";
     internal const string ConnectionAlias = "Name=ConnectionStrings:DamengCliFixture";
 
+    // Raw output stays private: semantic checks must never receive redacted data or dump raw arguments.
+    internal sealed class ProcessResult(int exitCode, string rawOutput, string? secret = null)
+    {
+        internal int ExitCode { get; } = exitCode;
+        internal string SafeOutput { get; } = Redact(secret, rawOutput);
+
+        internal void RequireExpectedOutput(string expected)
+        {
+            if (!rawOutput.Contains(expected, StringComparison.Ordinal))
+                throw new InvalidOperationException("CLI output did not contain the expected assembly identity.");
+        }
+
+        internal bool HasExpectedToolVersion(string expectedVersion)
+            => string.Equals(rawOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim()).FirstOrDefault(line => line.Length > 0 && char.IsDigit(line[0])),
+                expectedVersion, StringComparison.Ordinal);
+
+        public override string ToString() => "CLI process result (exit=" + ExitCode + ").";
+    }
+
     internal sealed record AssemblyIdentity(string Name, string Location, Guid Mvid, string Sha256);
 
     internal static AssemblyIdentity CaptureAssembly(Assembly assembly, string expectedName)
@@ -65,31 +85,30 @@ internal static class DamengCliTestHarness
             """));
 
     internal static async Task<string> EnsureToolAsync(string dotnet, string repositoryRoot, string lockedVersion,
-        Func<ProcessStartInfo, Task<(int ExitCode, string Output)>>? execute = null)
+        Func<ProcessStartInfo, Task<ProcessResult>>? execute = null)
     {
         var run = execute ?? (start => RunAsync(start));
         var directory = Path.Combine(repositoryRoot, "artifacts", "dotnet-ef-tool");
         var tool = Path.Combine(directory, OperatingSystem.IsWindows() ? "dotnet-ef.exe" : "dotnet-ef");
-        async Task<string?> ReadVersionAsync()
+        async Task<bool> HasLockedVersionAsync()
         {
-            if (!File.Exists(tool)) return null;
+            if (!File.Exists(tool)) return false;
             try
             {
                 var result = await run(CreateProcess(tool, directory, ["--version"], null));
-                return result.ExitCode == 0 ? result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(line => line.Trim()).FirstOrDefault(line => line.Length > 0 && char.IsDigit(line[0])) : null;
+                return result.ExitCode == 0 && result.HasExpectedToolVersion(lockedVersion);
             }
             catch (Exception error) when (error is System.ComponentModel.Win32Exception or FileNotFoundException)
             {
-                return null;
+                return false;
             }
         }
-        if (string.Equals(await ReadVersionAsync(), lockedVersion, StringComparison.Ordinal)) return tool;
+        if (await HasLockedVersionAsync()) return tool;
         Directory.CreateDirectory(directory);
         var action = File.Exists(tool) ? "update" : "install";
         var install = await run(CreateProcess(dotnet, repositoryRoot,
             ["tool", action, "dotnet-ef", "--version", lockedVersion, "--tool-path", directory], null));
-        if (install.ExitCode != 0 || !string.Equals(await ReadVersionAsync(), lockedVersion, StringComparison.Ordinal))
+        if (install.ExitCode != 0 || !await HasLockedVersionAsync())
             throw new InvalidOperationException("CLI fixture could not establish the locked dotnet-ef version.");
         return tool;
     }
@@ -120,7 +139,7 @@ internal static class DamengCliTestHarness
         return start;
     }
 
-    internal static async Task<(int ExitCode, string Output)> RunAsync(ProcessStartInfo start, string? secret = null)
+    internal static async Task<ProcessResult> RunAsync(ProcessStartInfo start, string? secret = null)
     {
         string? ownedCliHome = null;
         if (!start.Environment.TryGetValue("DOTNET_CLI_HOME", out var cliHome) || string.IsNullOrWhiteSpace(cliHome))
@@ -143,7 +162,7 @@ internal static class DamengCliTestHarness
                 throw new TimeoutException("CLI fixture step timed out.");
             }
             var text = await stdout + await stderr;
-            return (process.ExitCode, Redact(secret, text));
+            return new ProcessResult(process.ExitCode, text, secret);
         }
         finally
         {

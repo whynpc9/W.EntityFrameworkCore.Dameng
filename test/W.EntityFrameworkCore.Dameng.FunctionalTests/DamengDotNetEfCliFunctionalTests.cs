@@ -442,7 +442,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         await RunDotNetAsync(dotnetEf, workingDirectory, connectionString, efArguments);
     }
 
-    private async Task<string> RunDotNetAsync(
+    private async Task<DamengCliTestHarness.ProcessResult> RunDotNetAsync(
         string dotnet,
         string workingDirectory,
         string connectionString,
@@ -472,12 +472,12 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         output.WriteLine("CLI step " + arguments[0] + ": exit=" + result.ExitCode);
         if (result.ExitCode != 0)
         {
-            output.WriteLine(result.Output.Length > 4000 ? result.Output[^4000..] : result.Output);
+            output.WriteLine(result.SafeOutput.Length > 4000 ? result.SafeOutput[^4000..] : result.SafeOutput);
             throw new InvalidOperationException("CLI step failed (exit=" + result.ExitCode + ").");
         }
-        foreach (var line in result.Output.Split('\n').Where(line => line.StartsWith("Provider identity verified: ", StringComparison.Ordinal)))
+        foreach (var line in result.SafeOutput.Split('\n').Where(line => line.StartsWith("Provider identity verified: ", StringComparison.Ordinal)))
             output.WriteLine(line);
-        return result.Output;
+        return result;
     }
 
 #if WDRIVER
@@ -501,7 +501,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             projectDirectory,
             connectionString,
             [Path.Combine(outputDirectory, "CliRoundtrip.dll")], requiresConnection: false);
-        Assert.Contains("W.DamengProvider MVID=" + expectedMvid, runOutput, StringComparison.Ordinal);
+        runOutput.RequireExpectedOutput("W.DamengProvider MVID=" + expectedMvid);
         Assert.False(
             File.Exists(Path.Combine(outputDirectory, "W.DmProvider.dll")),
             "The nested project must not also contain the legacy W.DmProvider assembly.");

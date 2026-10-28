@@ -10,6 +10,55 @@ public sealed class DamengCliFixtureTests
 {
     private static string Dotnet => Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
 
+    [Fact]
+    public void ToolVersionComparisonUsesPrivateRawOutputWhenShortUserCollides()
+    {
+        const string secret = "Server=fixture.invalid;User ID=10;Password=synthetic-version-only";
+        var result = new DamengCliTestHarness.ProcessResult(0, "EF tools\n10.0.12\n" + secret, secret);
+        Assert.True(result.HasExpectedToolVersion("10.0.12"), "Locked tool version was changed by diagnostic redaction.");
+        Assert.False(result.HasExpectedToolVersion("10.0.11"));
+        Assert.True(!result.SafeOutput.Contains("10.0.12", StringComparison.Ordinal), "Synthetic version collision was not exercised.");
+        AssertSafe(secret, result.SafeOutput + result);
+    }
+
+    [Theory]
+    [InlineData("port")]
+    [InlineData("option")]
+    [InlineData("short-user")]
+    public void SemanticIdentityChecksSurviveRedactionCollisionsWithoutExposingRawOutput(string collision)
+    {
+        const string mvid = "1756fef6-b801-4182-91ab-ed3ef6945264";
+        var sha256 = "fe4182" + new string('a', 58);
+        var password = "synthetic\\quote\";秘密-" + Guid.NewGuid().ToString("N");
+        var builder = new DbConnectionStringBuilder
+        {
+            ["Server"] = "fixture.invalid",
+            ["User ID"] = collision == "short-user" ? "fe" : "synthetic-user",
+            ["Password"] = password
+        };
+        var token = collision == "short-user" ? "fe" : "4182";
+        if (collision == "port") builder["Port"] = token;
+        if (collision == "option") builder["Max Pool Size"] = token;
+        var secret = builder.ConnectionString;
+        var csharp = secret.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var raw = "W.DamengProvider MVID=" + mvid + "\nSHA256=" + sha256 + "\n" + secret
+            + "\n" + JsonSerializer.Serialize(secret) + "\n" + csharp + "\n" + password;
+        var result = new DamengCliTestHarness.ProcessResult(0, raw, secret);
+
+        // These checks deliberately inspect only the internal raw buffer and throw a fixed message.
+        result.RequireExpectedOutput("W.DamengProvider MVID=" + mvid);
+        result.RequireExpectedOutput("SHA256=" + sha256);
+        Assert.True(!result.SafeOutput.Contains(mvid, StringComparison.Ordinal)
+            && !result.SafeOutput.Contains(sha256, StringComparison.Ordinal), "Synthetic collision was not exercised.");
+        Assert.True(!result.SafeOutput.Contains(token, StringComparison.OrdinalIgnoreCase), "A synthetic connection field reached diagnostics.");
+        AssertSafe(secret, result.SafeOutput + result);
+        AssertSafe(password, result.SafeOutput + result);
+        var error = Assert.Throws<InvalidOperationException>(() => result.RequireExpectedOutput("missing identity"));
+        Assert.Equal("CLI output did not contain the expected assembly identity.", error.Message);
+        AssertSafe(secret, error.ToString());
+        AssertSafe(password, error.ToString());
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -24,18 +73,18 @@ public sealed class DamengCliFixtureTests
             File.WriteAllText(tool, "synthetic tool");
             var queries = 0;
             var updates = 0;
-            Task<(int ExitCode, string Output)> Execute(System.Diagnostics.ProcessStartInfo request)
+            Task<DamengCliTestHarness.ProcessResult> Execute(System.Diagnostics.ProcessStartInfo request)
             {
                 Assert.False(request.Environment.ContainsKey("DAMENG_TEST_CONNECTION_STRING"));
                 Assert.False(request.Environment.ContainsKey(DamengCliTestHarness.ConnectionVariable));
                 if (request.ArgumentList.Count == 1 && request.ArgumentList[0] == "--version")
                 {
                     queries++;
-                    return Task.FromResult((0, queries > 1 && updateWorks ? "10.0.12\n" : "10.0.11\n"));
+                    return Task.FromResult(new DamengCliTestHarness.ProcessResult(0, queries > 1 && updateWorks ? "10.0.12\n" : "10.0.11\n"));
                 }
                 Assert.Equal(new[] { "tool", "update", "dotnet-ef", "--version", "10.0.12", "--tool-path", toolDirectory }, request.ArgumentList);
                 updates++;
-                return Task.FromResult((0, "synthetic update"));
+                return Task.FromResult(new DamengCliTestHarness.ProcessResult(0, "synthetic update"));
             }
             if (updateWorks)
                 Assert.Equal(tool, await DamengCliTestHarness.EnsureToolAsync("synthetic-dotnet", directory, "10.0.12", Execute));
@@ -230,9 +279,9 @@ public sealed class DamengCliFixtureTests
                 var result = await DamengCliTestHarness.RunAsync(DamengCliTestHarness.CreateProcess(tool, directory,
                     ["dbcontext", "scaffold", alias, "W.EntityFrameworkCore.Dameng", "--no-build", "--no-onconfiguring", "--force", "--output-dir", "Generated"],
                     scenario == "missing" ? null : secret), secret);
-                Assert.True((result.ExitCode == 0) == (scenario == "valid"), "Actual EF Design scenario failed: " + scenario + "; " + result.Output);
+                Assert.True((result.ExitCode == 0) == (scenario == "valid"), "Actual EF Design scenario failed: " + scenario + "; " + result.SafeOutput);
                 Assert.Equal(scenario == "valid", File.Exists(Path.Combine(directory, "factory-called.txt")));
-                AssertSafe(secret, result.Output);
+                AssertSafe(secret, result.SafeOutput);
                 foreach (var file in Directory.GetFiles(directory, "*.cs", SearchOption.AllDirectories)) AssertSafe(secret, File.ReadAllText(file));
             }
         }
@@ -250,7 +299,7 @@ public sealed class DamengCliFixtureTests
     private static async Task RequireSuccess(string executable, string directory, string[] args)
     {
         var result = await DamengCliTestHarness.RunAsync(DamengCliTestHarness.CreateProcess(executable, directory, args, null));
-        Assert.True(result.ExitCode == 0, "Synthetic fixture tool failed: " + result.Output);
+        Assert.True(result.ExitCode == 0, "Synthetic fixture tool failed: " + result.SafeOutput);
     }
 
     private static string FindRoot()
