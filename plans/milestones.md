@@ -1,6 +1,6 @@
 # 修复路线图：六个里程碑
 
-全部 **14 项问题/验证缺口 + 6 项调查**分为 **20 份计划、6 批**，每个里程碑完成一批。M1 已完成，本地及远端验收证据见 [M1 执行记录](evidence/M1.md)；M2–M6 保持 TODO。计划本身不代表修复或实库验收完成。
+全部 **14 项问题/验证缺口 + 6 项调查**分为 **20 份计划、6 批**，每个里程碑完成一批。M1 已完成，本地及远端验收证据见 [M1 执行记录](evidence/M1.md)；M2 正按维护者接受官方驱动风险后的边界收口，M3–M6 保持 TODO。计划本身不代表修复或实库验收完成。
 
 原始基线：`c80c788fb3cd34d97626d578db580264a28a11f3`。证据见[深度审查](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)，逐项步骤、白名单和命令见[计划索引](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/README.md)。
 
@@ -31,6 +31,8 @@
 **向后提供的接口**：002 新增 `--configuration Debug|Release`，默认 Debug；004 新增 `test offline-fixtures`，固定 `Category=OfflineFixture`，自定义过滤只能 AND 缩小，unit/offline-fixtures 均不加载秘密。以上接口已由 M1 实现并完成本地验收；原始基线尚不支持。远端整合进度见 [M1 执行记录](evidence/M1.md)。
 
 ## M2：查询与时间正确性
+
+**状态：IN_PROGRESS**。维护者已明确接受官方七位参数问题作为预先已知驱动风险，不再阻断；不修复或宣称修复官方参数实现，按修订边界复验并完成PR/CI/review/合并。M3不启动。见[M2执行记录](evidence/M2.md)。
 
 前置：M1 验收。005、006、007 可分工；008 在 006 确定时间类型边界后完成。共享映射、翻译器与测试类串行集成。
 

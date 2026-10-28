@@ -56,6 +56,9 @@ internal sealed class DamengDateTimeOffsetTypeMapping
             ? base.CustomizeDataReaderExpression(expression)
             : Expression.Call(ParseMethod, expression);
 
+    protected override string GenerateNonNullSqlLiteral(object value)
+        => DamengTemporalLiteralHelper.Generate((DateTimeOffset)value, StoreType, Precision ?? 6);
+
     protected override void ConfigureParameter(DbParameter parameter)
     {
         base.ConfigureParameter(parameter);
