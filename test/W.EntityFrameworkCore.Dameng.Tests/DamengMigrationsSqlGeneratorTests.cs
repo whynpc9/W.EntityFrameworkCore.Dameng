@@ -764,8 +764,7 @@ public sealed class DamengMigrationsSqlGeneratorTests
             + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '备注';\n",
             addSql);
         Assert.Equal(
-            "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(100) NULL;\n"
-            + "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '';\n",
+            "COMMENT ON COLUMN \"app\".\"Orders\".\"Note\" IS '';\n",
             alterSql);
         Assert.Equal(
             "ALTER TABLE \"app\".\"Orders\" MODIFY \"Note\" NVARCHAR2(200) NULL;\n",

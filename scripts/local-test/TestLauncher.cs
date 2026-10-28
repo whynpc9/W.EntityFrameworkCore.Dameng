@@ -93,6 +93,7 @@ internal static class TestLauncher
                 continue;
             }
 
+            laneEnvironment["DAMENG_TEST_RECOVERY_DIRECTORY"] = lane.NeedsAdmin ? Path.Combine(resultDirectory, "recovery") : null;
             var testArgs = BuildTestArguments(lane, project, configuration, resultDirectory, customFilter);
             var connection = lane.NeedsAdmin ? adminConnection
                 : lane.NeedsTestConnection ? testConnection : null;

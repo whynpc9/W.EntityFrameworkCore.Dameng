@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.EntityFrameworkCore.Storage;
+using W.EntityFrameworkCore.Dameng.Storage.Internal;
 
 namespace W.EntityFrameworkCore.Dameng.Migrations.Internal;
 
@@ -45,18 +46,31 @@ internal sealed class DamengHistoryRepository(HistoryRepositoryDependencies depe
             && Convert.ToInt64(value, CultureInfo.InvariantCulture) != 0L;
 
     public override string GetCreateIfNotExistsScript()
+        => string.Concat(GetCreateIfNotExistsCommandTexts());
+
+    private List<string> GetCreateIfNotExistsCommandTexts()
     {
-        const string createTable = "CREATE TABLE ";
-        var script = GetCreateScript();
-        var createTableIndex = script.IndexOf(createTable, StringComparison.Ordinal);
-
-        if (createTableIndex < 0)
+        var count = 0;
+        var commands = new List<string>();
+        foreach (var command in GetCreateCommands())
         {
-            throw new InvalidOperationException(
-                "The Dameng migrations history create script did not contain a CREATE TABLE statement.");
+            var text = command.CommandText;
+            var tokens = DamengSqlLexer.Read(text).Take(3).ToArray();
+            if (tokens.Length >= 2
+                && string.Equals(tokens[0].Text, "CREATE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(tokens[1].Text, "TABLE", StringComparison.OrdinalIgnoreCase))
+            {
+                if (tokens.Length < 3 || string.Equals(tokens[2].Text, "IF", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The Dameng history CREATE TABLE command has an unexpected guard or shape.");
+                count++;
+                text = text.Insert(tokens[1].End, " IF NOT EXISTS");
+            }
+            // Schema guards are complete BEGIN commands; their literals stay opaque.
+            commands.Add(text);
         }
-
-        return script.Insert(createTableIndex + createTable.Length, "IF NOT EXISTS ");
+        if (count != 1)
+            throw new InvalidOperationException("The Dameng history create script must contain exactly one independent CREATE TABLE command.");
+        return commands;
     }
 
     public override string GetBeginIfNotExistsScript(string migrationId)
@@ -188,13 +202,9 @@ internal sealed class DamengHistoryRepository(HistoryRepositoryDependencies depe
 
     private IReadOnlyList<MigrationCommand> GetCreateIfNotExistsCommands()
         => Dependencies.MigrationsSqlGenerator.Generate(
-            [
-                new SqlOperation
-                {
-                    Sql = GetCreateIfNotExistsScript(),
-                    SuppressTransaction = true
-                }
-            ]);
+            GetCreateIfNotExistsCommandTexts()
+                .Select(text => (MigrationOperation)new SqlOperation { Sql = text, SuppressTransaction = true })
+                .ToArray());
 
     private string GetBeginIfScript(string migrationId, bool negated)
     {

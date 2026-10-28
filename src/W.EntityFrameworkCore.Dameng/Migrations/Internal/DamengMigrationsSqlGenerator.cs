@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +33,7 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
             {
                 CreateTableOperation create => create.Columns.Any(column => RequiresByteLengthGuard(column, model)),
                 AddColumnOperation add => RequiresByteLengthGuard(add, model),
-                AlterColumnOperation alter => RequiresByteLengthGuard(alter, model),
+                AlterColumnOperation alter => !IsCommentOnly(alter) && RequiresByteLengthGuard(alter, model),
                 _ => false
             }))
         {
@@ -226,6 +227,15 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
         IModel? model,
         MigrationCommandListBuilder builder)
     {
+        if (IsCommentOnly(operation))
+        {
+            // Keep the existing definition validation without emitting structural DDL.
+            ColumnDefinition(operation.Schema, operation.Table, operation.Name, operation, model,
+                new MigrationCommandListBuilder(Dependencies), includeIdentity: false);
+            GenerateColumnCommentStatement(operation.Schema, operation.Table, operation.Name, operation.Comment, builder);
+            return;
+        }
+
         if (IsIdentity(operation.OldColumn) && !IsIdentity(operation))
         {
             if (!IsIdentityRemovalOnly(operation))
@@ -857,6 +867,31 @@ internal sealed class DamengMigrationsSqlGenerator : MigrationsSqlGenerator
                 StringComparison.Ordinal),
             _ => false
         };
+
+    private static bool IsCommentOnly(AlterColumnOperation operation)
+    {
+        var old = operation.OldColumn;
+        // EF does not populate the old name/table/schema. Every semantic annotation,
+        // including unknown ones, must match; only the Comment property may differ.
+        return !string.Equals(operation.Comment, old.Comment, StringComparison.Ordinal)
+            && operation.ClrType == old.ClrType
+            && operation.ColumnType == old.ColumnType
+            && operation.IsUnicode == old.IsUnicode
+            && operation.IsFixedLength == old.IsFixedLength
+            && operation.MaxLength == old.MaxLength
+            && operation.Precision == old.Precision
+            && operation.Scale == old.Scale
+            && operation.IsRowVersion == old.IsRowVersion
+            && operation.IsNullable == old.IsNullable
+            && StructuralComparisons.StructuralEqualityComparer.Equals(operation.DefaultValue, old.DefaultValue)
+            && operation.DefaultValueSql == old.DefaultValueSql
+            && operation.ComputedColumnSql == old.ComputedColumnSql
+            && operation.IsStored == old.IsStored
+            && operation.Collation == old.Collation
+            && operation.GetAnnotations().Count() == old.GetAnnotations().Count()
+            && operation.GetAnnotations().All(annotation => old.FindAnnotation(annotation.Name) is { } previous
+                && StructuralComparisons.StructuralEqualityComparer.Equals(annotation.Value, previous.Value));
+    }
 
     private static bool IsIdentityRemovalOnly(AlterColumnOperation operation)
     {

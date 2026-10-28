@@ -14,6 +14,11 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
     private string? _ownedHugePath;
     private bool _hugeStorageEnabled;
 
+    internal DamengAdminDdlRecoveryState? Recovery { get; private set; }
+    internal Action<string>? AfterCreate { get; set; }
+    internal Action? BeforeRecoveryQuery { get; set; }
+    internal Dictionary<string, int> CreateCounts { get; } = [];
+
     public string? ServerBanner { get; private set; }
 
     public string? InstanceVersion { get; private set; }
@@ -74,19 +79,30 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
                 admin,
                 "SELECT PARA_VALUE FROM V$DM_INI WHERE PARA_NAME = 'COMPATIBLE_MODE'");
 
+            Recovery = new(tablespace, user, datafile);
+            Recovery.Plan(Recovery.Tablespace, await ObjectCountAsync(admin, Recovery.Tablespace) == 0);
+            Recovery.Plan(Recovery.User, await ObjectCountAsync(admin, Recovery.User) == 0);
+            Recovery.BeforeCreate(Recovery.Tablespace);
+            CreateCounts["TABLESPACE"] = 1;
             await ExecuteAsync(
                 admin,
                 "CREATE TABLESPACE \"" + tablespace + "\" DATAFILE '"
                 + datafile.Replace("'", "''", StringComparison.Ordinal)
                 + "' SIZE " + datafileSizeMb.ToString(CultureInfo.InvariantCulture)
                 + " AUTOEXTEND OFF");
+            AfterCreate?.Invoke("TABLESPACE");
+            Recovery.Transition(Recovery.Tablespace, AdminDdlPhase.Present);
             _tablespaceCreated = true;
             TablespaceName = tablespace;
 
+            Recovery.BeforeCreate(Recovery.User);
+            CreateCounts["USER"] = 1;
             await ExecuteAsync(
                 admin,
                 "CREATE USER \"" + user + "\" IDENTIFIED BY \"" + _password
                 + "\" DEFAULT TABLESPACE \"" + tablespace + "\"");
+            AfterCreate?.Invoke("USER");
+            Recovery.Transition(Recovery.User, AdminDdlPhase.Present);
             _userCreated = true;
             UserName = user;
 
@@ -211,49 +227,76 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
 
     private async Task<Exception?> TryDisposeAsync()
     {
-        if (_adminConnectionString is null)
-        {
-            return null;
-        }
-
-        Exception? failure = null;
+        if (_adminConnectionString is null || Recovery is null) return null;
         try
         {
-            await using var admin = new DmConnection(_adminConnectionString);
-            await admin.OpenAsync();
-
-            if (_userCreated && UserName is not null)
+            // Always use a fresh session, even after a failed CREATE or DROP response.
+            foreach (var item in new[] { Recovery.User, Recovery.Tablespace })
             {
-                try
+                if (item.Phase is AdminDdlPhase.Absent or AdminDdlPhase.NotAttempted) continue;
+                await using var admin = new DmConnection(_adminConnectionString);
+                await admin.OpenAsync();
+                BeforeRecoveryQuery?.Invoke();
+                var count = await ObjectCountAsync(admin, item);
+                if (count == 0)
                 {
-                    await ExecuteAsync(admin, "DROP USER \"" + UserName + "\" CASCADE");
-                    _userCreated = false;
+                    Recovery.Transition(item, AdminDdlPhase.Absent);
+                    continue;
                 }
-                catch (Exception exception)
-                {
-                    failure = exception;
-                }
+                var matches = await OwnershipMatchesAsync(admin, item);
+                if (count != 1 || !Recovery.CanDrop(item, matches, freshConnection: true))
+                    throw new InvalidOperationException("Exact recovery ownership could not be confirmed.");
+                Recovery.Transition(item, AdminDdlPhase.CleanupRequired);
+                Exception? dropFailure = null;
+                try { await ExecuteAsync(admin, "DROP " + item.Kind + " \"" + item.Name + "\"" + (item == Recovery.User ? " CASCADE" : "")); }
+                catch (Exception error) { dropFailure = error; }
+                await using var verify = new DmConnection(_adminConnectionString);
+                await verify.OpenAsync();
+                if (await ObjectCountAsync(verify, item) != 0)
+                    throw new InvalidOperationException("Exact DROP outcome remains unresolved.", dropFailure);
+                Recovery.Transition(item, AdminDdlPhase.Absent);
             }
-
-            if (_tablespaceCreated && TablespaceName is not null)
-            {
-                try
-                {
-                    await ExecuteAsync(admin, "DROP TABLESPACE \"" + TablespaceName + "\"");
-                    _tablespaceCreated = false;
-                }
-                catch (Exception exception)
-                {
-                    failure ??= exception;
-                }
-            }
+            _userCreated = false;
+            _tablespaceCreated = false;
+            Recovery.Finish(complete: true);
+            return null;
         }
         catch (Exception exception)
         {
-            failure ??= exception;
+            try { Recovery.Finish(complete: false); }
+            catch (Exception journalFailure) { return new AggregateException(exception, journalFailure); }
+            return exception;
         }
+    }
 
-        return failure;
+    internal async Task VerifyAbsentAsync()
+    {
+        if (Recovery is null || _adminConnectionString is null) throw new InvalidOperationException("No ownership record.");
+        await using var admin = new DmConnection(_adminConnectionString);
+        await admin.OpenAsync();
+        foreach (var item in new[] { Recovery.User, Recovery.Tablespace })
+            if (await ObjectCountAsync(admin, item) != 0) throw new InvalidOperationException("Owned object remains.");
+    }
+
+    private static Task<long> ObjectCountAsync(DmConnection admin, DamengAdminDdlRecoveryState.OwnedObject item)
+        => ScalarInt64Async(admin, item.Kind == "USER"
+            ? "SELECT COUNT(*) FROM SYS.SYSOBJECTS WHERE TYPE$='UR' AND SUBTYPE$='USER' AND NAME='" + item.Name + "'"
+            : "SELECT COUNT(*) FROM V$TABLESPACE WHERE NAME='" + item.Name + "'");
+
+    private async Task<bool> OwnershipMatchesAsync(DmConnection admin, DamengAdminDdlRecoveryState.OwnedObject item)
+    {
+        if (Recovery is null) return false;
+        if (item == Recovery.User)
+            return await ScalarInt64Async(admin, "SELECT COUNT(*) FROM SYS.SYSOBJECTS U JOIN V$TABLESPACE T ON T.ID=BITAND(U.INFO3,65535) "
+                + "WHERE U.TYPE$='UR' AND U.SUBTYPE$='USER' AND U.NAME='" + item.Name + "' AND T.NAME='" + item.Relationship + "'") == 1;
+        await using var command = admin.CreateCommand();
+        command.CommandText = "SELECT T.FILE_NUM,D.PATH FROM V$TABLESPACE T JOIN V$DATAFILE D ON T.ID=D.GROUP_ID WHERE T.NAME='" + item.Name + "'";
+        command.CommandTimeout = 30;
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return false;
+        var matches = Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture) == 1
+            && string.Equals(reader.GetString(1), item.Relationship, StringComparison.Ordinal);
+        return matches && !await reader.ReadAsync();
     }
 
     private async Task ExecuteAsync(DmConnection connection, string sql)
@@ -262,6 +305,7 @@ public sealed class DamengScriptTestDatabase : IAsyncLifetime
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+            command.CommandTimeout = 30;
             await command.ExecuteNonQueryAsync();
         }
         catch (Exception exception)
