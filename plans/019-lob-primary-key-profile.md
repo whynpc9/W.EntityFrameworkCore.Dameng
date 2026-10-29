@@ -4,7 +4,7 @@
 
 ## 状态
 
-- 状态：IN_PROGRESS（REFUTED正式矩阵已闭合，最终集成与复核中）
+- 状态：DONE（REFUTED，两个已测profile；最终批次远端收口见M6）
 - 里程碑：M6，目录/profile 及文档收口；独立 profile 真库结果是 M6 硬门。
 - 对应问题：I05，LOB 与 `PK_WITH_CLUSTER`
 - 优先级：P2

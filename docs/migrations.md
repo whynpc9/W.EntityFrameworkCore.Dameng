@@ -71,7 +71,10 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 `migrations add` 和 `migrations script` 会构造上下文，但生成脚本本身不连接数据库。
 `database update` 和 `migrations list` 会连接数据库。
 
-## 使用 W.DamengProvider 驱动（开发候选）
+## 使用 W.DamengProvider 驱动（预览版）
+
+基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 的既有公开发行见[发布记录](release-0.4.0.md)；
+扩展包仍是预览版，本轮源码修复没有另行发布包。
 
 启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
 （W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：
