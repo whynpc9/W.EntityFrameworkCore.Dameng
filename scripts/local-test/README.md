@@ -114,7 +114,7 @@ scripts/ci/verify-offline.sh
 
 发送 CREATE 前先保存 Unknown 状态。响应异常时不重发 CREATE，恢复使用新管理连接，核对精确类型及关系后先删用户、确认消失，再删表空间。DROP 响应不确定时另开连接查证，不无界重试。`cleaned` 表示两个精确对象已确认不存在；`cleanup_required` 表示目录、所有权或删除结果仍不确定，必须停止后续数据库测试，由管理员依据该记录逐项调查。不能按名称前缀批量删除，也不能用事务回滚替代对象检查。故障注入模拟真实 CREATE 成功与客户端确认之间的窗口，不代表端到端网络失 ACK 复现。
 
-### 独立聚集主键 profile（019 准备，实库验收尚阻断）
+### 独立聚集主键 profile
 
 ```bash
 scripts/local-test/run.sh test profile --profile pk-cluster-1 --configuration Debug
@@ -131,7 +131,8 @@ TRX 分别为 `profile-pk-cluster-1.trx` / `profile-pk-cluster-1-w.trx`。
 非 profile 子进程清除 `DAMENG_TEST_PROFILE`；functional、specification、admin、probes、
 offline-fixtures 及普通 all 排除此组，all 不包含 profile。
 
-目前只实现路由、自检及只读环境前置核对，profile 只读方法会在标记、连接或参数不符合时失败，
-不会跳过或发送 DDL。它单独通过也不代表 LOB 主键合同已验证。当前 local 实例经本次授权新建的
-普通账户确认 `PK_WITH_CLUSTER=0`；019 的 LOB 对照、CONFIRMED/REFUTED 分支及双驱动 PK=1
-往返尚待独立环境，019/M6 保持 BLOCKED。证据见 `plans/evidence/019.md`。
+profile测试逐项核对显式标记、连接覆盖及PK_WITH_CLUSTER=1，再执行LOB数据/索引矩阵。
+最初local参数为0的环境阻断保留在证据中；后续独立PK=1实例已完成官方/W各29项，
+普通PK=0对照各27项。所测DM8.1.5.60服务器使CLOB/NCLOB/BLOB表的主键后备索引保持NORMAL，
+提供程序未改变原SQL/显式注解；只读参数方法不能单独代替完整矩阵。profile不属于all，
+TLS及其他版本不据此获支持。实际SHA、TRX、特征与精确清理见 `plans/evidence/019.md`。

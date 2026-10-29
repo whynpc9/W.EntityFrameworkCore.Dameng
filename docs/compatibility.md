@@ -314,3 +314,15 @@ I02/I06 均已通过公开 EF 最终化路径证实缺口并补充模型拒绝�
 未选择 CONFIRMED/REFUTED，未声称 PK=1 已支持；019、020 与 M6 的最终验收仍 BLOCKED。
 普通 all 不包含 probes 或 profile；最终双驱动 all 尚未作为 M6 验收执行。
 M2 的官方七位参数已知驱动风险及原接受边界保留。详见 [019 执行记录](../plans/evidence/019.md)。
+
+### M6 独立 profile 恢复验证
+
+019 的原环境阻断已由用户提供的独立实例解除。DM自报8.1.5.60，普通PK=0/32768字节页与
+独立PK=1/8192字节页，COMPATIBLE_MODE=0、LENGTH_IN_CHAR=0；两驱动均以所记明文profile验证。
+在这两个profile上，无界string/byte[]和显式CLOB/NCLOB/BLOB的原SQL均成功，主键后备索引NORMAL；
+即使显式CLUSTER，服务器也保留NORMAL。有界列对照在PK=1下确为CLUSTER。
+这属于已测服务器的安全处理，019按REFUTED闭合，没有新增LOB主键推导或改写显式注解。
+完整模型、迁移、手工建表、共享表、加主键及NULL/非空/更新/重复键对照，普通各27、独立各29
+在官方/W分别通过。其他服务器版本、LOB别名、JSON/BFILE及已有表存储改造仍不外推；
+model-less AddPrimaryKey继续保留原合同，应用需明确聚集选择并核对目标目录。
+具体指纹、TRX与资源清理见[019](../plans/evidence/019.md)。最终M6集成和020收口另记。

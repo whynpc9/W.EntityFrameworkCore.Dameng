@@ -7,8 +7,9 @@ using Xunit;
 
 namespace W.EntityFrameworkCore.Dameng.Tests;
 
-// Preliminary characterization only: a clustered-default server is required to
-// select CONFIRMED/REFUTED. These tests intentionally retain the existing SQL.
+// REFUTED on the recorded DM 8.1.5.60 profiles: the server keeps LOB backing
+// indexes nonclustered. These tests fix the unchanged client contract; real data
+// and catalog protection are verified in the two functional suites.
 [Trait("Category", "LobPrimaryKey")]
 public sealed class DamengLobPrimaryKeyTests
 {
@@ -18,7 +19,7 @@ public sealed class DamengLobPrimaryKeyTests
     [InlineData("CLOB", false, "CLOB")]
     [InlineData("NCLOB", false, "NCLOB")]
     [InlineData("BLOB", true, "BLOB")]
-    public void HandwrittenLobModelBaselineDefersClusteringToServer(string? storeType, bool binary, string expected)
+    public void HandwrittenLobModelRetainsVerifiedExistingProtection(string? storeType, bool binary, string expected)
     {
         using var context = Create(storeType, binary);
         var model = context.GetService<IDesignTimeModel>().Model;
@@ -32,7 +33,6 @@ public sealed class DamengLobPrimaryKeyTests
         var generated = context.GetService<IMigrationsSqlGenerator>().Generate(operations, model);
         Assert.All(generated, command => Assert.True(command.TransactionSuppressed));
         Assert.DoesNotContain("CLUSTER PRIMARY KEY", string.Concat(generated.Select(c => c.CommandText)), StringComparison.Ordinal);
-        Assert.Empty(context.GetService<IMigrationsModelDiffer>().GetDifferences(model.GetRelationalModel(), model.GetRelationalModel()));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class DamengLobPrimaryKeyTests
     [InlineData("CLOB", false)]
     [InlineData("NCLOB", false)]
     [InlineData("BLOB", true)]
-    public void ManualCreateTableBaselineDefersClusteringToServer(string storeType, bool binary)
+    public void CreateTableOperationRetainsVerifiedExistingProtection(string storeType, bool binary)
     {
         using var context = Create(storeType, binary);
         var table = new CreateTableOperation { Name = "T", PrimaryKey = new AddPrimaryKeyOperation { Name = "PK_T", Table = "T", Columns = ["Id"] } };
@@ -74,25 +74,98 @@ public sealed class DamengLobPrimaryKeyTests
         Assert.DoesNotContain("CLUSTER PRIMARY KEY", string.Concat(commands.Select(c => c.CommandText)), StringComparison.Ordinal);
     }
 
-    private static LobContext Create(string? storeType, bool binary, bool? clustered = null)
+    [Theory]
+    [InlineData("CLOB", false)]
+    [InlineData("NCLOB", false)]
+    [InlineData("BLOB", true)]
+    public void ExplicitClusteredLobOperationRetainsVerifiedExistingBehavior(string storeType, bool binary)
+    {
+        using var context = Create(storeType, binary, true);
+        var model = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(true, Assert.Single(model.GetRelationalModel().Tables).PrimaryKey!["Dameng:IsClustered"]);
+        var sql = context.Database.GenerateCreateScript();
+        Assert.Contains(" CLUSTER PRIMARY KEY", sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOT CLUSTER", sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("CLOB", false)]
+    [InlineData("NCLOB", false)]
+    [InlineData("BLOB", true)]
+    public void SharedTableLobColumnRetainsVerifiedExistingProtection(string storeType, bool binary)
+    {
+        using var context = Create(storeType, binary, shared: true);
+        var table = Assert.Single(context.GetService<IDesignTimeModel>().Model.GetRelationalModel().Tables);
+        var payload = table.FindColumn("Payload")!;
+        Assert.Equal(storeType, payload.StoreType);
+        Assert.Equal(typeof(Part), Assert.Single(payload.PropertyMappings).Property.DeclaringType.ClrType);
+        Assert.Equal(2, table.EntityTypeMappings.Count());
+        Assert.Null(table.PrimaryKey!["Dameng:IsClustered"]);
+        Assert.DoesNotContain("CLUSTER PRIMARY KEY", context.Database.GenerateCreateScript(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("CLOB", false)]
+    [InlineData("NCLOB", false)]
+    [InlineData("BLOB", true)]
+    public void AddPrimaryKeyRetainsVerifiedExistingProtection(string storeType, bool binary)
+    {
+        using var context = Create(storeType, binary);
+        var model = context.GetService<IDesignTimeModel>().Model;
+        Assert.Equal(storeType, Assert.Single(model.GetRelationalModel().Tables).FindColumn("Payload")!.StoreType);
+        var commands = context.GetService<IMigrationsSqlGenerator>().Generate([
+            new AddPrimaryKeyOperation { Table = "T", Name = "PK_T", Columns = ["Id"] }], model);
+        Assert.All(commands, command => Assert.True(command.TransactionSuppressed));
+        Assert.DoesNotContain("CLUSTER PRIMARY KEY", string.Concat(commands.Select(c => c.CommandText)), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("CLOB", false)]
+    [InlineData("NCLOB", false)]
+    [InlineData("BLOB", true)]
+    public void ExistingLobPrimaryKeyBehaviorProducesStableMigrationDiff(string storeType, bool binary)
+    {
+        using var first = Create(storeType, binary);
+        using var second = Create(storeType, binary);
+        var source = first.GetService<IDesignTimeModel>().Model.GetRelationalModel();
+        var target = second.GetService<IDesignTimeModel>().Model.GetRelationalModel();
+        Assert.NotSame(source, target);
+        Assert.Empty(second.GetService<IMigrationsModelDiffer>().GetDifferences(source, target));
+        Assert.Equal(first.Database.GenerateCreateScript(), second.Database.GenerateCreateScript());
+    }
+
+    private static LobContext Create(string? storeType, bool binary, bool? clustered = null, bool shared = false)
         => new(new DbContextOptionsBuilder<LobContext>().UseDameng("Server=synthetic.invalid")
-            .ReplaceService<IModelCacheKeyFactory, CacheKey>().Options, storeType, binary, clustered);
+            .ReplaceService<IModelCacheKeyFactory, CacheKey>().EnableServiceProviderCaching(false).Options, storeType, binary, clustered, shared);
 
     private sealed class CacheKey : IModelCacheKeyFactory
     {
         public object Create(DbContext context, bool designTime)
         {
             var lob = (LobContext)context;
-            return (context.GetType(), lob.StoreType, lob.Binary, lob.Clustered, designTime);
+            return (context.GetType(), lob.StoreType, lob.Binary, lob.Clustered, lob.Shared, designTime);
         }
     }
-    private sealed class LobContext(DbContextOptions<LobContext> options, string? storeType, bool binary, bool? clustered) : DbContext(options)
+    private sealed class LobContext(DbContextOptions<LobContext> options, string? storeType, bool binary, bool? clustered, bool shared) : DbContext(options)
     {
         public string? StoreType => storeType;
         public bool Binary => binary;
         public bool? Clustered => clustered;
+        public bool Shared => shared;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            if (shared)
+            {
+                var owner = modelBuilder.Entity<Owner>(); owner.ToTable("T");
+                owner.Property(e => e.Id).ValueGeneratedNever(); owner.HasKey(e => e.Id);
+                var part = modelBuilder.Entity<Part>(); part.ToTable("T");
+                part.Property(e => e.Id).ValueGeneratedNever(); part.HasKey(e => e.Id);
+                owner.HasOne(e => e.Part).WithOne().HasForeignKey<Part>(e => e.Id);
+                owner.Navigation(e => e.Part).IsRequired();
+                if (binary) { part.Ignore(e => e.Text); part.Property(e => e.Bytes).HasColumnName("Payload").HasColumnType(storeType!); }
+                else { part.Ignore(e => e.Bytes); part.Property(e => e.Text).HasColumnName("Payload").HasColumnType(storeType!); }
+                return;
+            }
             modelBuilder.Entity("Lob", entity =>
             {
                 entity.ToTable("T");
@@ -104,4 +177,6 @@ public sealed class DamengLobPrimaryKeyTests
             });
         }
     }
+    private sealed class Owner { public int Id { get; set; } public Part? Part { get; set; } }
+    private sealed class Part { public int Id { get; set; } public string? Text { get; set; } public byte[]? Bytes { get; set; } }
 }
