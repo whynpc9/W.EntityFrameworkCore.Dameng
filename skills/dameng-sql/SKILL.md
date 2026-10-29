@@ -80,6 +80,7 @@ SELECT id, name FROM orders;         -- 会去找 ORDERS / ID / NAME，失败
 达梦里登录用户通常对应同名默认模式。对象写 `模式.对象`。切换当前模式用 `SET SCHEMA`，不是 MySQL 的 `USE db`。
 
 本提供程序和常见应用都连接到**已存在的库和用户**，不负责 `CREATE DATABASE`。
+下面的表空间和用户创建是管理员操作，不是应用启动过程：
 
 ```sql
 CREATE TABLESPACE app_data
@@ -90,10 +91,14 @@ CREATE TABLESPACE app_data
 CREATE USER app_user IDENTIFIED BY "********"
   DEFAULT TABLESPACE app_data;
 
-GRANT DBA TO app_user;
+GRANT RESOURCE TO app_user;
 
 SET SCHEMA app_user;
 ```
+
+`RESOURCE` 只对应已验证的脚本执行路径。`Database.Migrate()` 还需要查询历史目录的权限；
+在参考实例上是 `SOI`，并需要可调用 `DBMS_LOCK`。按实际操作核对[迁移权限矩阵](../../docs/migrations.md#先选路径)，
+不要为了运行迁移授予 `DBA`。
 
 数据文件最小尺寸由页大小决定：4 KB 页 → 16 MB；8 KB → 32 MB；16 KB → 64 MB；32 KB → 128 MB。页大小在初始化时确定，之后不能改。
 

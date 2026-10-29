@@ -2,7 +2,7 @@
 
 面向应用开发者和执行变更的 DBA。代理执行细节在
 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。能力边界以
-[兼容性矩阵](compatibility.md) 为准。
+[兼容性矩阵](compatibility.md) 为准，脚手架的对象与目录保真范围见[反向工程](reverse-engineering.md)。
 
 进程内的 `IMigrator.GenerateScript()`、`Database.Migrate()` 与命令行 `dotnet ef`
 （`migrations add` / `migrations script` / `database update` / `dbcontext scaffold`）
@@ -71,7 +71,7 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 `migrations add` 和 `migrations script` 会构造上下文，但生成脚本本身不连接数据库。
 `database update` 和 `migrations list` 会连接数据库。
 
-## 使用 W.DamengProvider 驱动（开发候选）
+## 使用 W.DamengProvider 驱动（预览版）
 
 启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
 （W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：
@@ -81,10 +81,13 @@ dotnet ef dbcontext scaffold "Name=ConnectionStrings:Dameng" W.EntityFrameworkCo
   --project App.Data --startup-project App
 ```
 
+已发布的 `0.4.0-preview.1` 扩展包依赖 W `0.2.0`；当前源码使用 W `0.3.1`，但尚未发布新的扩展包。
+以下行为在两种已验证依赖上保持一致：
+
 - 两种驱动生成相同的迁移 SQL，可以对同一数据库、同一历史表交替执行；切换驱动不会产生新的模型差异。
 - `migrationBuilder.ActiveProvider` 在 W 下为 `W.EntityFrameworkCore.Dameng.WDriver`。已有迁移若只比较
   `"W.EntityFrameworkCore.Dameng"`，切换后会走另一分支；执行前审阅这类迁移，显式接受两个名称。
-- W 0.2.0 在本地事务内只放行由 DML 组成的匿名 `BEGIN … END;` 块；含 `DECLARE`、控制流、过程调用或事务控制的块
+- W 在本地事务内只放行由 DML 组成的匿名 `BEGIN … END;` 块；含 `DECLARE`、控制流、过程调用或事务控制的块
   仍被拒绝。迁移中提供程序生成的块已抑制事务；自定义 `migrationBuilder.Sql(...)` 中的这类块需写
   `suppressTransaction: true`。
 - 时间列默认七位（`TIMESTAMP(7)`、`DATETIME(7) WITH TIME ZONE`）。六位→七位是保值的独立变更；七位→六位前必须先检查，

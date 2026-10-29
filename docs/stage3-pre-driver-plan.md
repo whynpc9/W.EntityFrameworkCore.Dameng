@@ -1,5 +1,7 @@
 # 阶段 3：双驱动接入前的写入与迁移增量
 
+> 状态：已交付。本文件保留当时的实施范围和分工，属于历史计划；执行结果见[独立验收记录](stage3-pre-driver-validation.md)，当前能力以[兼容性矩阵](compatibility.md)为准。
+
 ## 范围与分工
 
 依据 issue #1 阶段 3，基线为 `9d19399`。本轮只实现删除 IDENTITY，并补齐已有 DML + SELECT 生成值回读的契约和真实库证据。双驱动接入、RETURNING、输出参数、多行 VALUES、数组绑定、DbBatch、BulkCopy 不在本轮范围；保留依赖与锁文件。

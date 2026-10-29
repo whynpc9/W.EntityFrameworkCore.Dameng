@@ -1,7 +1,7 @@
 # 查询函数与边界
 
-本文描述查询扩展工作树中的能力，发布状态和真实库证据分别见版本说明与
-[兼容性矩阵](compatibility.md)。[实施台账](query-translation-execution.md)记录本轮验收。
+本文描述当前源码的查询翻译能力与边界。证据层级和真实库范围见
+[兼容性矩阵](compatibility.md)；历史实施与验收记录见[文档索引](README.md)。
 
 ## 字符串
 
@@ -28,7 +28,7 @@ NCLOB 空值回退在 SQL 中保持 LOB 类型，避免回退空串将长表达�
 
 `Exp`、`Log`、二参数 `Log`、`Log10`、`Pow`、`Sqrt` 支持 double 重载。
 它们适用于数据库函数的正常定义域；域外和溢出可能抛数据库错误，不能依赖 CLR 的
-NaN/Infinity 行为。`Round`、三角函数、MathF 和未列出的重载不在本批支持范围。
+NaN/Infinity 行为。`Round`、三角函数、MathF 和未列出的重载不在当前支持范围。
 
 ## 日期分桶
 
@@ -48,13 +48,13 @@ var hourly = context.Events
 | `DamengQuarter` | 1–4 的季度数 |
 
 这些 EF.Functions 扩展仅在服务器查询中使用，直接调用会抛异常。
-本批没有秒截断或 DateTimeOffset 分桶函数。按时间范围筛选时，优先使用
+当前没有秒截断或 DateTimeOffset 分桶函数。按时间范围筛选时，优先使用
 `value >= start && value < end`，避免对索引列施加函数；不自动改写调用方的任意谓词。
 
 DateTimeOffset 列可以读取 `Year`、`Month`、`Day`、`Hour`、`Minute`、`Second`，
 部件来自保存的原偏移对应的本地日期。同一瞬间的两个不同偏移值可能得到不同年月日。
 `Offset`、`UtcDateTime`、`DateTime`、`Now`、`UtcNow` 和 Add* 仍不翻译；
-本批不增加 100ns 精度或时间转换保证。
+当前不增加 100ns 精度或时间转换保证。
 
 ## 字符串分组聚合
 
@@ -86,5 +86,5 @@ SQL 使用 LISTAGG；过长结果报数据库错误，不会截短。Join 为保
 多个集合、分页和 0–2000 元素样本。没有加入未经证实的 500/999 限制，也不会
 悄悄拆成多次查询。2,000 是测试规模，不是最大支持容量或性能保证。
 
-本轮 JSON 标量读取试验未通过无损门槛，未发布相应 API。小数 DateTime.Add*
+JSON 标量读取未满足无损门槛，当前没有相应查询 API。小数 DateTime.Add*
 也继续拒绝。具体原因见兼容性矩阵，不能通过切到客户端计算来宣称服务器翻译已支持。

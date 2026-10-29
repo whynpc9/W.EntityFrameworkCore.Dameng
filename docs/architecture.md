@@ -46,9 +46,9 @@ BLOB/CLOB/BINARY/VARBINARY/INTERVAL 参数类型、把时间映射的小数秒�
 
 | 层 | 当前职责与边界 |
 | --- | --- |
-| 公共配置 | 六个 `UseDameng(...)` 重载，以及用于命令超时、迁移程序集、连接所有权和有界重试的 `DamengDbContextOptionsBuilder` |
+| 公共配置 | 官方与 W 各有六个 `UseDameng...` 重载，以及用于命令超时、迁移程序集、连接所有权和有界重试的 `DamengDbContextOptionsBuilder`；W 明确拒绝内建重试 |
 | 选项与依赖注入 | 提供程序标识、选项缓存、关系数据库服务注册 |
-| 连接 | 根据 EF 连接状态创建 `DmConnection`，或使用调用方提供的 `DbConnection` |
+| 连接 | 经 `DamengDriver` 创建或识别对应驱动的 `DbConnection`，并使用 EF 连接状态管理生命周期 |
 | SQL 基础组件 | 对每个组成部分使用双引号引用标识符、`:name` 参数和达梦语句终止符 |
 | 类型映射 | 常见数值/文本/二进制/时态类型、Unicode 和 LOB 边界、`DateTimeOffset`、基于 INTERVAL 的 `TimeSpan` 以及 `JsonElement` |
 | 模型约定 | 标识符最大长度，以及达梦标识列/序列注解、约定和设计时注解生成 |
@@ -56,7 +56,7 @@ BLOB/CLOB/BINARY/VARBINARY/INTERVAL 参数类型、把时间映射的小数秒�
 | 更新 | 单命令修改批次、标识列/序列值回读、已验证的受影响行协议、并发、`ExecuteUpdate` 和 `ExecuteDelete` |
 | 迁移 | 已测试的达梦 DDL 子集、对 DDL 禁用事务、种子数据、幂等脚本、历史记录仓储及 `DBMS_LOCK` 迁移锁 |
 | 数据库生命周期 | 连接/表存在性和模式对象管理；不支持创建/删除物理数据库 |
-| 设计时 | 用于迁移的提供程序/注解代码生成；当前模式的反向工程（表、视图、列、默认值、注释、约束、索引、外键与两种自增模型）及 dotnet ef 命令行端到端 |
+| 设计时 | 用于迁移的提供程序/注解代码生成；当前模式的[反向工程](reverse-engineering.md)及 dotnet ef 命令行端到端 |
 
 EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 EF Core Relational
 约束为 `>= 10.0.12 && < 11.0.0`，并锁定解析后的依赖项。成功编译是必要条件，
@@ -86,10 +86,14 @@ EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 
 达梦 DDL 会隐式提交。因此，生成的 DDL 迁移命令会禁用 EF 事务，且包含 DDL 的整个
 迁移不具备原子性。清理测试会显式删除精确对象，绝不依赖回滚。
 
-DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前驱动程序的基础能力标志不支持，
-保存点仍可在该服务器上工作。隔离级别方面，已验证 `ReadCommitted` 可用于跟踪式
-`SaveChanges`；`Serializable` 可用于查询和 `ExecuteUpdate`，但不能用于跟踪式
-`SaveChanges`。`RepeatableRead` 和 `Snapshot` 会在开始事务时被拒绝。
+DML 事务回滚和保存点回滚已在参考服务器上验证。官方驱动虽然把基础保存点能力标志报告为不支持，
+保存点仍可在该服务器上工作；W 的保存点行为按其服务器能力合同验证，不能套用官方驱动的能力标志。
+
+两种驱动都已验证 `ReadCommitted` 下的跟踪式 `SaveChanges`，并都会在开始事务时拒绝
+`RepeatableRead` 和 `Snapshot`。官方驱动可以开始 `ReadUncommitted` / `Serializable` 事务并执行查询，
+`Serializable` 下的 `ExecuteUpdate` 也已验证，但这两种隔离级别下的跟踪式 `SaveChanges` 会失败。
+W 仅在自报 `8.1.5.60`、UTF-8、明文的已验 profile 上验证了这两种隔离级别下的跟踪保存成功；
+其他 profile 未验证，详见[兼容性矩阵](compatibility.md)。
 
 迁移历史记录及 `DBMS_LOCK` 的获取/释放均有真实服务器测试。该锁是提供程序级的保守基线，
 要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。历史表存在性查询 `SYS.SYSOBJECTS`。
@@ -100,15 +104,14 @@ DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前�
 使用已转义的动态 SQL，并以 DIsql `/` 终止块；执行前要去掉 `/`，并把每个 `BEGIN ... END;` 作为一条命令
 （块可以嵌套：历史记录守卫内的 `EnsureSchema` 守卫块是一个整体命令）。它们不会使达梦 DDL 具备事务性。
 给人看的 `dotnet ef` 步骤见 [迁移操作说明](migrations.md)；代理执行细节见 [迁移执行 skill](../skills/dameng-ef-migrations/SKILL.md)。
-反向工程覆盖当前模式的表、视图、列、默认值、虚拟计算列、注释、约束、索引与外键，见[兼容性矩阵](compatibility.md)。
+反向工程覆盖当前模式的表、视图、列、默认值、虚拟计算列、注释、约束、索引与外键，详见[反向工程](reverse-engineering.md)。
 
 ## ADO.NET 边界
 
 `DM.DmProvider` 当前提供 `net9.0` 资产，可在已测试的 .NET 10 进程中运行。
 这是观察到的兼容性，而非原生 .NET 10 驱动程序保证。
 
-官方驱动未公开提供程序专用的 `DbBatch`；W 0.2.0 的 `DbBatch` 逐条执行命令，往返次数与单条执行相同。
-因此两种驱动的修改命令都使用 EF 单命令批次。
+两种驱动的修改命令都使用 EF 单命令批次，不据此声明底层驱动具有减少往返的专用批处理能力。
 官方驱动在已测试资产中的异步 ADO.NET 方法会回退到同步实现，非阻塞 I/O 和取消能力受限；
 W 驱动的异步路径为真实网络异步，取消/期限与失败结果由驱动的 `FailureInfo` 描述，提供程序不在其上增加重试。
 

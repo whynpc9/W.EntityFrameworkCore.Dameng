@@ -5,41 +5,27 @@
 `W.EntityFrameworkCore.Dameng.WDriver`（预览版）让同一提供程序运行在
 [`W.DamengProvider`](https://github.com/whynpc9/W.DamengProvider) 驱动上，见下文“使用 W.DamengProvider 驱动”。
 
-当前预览版基线面向：
+当前基线面向：
 
 - .NET 10 和 Entity Framework Core 10.0.x；
-- 达梦 DM8；各轮实例版本记录见兼容性矩阵，不声明最低服务器版本；
+- 达梦 DM8；已验证实例与证据边界见兼容性矩阵，不声明最低服务器版本；
 - `DM.DmProvider` 8.3.1.47463，使用该包随附的 `net9.0` 资产；
 - 现有数据库和用户模式。本提供程序有意不负责创建或删除物理数据库。
 
-真实数据库回归测试覆盖常规查询和 CRUD、标识列和序列生成的键、乐观并发、
-事务、保存点、已验证的隔离级别边界、`ExecuteUpdate` / `ExecuteDelete`、常见业务数据结构、
-迁移脚本的生成与执行、迁移历史记录/锁、Unicode/CJK，以及
-[兼容性矩阵](docs/compatibility.md)中列出的扩展映射。
-2026-09-17 的参考记录是 44 项功能测试，服务器版本记为 8.1.5.60。2026-09-22 在自报为
-`DM Database Server 64 V8`（`DB Version: 0x7000d`，构建号 `03134284604-20260707-335949-20228`）
-的实例上通过了全部 48 项功能测试和全部 4 项冒烟测试。这次实例没有返回 8.1.5.60。
+基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 已公开发布，公共包及 NuGet 签名均已验证，
+详见 [0.4.0 发布记录](docs/release-0.4.0.md)。当前源码的 W 依赖已升级为 `0.3.1`，
+但尚未发布新的扩展包；已发布扩展包仍依赖 W `0.2.0`。升级后的 W 全通道回归与基础单元结果见
+[W 接入验证记录](docs/w-dmprovider-validation.md#升级到-wdamengprovider-0312026-10-29)。
 
-2026-09-29 的查询扩展工作树经 PR 审查修订后，在独立测试空间完成 261 项单元、72 项普通功能、
-4 项规范冒烟和 4 项管理员迁移脚本测试，全部通过且无跳过。17 项候选能力探针的前轮结果单独记录。
-交付范围与延期项目见[实施台账](docs/query-translation-execution.md)，这不是新版本发布声明。
+真实数据库回归覆盖常规查询和 CRUD、键生成与回读、乐观并发、事务、迁移、Unicode/CJK、
+反向工程及[兼容性矩阵](docs/compatibility.md)列出的扩展映射。各能力的驱动、服务器和证据边界
+以该矩阵为准。
 
-2026-10-03 合并的设计时工作（PR #3，随 0.3.0 发布）补充了当前模式反向工程、注释迁移、
-模式存在性守卫与非 Unicode 字符长度语义。2026-10-04 的发布候选验收完成 682 项单元、
-232 项普通功能（含 `dotnet ef` 命令行端到端）、4 项规范冒烟和 7 项管理员迁移脚本测试，
-全部通过且无跳过。实例参数与证据路径见[兼容性矩阵](docs/compatibility.md)和
-[0.3.0 发布准备](docs/release-0.3.0.md)。
+本提供程序不声明完整的 EF Core 兼容性：
 
-基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 已公开发布，公共包及 NuGet 签名均已验证。
-版本配对、升级变化和本轮验收见 [0.4.0 发布记录](docs/release-0.4.0.md)。发布状态以该记录为准。
-
-这并不是一个完整的 EF Core 提供程序：
-
-- 反向工程（`dotnet ef dbcontext scaffold`）覆盖当前模式的表、视图、列、默认值、注释、
-  主键、唯一约束、索引、外键与非键虚拟计算列；显式表筛选必须全部命中，可空主体
-  候选键关系明确拒绝。跨模式对象与视图注释不在范围内，精确边界见
-  [兼容性矩阵](docs/compatibility.md)；
-- 规范测试项目是使用 EF 测试工具构建的小型自有冒烟测试切片；它不继承上游 EF
+- 反向工程只覆盖当前模式中可完整保留的对象和分面；跨模式对象、视图注释及无法保真的结构
+  不在支持范围内，详见[反向工程](docs/reverse-engineering.md)；
+- 规范测试项目是使用 EF 测试工具构建的四项自有冒烟测试切片；它不继承上游 EF
   关系数据库测试套件，也不构成一致性声明。
 
 ## 使用方式
@@ -130,8 +116,8 @@ scripts/local-test/run.sh test all
 - 无界 `string` 和 `byte[]` 属性分别映射为 `NCLOB` 和 `BLOB`。
   键、索引、排序/分组以及其他需要普通可比较行内值的操作必须配置有限最大长度。
   实际可用的行内值和索引长度还取决于数据库页面及行存储配置。
-- 官方驱动没有提供程序专用的 `DbBatch`；W 0.2.0 的 `DbBatch` 按命令逐条往返，不减少往返次数。
-  因此 EF 修改命令在两种驱动下都有意以单命令批次执行。
+- 两种驱动下的 EF 修改命令都有意使用单命令批次；不要据此推断底层驱动具备减少往返的
+  提供程序专用批处理能力。
 - 官方驱动在已测试资产中的异步 ADO.NET 方法回退到同步实现，因此 EF 异步 API
   并不意味着非阻塞网络 I/O 或及时取消。W 驱动的打开/执行/读取/事务异步路径已在实库验证为非阻塞，
   发送后取消会关闭会话；LOB 同步 getter 仍可能发起同步 I/O。
@@ -171,12 +157,12 @@ npx skills add -g whynpc9/dameng-entityframework-core --skill dameng-sql -y
 
 另请参阅：
 
-- [用 dotnet ef 执行达梦迁移](docs/migrations.md)
+- [文档索引](docs/README.md)
 - [兼容性与验证](docs/compatibility.md)
-- [查询翻译后续扩展计划](docs/query-translation-extension-plan.md)
+- [用 dotnet ef 执行达梦迁移](docs/migrations.md)
+- [反向工程](docs/reverse-engineering.md)
 - [查询函数与边界](docs/query-functions.md)
-- [查询翻译实施台账](docs/query-translation-execution.md)
-- [本地达梦测试环境](scripts/local-test/README.md)
 - [提供程序架构](docs/architecture.md)
+- [本地达梦测试环境](scripts/local-test/README.md)
 - [第三方声明](THIRD-PARTY-NOTICES.md)
 - [达梦 SQL Skill](skills/dameng-sql/SKILL.md)

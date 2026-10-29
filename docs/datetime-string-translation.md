@@ -45,7 +45,7 @@ query.GroupBy(x => x.Timestamp.ToString())
 
 显式格式仅支持上表中的**常量格式字符串**，按服务器公历和数字字段格式化，不读取客户端文化或日历设置。
 格式参数、来自列的动态格式、其他自定义/标准格式、`IFormatProvider` 重载以及
-`DateTimeOffset`、`DateOnly`、`TimeOnly` 的 ToString 不在本轮支持范围内。
+`DateTimeOffset`、`DateOnly`、`TimeOnly` 的 ToString 不在当前支持范围内。
 日期转换不为引用类型接收者（例如 object、ValueType、接口）的 object.ToString 提供服务器翻译，
 包含装箱、object 类型条件表达式、空值合并等形式；特别是 nullable 装箱后为 null 时，
 CLR 的 object.ToString 调用会抛异常，不能被当成 Nullable<DateTime>.ToString 的空串回退。
@@ -87,49 +87,5 @@ scripts/local-test/run.sh test functional --filter FullyQualifiedName~DamengDate
 scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTimeStringCapabilityProbe
 ```
 
-探针执行通过只表明测量已完成，不代表所有候选都支持。最终验收结果另行记录。
-
-## 验证过程中的失败与修复
-
-在同步主分支前的完整回归中，单元 721/721、功能 285/287、规范冒烟 4/4、管理员脚本 7/7。
-功能失败包括一项既有字符串聚合连接超时（6001），以及新增数值聚合夹具越过内部服务容器缓存
-数量阈值后引发的 LOB 用例 ManyServiceProvidersCreatedWarning。新增夹具现关闭内部服务容器缓存，
-没有在产品中关闭警告。连接超时另行聚焦复测，不据失败所在套件归因于日期字符串翻译。
-原始失败保留在本地 `artifacts/query-translation/local-test/20261007T203612304Z-a005ccf0/functional.trx`；
-该轮全套回归没有被视为通过。最终主分支基线上的结果另行记录。
-
-## 后续验收记录
-
-提交 c9f7df0 在服务缓存隔离修复后完成统一 test all：单元 736/736、真实库功能 291/291、
-规范冒烟 4/4、管理员脚本 7/7，全部宿主 Completed，失败和跳过均为 0。
-本地证据目录为 `artifacts/query-translation/local-test/20261007T211254437Z-e508db79/`。
-
-随后审查发现装箱 nullable DateTime 调用的语义边界，已在 SQL 表达式访问器中提前拒绝
-Convert、ConvertChecked、TypeAs 到 object 的日期调用，直接 nullable 调用保持空串回退。
-该修复的全单元 737/737、日期真实库 9/9 和完整格式验证通过；新提交的完整验收另外执行，
-不能沿用 c9f7df0 的完整状态。
-
-提交 8803805 的统一 test all 完成：单元 737/737、真实库功能 292/292、规范冒烟 4/4、
-管理员脚本 7/7，全部 Completed、无失败或跳过；证据目录为
-`artifacts/query-translation/local-test/20261007T214005130Z-a33697fc/`。
-
-第二轮审查进一步发现 object 类型条件表达式和空值合并可隐藏装箱。守卫现改为原始接收者类型
-白名单，只允许 DateTime / DateTime? 进入 object.ToString 的服务器日期转换路径。
-条件表达式、同列/两个独立查询源的 Coalesce 已补齐回归，直接 nullable 条件调用仍可执行。
-修复版全单元 738/738、日期真实库 10/10、两源补强的聚焦回归及完整格式验证通过。
-最新提交的完整验收独立执行，不继承 8803805 的完整检查状态。
-
-第三轮审查提出两个不同事项：客户端文化复现与已选定的服务器文本契约不一致，
-因此补充 AGENTS.md 的明确映射约定及 en-US/zh-CN/tr-TR 下的投影、谓词、分组回归，
-不撤回无参数转换；该真实库文化回归通过。枚举调用被日期守卫误拒绝则属于真实回归，
-守卫已收窄到引用类型接收者，既有枚举/可空枚举的方法翻译仍由原关系翻译器处理。
-默认整数与字符串转换器的枚举谓词已真实执行验证；枚举 ToString 生成 NCLOB 后的分组
-仍保留原来的 LOB 拒绝边界。修复版全单元 739/739、日期/文化/枚举真实库聚焦 12/12，
-完整格式验证通过。
-
-提交 d66b0ff 的全量功能宿主在既有序列反向工程用例的驱动 ExecuteNonQuery 中异常等待数小时。
-对该运行发出取消后，功能 TRX 未完成，验收失败；单元 738/738、规范 4/4、管理员脚本 7/7
-仍各自完成，不将这些结果合并为全套通过。原始目录为
-`artifacts/query-translation/local-test/20261007T220946102Z-f3759c8e/`。
-同一序列用例在独立宿主重新执行 1/1 通过（约 0.6 秒），专用空间检查无遗留表、序列或回收站对象。
-未将该驱动等待归因于日期转换；新提交的完整验收独立执行。
+探针执行通过只表明测量已完成，不代表所有候选都支持，也不计入功能验收。
+该翻译随 `0.4.0` 发布的完整验收见[发布记录](release-0.4.0.md)。
