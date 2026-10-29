@@ -30,6 +30,80 @@ public sealed class DamengMigrationScriptFunctionalTests
         _output = output;
     }
 
+    [DamengTheory]
+    [Trait("Plan", "014")]
+    [InlineData("TABLESPACE")]
+    [InlineData("USER")]
+    public async Task CreateResponseFailureReconcilesExactOwnedObjects(string kind)
+    {
+        var database = new DamengScriptTestDatabase
+        {
+            AfterCreate = created => { if (created == kind) throw new InvalidOperationException("synthetic-create-response-failure"); }
+        };
+        try
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(database.InitializeAsync);
+            Assert.Contains("synthetic-create-response-failure", failure.Message);
+            Assert.NotNull(database.Recovery);
+            Assert.Equal("cleaned", database.Recovery.Status);
+            Assert.All(database.CreateCounts.Values, value => Assert.Equal(1, value));
+            await database.VerifyAbsentAsync();
+        }
+        finally { await database.DisposeAsync(); await database.VerifyAbsentAsync(); }
+    }
+
+    [DamengFact]
+    [Trait("Plan", "014")]
+    public async Task RecoveryPreservesUnrelatedObjects()
+    {
+        var control = new DamengScriptTestDatabase();
+        var failed = new DamengScriptTestDatabase { AfterCreate = _ => throw new InvalidOperationException("synthetic-response") };
+        try
+        {
+            await control.InitializeAsync();
+            await Assert.ThrowsAsync<InvalidOperationException>(failed.InitializeAsync);
+            await failed.VerifyAbsentAsync();
+            await using var connection = await control.OpenAsync();
+            await ExecuteAsync(connection, "CREATE TABLE CONTROL_ROW(ID INT)");
+            await ExecuteAsync(connection, "INSERT INTO CONTROL_ROW VALUES(1)");
+            await using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM CONTROL_ROW";
+            Assert.Equal(1, Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture));
+        }
+        finally
+        {
+            await DamengAdminDdlRecoveryState.CleanupIndependentAsync(
+                async () => { await failed.DisposeAsync(); await failed.VerifyAbsentAsync(); },
+                async () => { await control.DisposeAsync(); await control.VerifyAbsentAsync(); });
+        }
+    }
+
+    [DamengFact]
+    [Trait("Plan", "014")]
+    public async Task RecoveryFailureRetainsPrivateJournal()
+    {
+        var database = new DamengScriptTestDatabase
+        {
+            AfterCreate = _ => throw new InvalidOperationException("synthetic-create"),
+            BeforeRecoveryQuery = () => throw new InvalidOperationException("synthetic-recovery")
+        };
+        try
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(database.InitializeAsync);
+            Assert.Contains("synthetic-create", failure.Message);
+            Assert.NotNull(database.Recovery);
+            Assert.Equal("cleanup_required", database.Recovery.Status);
+            Assert.True(File.Exists(database.Recovery.JournalPath));
+            if (!OperatingSystem.IsWindows())
+                Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(database.Recovery.JournalPath));
+        }
+        finally
+        {
+            database.BeforeRecoveryQuery = null;
+            await database.DisposeAsync(); await database.VerifyAbsentAsync();
+        }
+        Assert.Equal("cleaned", database.Recovery!.Status);
+    }
+
     [DamengFact]
     public async Task ScaffoldingValidatesPhysicalIndexPlacementSeparatelyFromDataPlacement()
     {
