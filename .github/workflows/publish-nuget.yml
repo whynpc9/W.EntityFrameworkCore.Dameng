@@ -31,7 +31,7 @@ jobs:
       DOTNET_NOLOGO: 1
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       # CLI 夹具的临时 DOTNET_CLI_HOME 不能改变还原与后续构建的包缓存位置。
-      NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
+      NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
     steps:
       - name: 检出标签
