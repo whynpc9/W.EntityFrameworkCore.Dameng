@@ -292,6 +292,10 @@ M3此前最终W真实集成失败及20分钟中止记录保持。用户授权后
 
 PR #11补强：观察器在响应已交付、完成记账尚未执行的合法交错中，异步等待上一交换记账后再转发下一请求；不暂停响应泵、不重发帧。确定性DirectExecute/PreparedExecute三例先红后绿，当前9个纯内存方法展开14例，Debug/Release均通过；57项实库及Release四项再次通过。详见`plans/evidence/M3.md`，不据此归因此前非代理连接超时。
 
-## M5 / 017 迁移锁边界（BLOCKED）
+## M5 / 017 首次迁移锁边界（历史BLOCKED）
 
 复用010已验收的完整Execute转发观察器，无协议/代理接口改动。W七个共享场景通过：固定锁争用、DDL后持锁、显式/异常/关闭释放、预取消原token与REQUEST零完整Execute转发；预取消的清理RELEASE单独计量。新增等待中取消用例在普通账号读取SYS.V$DBMS_LOCKS的前置权限检查失败，尚未取得A锁/启动B等待请求。没有服务器等待、运行中取消或该入口FailureInfo的新增通过证据；既有其他入口的W取消证据保持原范围。详见`plans/evidence/017.md`，不能用其他入口通过替代本门。
+
+### 2026-10-29：M5 / 017 等待中取消真实门补齐
+
+维护者明确授权使用AdminConnectionString新建普通隔离账号并授予SYS.V$DBMS_LOCKS精确SELECT，管理员未代替普通会话观测。官方7/W8锁场景通过；W的第8项由010原observer证明预热后本次REQUEST完整Execute转发与响应待结果，再由普通连接按固定ID、OWN_SESS/WAIT_SESS会话配对及X模式确认服务器等待，才取消并核对原token、User取消源/ConnectionReusable=false、A仍排斥其他会话；A释放后新会话产品重取成功。旧observer无修改、未记录报文payload。两驱动联合迁移交叉各21通过；专用用户/空间精确清理，历史权限阻断已解除。详见plans/evidence/017.md及M5.md；不扩张到官方运行中取消、MPP或其他profile。
