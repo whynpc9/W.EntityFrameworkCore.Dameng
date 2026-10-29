@@ -38,7 +38,7 @@ internal static class Program
 
     private static int Usage()
     {
-        Console.Error.WriteLine("Usage: scripts/local-test/run.sh provision | info | inspect | grow | selftest | test <unit|offline-fixtures|functional|specification|admin|probes|all> [--filter <expression>] [--driver official|w] [--w-transport-security RequireTls|PlaintextAllowed] [--configuration Debug|Release]");
+        Console.Error.WriteLine("Usage: scripts/local-test/run.sh provision | info | inspect | grow | selftest | test <unit|offline-fixtures|functional|specification|admin|probes|profile|all> [--profile pk-cluster-1] [--filter <expression>] [--driver official|w] [--w-transport-security RequireTls|PlaintextAllowed] [--configuration Debug|Release]");
         return 2;
     }
 

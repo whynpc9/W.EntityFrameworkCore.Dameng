@@ -229,3 +229,19 @@ D1/D2 与 D0 互不阻塞，可并行；D3 依赖 D0 的目录结论；D6 依赖
 首次扩大真库切片为 127/130，失败证据 `artifacts/query-translation/local-test/20261007T145111482Z-f2610f6c/functional.trx` 保留。两项无表序列测试同时使用不存在的表名，初版将未命中诊断放在序列枚举之前，改变了既有序列预检顺序；修正为独立枚举当前模式序列后再拒绝未命中选择。另一项 AUTO_INCREMENT 测试确认直接在目录投影中调用 IDENT_SEED/IDENT_INCR 会报无效表名；改为先确认原生 IDENTITY 类型，再仅对已确认表发出有界批量分面查询。恢复覆盖三项失败与新测试的切片 10/10，TRX 为 `20261007T145716815Z-d736fffc/functional.trx`。不把首轮记成完整通过。
 
 最终验证：完整单元 725/725（包含工作区另一轮并行增加的 22 项数值聚合测试，本轮反向工程改动对应原有及新增的 703 项单元）；全部反向工程、CLI 与生成值回读真实切片 130/130，通过且无失败/跳过；完整 dotnet format --no-restore --verify-no-changes 与 git diff --check 通过。单元 TRX 为 `artifacts/query-translation/local-test/20261007T145843832Z-42f70e85/unit.trx`，功能 TRX 为 `20261007T145757205Z-b5e4966d/functional.trx`。生产改动仅位于反向工程工厂，未修改依赖版本或锁文件；本轮未重跑不受影响的管理员迁移通道和规范冒烟，不作发布验收声明。并行聚合审计文件与测试项目引用保留，不归入本轮反向工程交付。
+
+## 2026-10-29：018 普通列目录完整性
+
+以 M5 合并 `195ffe6f0f832822c0d864ff108e474acc940d57` 为实施基线。
+合成连接经过完整 `DatabaseModelFactory.Create`，复现无约束普通列从 `ALL_TAB_COLS`
+消失时仍返回缺列模型；夹具逐条识别目录 SQL，未知命令立即失败。
+锁定 [EF Core 10.0.12 的公开脚手架源码](https://github.com/dotnet/efcore/blob/v10.0.12/src/EFCore.Design/Scaffolding/Internal/RelationalScaffoldingModelFactory.cs)
+的 `VisitTable` / `VisitColumns` 只消费提供程序返回的列，没有另一份普通列目录可用于补检。
+据此确认候选，而非依赖“未复现”否证。
+
+修复复用原生预检结果，分别保存普通表列名集合与虚拟列表达式，再在兼容列读取结束后
+比较 Ordinal 集合并拒绝不完整模型。依据[原生目录公开定义](https://eco.dameng.com/document/dm/zh-cn/pm/dm8-admin-manual-appendix1.html)
+与普通用户自有新表的双驱动目录对照，所测普通/虚拟列两套列名一致，原生与兼容序号
+分别从 0/1 开始；没有发明内部列过滤规则。视图、排除表、无表及独立序列对照保持原合同。
+真实合法目录对照不代表服务器目录异常已发生。具体命令、TRX、指纹及清理见
+[018](../plans/evidence/018.md)，M6 整体仍受独立 PK=1 profile 阻断。

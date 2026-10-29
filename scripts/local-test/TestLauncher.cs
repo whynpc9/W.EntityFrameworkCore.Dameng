@@ -9,12 +9,14 @@ internal static class TestLauncher
 {
     private const string ConnectionVariable = "DAMENG_TEST_CONNECTION_STRING";
     private const string WTransportSecurityVariable = "DAMENG_TEST_W_TRANSPORT_SECURITY";
+    private const string ProfileVariable = "DAMENG_TEST_PROFILE";
+    private const string ProfileExclusion = "Profile!=PkWithCluster1";
     private const string ScriptClass = "DamengMigrationScriptFunctionalTests";
     private const string NormalFunctionalFilter =
-        "FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe";
-    private const string AdminFilter = "FullyQualifiedName~" + ScriptClass;
+        "FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe&" + ProfileExclusion;
+    private const string AdminFilter = "FullyQualifiedName~" + ScriptClass + "&" + ProfileExclusion;
     private const string ProbeFilter =
-        "FullyQualifiedName!~" + ScriptClass + "&Category=CapabilityProbe";
+        "FullyQualifiedName!~" + ScriptClass + "&Category=CapabilityProbe&" + ProfileExclusion;
 
     private sealed record Lane(string Id, string Name, string Project, string? RequiredFilter, bool NeedsAdmin,
         bool NeedsTestConnection);
@@ -48,7 +50,8 @@ internal static class TestLauncher
         var customFilter = options.GetValueOrDefault("--filter");
         var laneEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [WTransportSecurityVariable] = driver == "w" ? wTransportSecurity : null
+            [WTransportSecurityVariable] = driver == "w" ? wTransportSecurity : null,
+            [ProfileVariable] = args[0] == "profile" ? "pk-cluster-1" : null
         };
         var connections = LoadConnections(selected, loadSecrets,
             () => Environment.GetEnvironmentVariable(ConnectionVariable));
@@ -132,6 +135,13 @@ internal static class TestLauncher
     {
         if (!selected.Any(lane => lane.NeedsAdmin || lane.NeedsTestConnection))
             return new Connections(null, null, text => text);
+        if (selected.Any(lane => lane.Id.StartsWith("profile-", StringComparison.Ordinal)))
+        {
+            var profileConnection = loadOverride();
+            if (string.IsNullOrWhiteSpace(profileConnection))
+                throw new InvalidOperationException("Independent profile requires an explicit ordinary connection override.");
+            return new Connections(null, profileConnection, CreateRedactor(profileConnection));
+        }
         var secrets = loadSecrets();
         var admin = secrets?["AdminConnectionString"]?.GetValue<string>();
         var saved = secrets?["ConnectionString"]?.GetValue<string>();
@@ -171,7 +181,7 @@ internal static class TestLauncher
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var index = 1; index < args.Length; index += 2)
         {
-            if (args[index] is not ("--filter" or "--driver" or "--w-transport-security" or "--configuration")
+            if (args[index] is not ("--filter" or "--driver" or "--w-transport-security" or "--configuration" or "--profile")
                 || string.IsNullOrWhiteSpace(args[index + 1])
                 || !options.TryAdd(args[index], args[index + 1]))
             {
@@ -182,6 +192,13 @@ internal static class TestLauncher
         var configuration = options.GetValueOrDefault("--configuration", "Debug");
         if (configuration is not ("Debug" or "Release"))
             throw new ArgumentException("Unknown configuration; use Debug or Release.");
+        if (args[0] == "profile")
+        {
+            if (options.GetValueOrDefault("--profile") != "pk-cluster-1")
+                throw new ArgumentException("Profile lane requires --profile pk-cluster-1.");
+        }
+        else if (options.ContainsKey("--profile"))
+            throw new ArgumentException("--profile applies only to the profile lane.");
         return options;
     }
 
@@ -197,13 +214,15 @@ internal static class TestLauncher
         var specification = prefix + "Specification.Tests/" + prefix[5..] + "Specification.Tests.csproj";
         var unit = prefix + "Tests/" + prefix[5..] + "Tests.csproj";
         var normalLane = new Lane("functional" + suffix, label + "functional", functional, NormalFunctionalFilter, false, true);
-        var specLane = new Lane("specification" + suffix, label + "specification", specification, null, false, true);
+        var specLane = new Lane("specification" + suffix, label + "specification", specification, ProfileExclusion, false, true);
         var adminLane = new Lane("admin" + suffix, label + "admin migration scripts", functional, AdminFilter, true, false);
         var probeLane = new Lane("probes" + suffix, label + "capability probes", functional, ProbeFilter, false, true);
-        var offlineLane = new Lane("offline-fixtures" + suffix, label + "offline fixtures", functional, "Category=OfflineFixture", false, false);
+        var offlineLane = new Lane("offline-fixtures" + suffix, label + "offline fixtures", functional, "Category=OfflineFixture&" + ProfileExclusion, false, false);
         var unitLane = new Lane("unit" + suffix, label + "unit", unit, null, false, false);
         return name switch
         {
+            "profile" => [new Lane("profile-pk-cluster-1" + suffix, label + "pk-cluster-1 profile", functional,
+                "Profile=PkWithCluster1&FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe", false, true)],
             "functional" => [normalLane],
             "specification" => [specLane],
             "admin" => [adminLane],
@@ -258,6 +277,7 @@ internal static class TestLauncher
         start.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
         start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         start.Environment.Remove("ConnectionStrings__DamengCliFixture");
+        start.Environment.Remove(ProfileVariable);
         if (connection is null) start.Environment.Remove(ConnectionVariable);
         else start.Environment[ConnectionVariable] = connection;
         foreach (var (name, value) in environment)
@@ -373,7 +393,7 @@ internal static class TestLauncher
                 if (name == "offline-fixtures")
                 {
                     var filter = CombineFilters(lane.RequiredFilter, "FullyQualifiedName~Fixture");
-                    if (filter != "(Category=OfflineFixture)&(FullyQualifiedName~Fixture)")
+                    if (filter != "(Category=OfflineFixture&Profile!=PkWithCluster1)&(FullyQualifiedName~Fixture)")
                         throw new InvalidOperationException("Offline filter self-test failed.");
                 }
                 var start = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", null, new Dictionary<string, string?>());
@@ -416,6 +436,54 @@ internal static class TestLauncher
         catch (ArgumentException) { }
         if (SelectLanes("all", "official").Any(lane => lane.Id.StartsWith("offline", StringComparison.Ordinal)))
             throw new InvalidOperationException("All lane semantics changed.");
+        foreach (var driver in new[] { "official", "w" })
+        {
+            var profile = SelectLanes("profile", driver);
+            var lane = profile.Single();
+            if (lane.NeedsAdmin || !lane.NeedsTestConnection || lane.Id != "profile-pk-cluster-1" + (driver == "w" ? "-w" : ""))
+                throw new InvalidOperationException("Profile routing self-test failed.");
+            foreach (var missing in new string?[] { null, "", " " })
+            {
+                try
+                {
+                    LoadConnections(profile, () => throw new ArgumentException("Profile read default secrets."), () => missing);
+                    throw new ArgumentException("Profile accepted absent override.");
+                }
+                catch (InvalidOperationException) { }
+            }
+            var connections = LoadConnections(profile, () => throw new InvalidOperationException("Profile read default secrets."), () => syntheticOverride);
+            if (connections.Admin is not null || connections.Test != syntheticOverride)
+                throw new InvalidOperationException("Profile connection self-test failed.");
+            if (CombineFilters(lane.RequiredFilter, "Category=CapabilityProbe|FullyQualifiedName~" + ScriptClass)
+                != "(" + lane.RequiredFilter + ")&(Category=CapabilityProbe|FullyQualifiedName~" + ScriptClass + ")")
+                throw new InvalidOperationException("Profile filter self-test failed.");
+            foreach (var name in new[] { "functional", "specification", "admin", "probes", "offline-fixtures", "all" })
+                if (SelectLanes(name, driver).Where(l => l.NeedsAdmin || l.NeedsTestConnection || l.Id.StartsWith("offline", StringComparison.Ordinal))
+                    .Any(l => l.RequiredFilter is null || !l.RequiredFilter.Contains(ProfileExclusion, StringComparison.Ordinal)))
+                    throw new InvalidOperationException("Ordinary lane includes profile tests.");
+        }
+        foreach (var invalid in new[] {
+            new[] { "profile" }, new[] { "profile", "--profile", "unknown" },
+            new[] { "profile", "--profile", "pk-cluster-1", "--profile", "pk-cluster-1" },
+            new[] { "functional", "--profile", "pk-cluster-1" } })
+        {
+            try { ParseOptions(invalid); }
+            catch (ArgumentException) { continue; }
+            throw new InvalidOperationException("Invalid profile was accepted.");
+        }
+        ParseOptions(["profile", "--profile", "pk-cluster-1"]);
+        var inheritedProfile = Environment.GetEnvironmentVariable(ProfileVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(ProfileVariable, "inherited");
+            var cleared = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", null, new Dictionary<string, string?>());
+            var marked = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", syntheticOverride,
+                new Dictionary<string, string?> { [ProfileVariable] = "pk-cluster-1" });
+            if (cleared.Environment.ContainsKey(ProfileVariable) || marked.Environment[ProfileVariable] != "pk-cluster-1")
+                throw new InvalidOperationException("Profile environment isolation failed.");
+        }
+        finally { Environment.SetEnvironmentVariable(ProfileVariable, inheritedProfile); }
+        Console.WriteLine("Profile routing and environment self-test passed.");
         Console.WriteLine("Offline lane isolation self-test passed.");
         foreach (var configuration in new[] { "Debug", "Release" })
         {

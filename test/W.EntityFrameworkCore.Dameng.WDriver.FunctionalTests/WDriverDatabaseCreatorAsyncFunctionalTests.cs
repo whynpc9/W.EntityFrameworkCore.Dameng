@@ -39,7 +39,7 @@ public sealed class WDriverDatabaseCreatorAsyncFunctionalTests(ITestOutputHelper
             var probe = new SlowHasTablesProbe(function, scenario == "timeout" ? 5 : 3);
             var timeout = scenario == "timeout" ? 1 : 15;
             await using var context = new DbContext(new DbContextOptionsBuilder()
-                .UseDamengWithWDriver(relay.ConnectionString, d => d.CommandTimeout(timeout)).AddInterceptors(probe).Options);
+                .UseDamengUnderTest(relay.ConnectionString, d => d.CommandTimeout(timeout)).AddInterceptors(probe).Options);
             using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             await context.Database.OpenConnectionAsync(watchdog.Token);
             var connection = context.Database.GetDbConnection();

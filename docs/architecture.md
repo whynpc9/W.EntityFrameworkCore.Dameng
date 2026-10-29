@@ -86,10 +86,13 @@ EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 
 达梦 DDL 会隐式提交。因此，生成的 DDL 迁移命令会禁用 EF 事务，且包含 DDL 的整个
 迁移不具备原子性。清理测试会显式删除精确对象，绝不依赖回滚。
 
-DML 事务回滚和保存点回滚已在参考服务器上验证。尽管当前驱动程序的基础能力标志不支持，
-保存点仍可在该服务器上工作。隔离级别方面，已验证 `ReadCommitted` 可用于跟踪式
-`SaveChanges`；`Serializable` 可用于查询和 `ExecuteUpdate`，但不能用于跟踪式
-`SaveChanges`。`RepeatableRead` 和 `Snapshot` 会在开始事务时被拒绝。
+DML 事务回滚和保存点回滚已在各自记录的参考 profile 上验证。官方驱动的基础能力标志
+未公开保存点支持，但实际保存点可用；其 `ReadCommitted` 跟踪式 `SaveChanges` 已验证，
+`ReadUncommitted` / `Serializable` 可开始事务并查询，跟踪式保存会触发已记录的驱动错误；
+`Serializable` 的 `ExecuteUpdate` 可用。W 0.2.0 在已验服务器自报 `8.1.5.60`、UTF-8、
+明文 profile 上支持保存点及 RU/Serializable 跟踪式保存，其他 profile 的提前拒绝路径仍未验，
+不外推到 TLS 或其他版本。`RepeatableRead` 和 `Snapshot` 在参考 profile 开始事务时被拒绝。
+具体驱动差异和实证范围见[兼容性矩阵](compatibility.md)。
 
 迁移历史记录及 `DBMS_LOCK` 的获取/释放均有真实服务器测试。该锁是提供程序级的保守基线，
 要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。历史表存在性查询 `SYS.SYSOBJECTS`。

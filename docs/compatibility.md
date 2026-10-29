@@ -147,7 +147,9 @@ W 的精度能力仍受 `ServerCapabilities` 与本文对应边界约束。本�
 扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.2.0]`
 （身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
 未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
-证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
+下表既有能力的证据来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；
+019另有独立PK=1、8192字节页、GLOBAL_CHARSET=0的LOB主键矩阵，仅用于该项结论。
+TLS 与其他版本均未因本轮获得验证。
 完整记录见 [W 接入验证记录](w-dmprovider-validation.md)。PR #7 / #8 已合并，审查线程
 均已解决（[复核记录](w-dmprovider-integration-review.md)）；扩展包 `0.4.0-preview.1` 已公开发布。
 
@@ -296,3 +298,45 @@ I02/I06 均已通过公开 EF 最终化路径证实缺口并补充模型拒绝�
 ### M5 最终恢复验收（2026-10-29）
 
 按维护者明确授权新建普通隔离账号，使用RESOURCE、SOI及该账号上的精确`SELECT ON SYS.V$DBMS_LOCKS`完成测试；没有给普通测试DBA权限。014审查修复后的官方/W管理员聚焦各4、完整各11通过；017官方7/W8通过，含完整Execute转发后由普通连接确认服务器等待队列、原token/FailureInfo取消、拥有者不受影响及新会话重取；联合迁移交叉两驱动各21通过。视图SELECT仅为测试观测权限，不是应用Migrate新增要求。临时账号/空间已精确清理，原持久环境不变；历史权限阻断已解除，不外推MPP/TLS/其他profile。详见[最新M5证据](../plans/evidence/M5.md)。
+
+## 2026-10-29：M6 首轮目录/profile边界（以下阻断为历史）
+
+018 的完整工厂合成目录已复现：原生目录有普通 `Id`、`Payload`，兼容目录只返回主键列
+`Id` 时，旧路径能静默返回缺列模型。现在复用已有原生预检查询，按 Ordinal 列名集合核对
+选中普通表的两套元数据；缺列、额外列或缺少可读原生列均在工厂返回前明确拒绝。
+视图仍按投影读取，过滤排除对象不参与核对，当前模式全部序列及无表模式边界不变。
+
+真实 DM `8.1.5.60`、32768 字节页的正常目录对照与合成缺行证据分别归档；
+本次没有在服务器制造目录缺行。原生 `COLID` 从 0 起、兼容 `COLUMN_ID` 从 1 起，
+不按序号判定损坏；所测普通列与虚拟列没有需要忽略的额外内部列。
+详见 [018 执行记录](../plans/evidence/018.md)。
+
+019 当前仅有 SQL/模型离线表征、显式 profile 路由和只读前置核对。local 的独立普通账户
+确认当前实例 `PK_WITH_CLUSTER=0`，不能代替独立值为 1 的 profile。未实施新的 LOB 主键策略，
+未选择 CONFIRMED/REFUTED，未声称 PK=1 已支持；019、020 与 M6 的最终验收仍 BLOCKED。
+普通 all 不包含 probes 或 profile；最终双驱动 all 尚未作为 M6 验收执行。
+M2 的官方七位参数已知驱动风险及原接受边界保留。详见 [019 执行记录](../plans/evidence/019.md)。
+
+### M6 独立 profile 恢复验证
+
+019 的原环境阻断已由用户提供的独立实例解除。DM自报8.1.5.60，普通PK=0/32768字节页与
+独立PK=1/8192字节页，COMPATIBLE_MODE=0、LENGTH_IN_CHAR=0；两驱动均以所记明文profile验证。
+在这两个profile上，无界string/byte[]和显式CLOB/NCLOB/BLOB的原SQL均成功，主键后备索引NORMAL；
+即使显式CLUSTER，服务器也保留NORMAL。有界列对照在PK=1下确为CLUSTER。
+这属于已测服务器的安全处理，019按REFUTED闭合，没有新增LOB主键推导或改写显式注解。
+完整模型、迁移、手工建表、共享表、加主键及NULL/非空/更新/重复键对照，普通各27、独立各29
+在官方/W分别通过。其他服务器版本、LOB别名、JSON/BFILE及已有表存储改造仍不外推；
+model-less AddPrimaryKey继续保留原合同，应用需明确聚集选择并核对目标目录。
+具体指纹、TRX与资源清理见[019](../plans/evidence/019.md)。最终M6集成和020收口另记。
+
+## M6 最终当前源码验收（2026-10-29）
+
+当前源码产品revision为 `7efb38e83c8f5a15febdca45c6a66abc7936787a`，后续020仅修订文档。
+018普通列目录完整性修复已验证；019在所记PK=0/32KB与独立PK=1/8KB两个DM8.1.5.60明文profile上
+确证由服务器安全处理，无新增LOB主键策略。独立profileRelease官方/W各29项全通过。
+授权单行W测试夹具修正保留原网络链路，最终官方all的单元/功能/规范/admin为973/402/4/11，
+W为128/489/4/11，全部Completed、非零、零失败/跳过；普通all不含probes/profile。
+两实例及管理员脚本的自有账户/表空间均精确清理；历史全量W三项诊断红灯保留。
+该结果不表示上游EF全关系一致性、所有页大小/字符集、其他版本、TLS或包发布已完成。
+M2官方七位参数已知风险按本文首节原边界保留；无需提升能力声明的安全/夹具/CI项仍仅为对应证据。
+全部20项唯一归属、当前文档处置与最终SHA/TRX见[020对账](../plans/evidence/020.md)和[M6](../plans/evidence/M6.md)。
