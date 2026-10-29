@@ -41,21 +41,27 @@ internal sealed class DamengDateTimeMemberTranslator(ISqlExpressionFactory sqlEx
         };
 
         SqlExpression DatePart(string part)
-            => sqlExpressionFactory.Function(
+        {
+            DamengTemporalTranslationGuard.EnsureNative(instance!);
+            return sqlExpressionFactory.Function(
                 "DATEPART",
                 [sqlExpressionFactory.Fragment(part), instance!],
                 nullable: true,
                 argumentsPropagateNullability: [false, true],
                 returnType);
+        }
 
         SqlExpression Truncate(SqlExpression value)
-            => sqlExpressionFactory.Function(
+        {
+            DamengTemporalTranslationGuard.EnsureNative(value);
+            return sqlExpressionFactory.Function(
                 "TRUNC",
                 [value],
                 nullable: true,
                 argumentsPropagateNullability: [true],
                 typeof(DateTime),
                 value.TypeMapping);
+        }
 
         SqlExpression LocalTimestamp()
             => sqlExpressionFactory.Function(

@@ -16,18 +16,6 @@ namespace W.EntityFrameworkCore.Dameng.FunctionalTests;
 /// </summary>
 public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 {
-    private const int CommandTimeoutSeconds = 300;
-
-    private static readonly string[] DebugEnvironmentVariableNames =
-    [
-        "DOTNET_ROOT",
-        "MSBuildSDKsPath",
-        "MSBuildExtensionsPath",
-        "DOTNET_CLI_HOME",
-        "NUGET_PACKAGES",
-        "DOTNET_MULTILEVEL_LOOKUP"
-    ];
-
     [DamengFact]
     public async Task MigrationsAndScaffoldRunThroughDotNetEfCli()
     {
@@ -43,23 +31,14 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
         var repoRoot = FindRepositoryRoot();
         var (efCoreVersion, dmProviderVersion) = ResolveLockedPackageVersions(repoRoot);
-        var providerAssemblies = ProviderProjects
-            .Select(project => Path.Combine(repoRoot, "src", project, "bin", "Debug", "net10.0", project + ".dll"))
-            .ToArray();
-        foreach (var providerAssembly in providerAssemblies)
-        {
-            Assert.True(
-                File.Exists(providerAssembly),
-                "Build the provider before running the CLI test: " + providerAssembly);
-        }
-        var projectDirectory = Path.Combine(
-            Path.GetTempPath(),
-            $"dameng-ef-cli-{suffix.ToLowerInvariant()}");
-
+        var providerIdentities = ProviderAssemblies();
+        var providerAssemblies = providerIdentities.Select(identity => identity.Location).ToArray();
         var dotnetEf = await EnsureDotNetEfToolAsync(repoRoot, efCoreVersion);
+        var projectDirectory = DamengCliTestHarness.CreatePrivateDirectory();
 
-        Directory.CreateDirectory(projectDirectory);
-        try
+        var ownedObjects = string.Join(", ", tableName, sequenceName, standaloneSequenceName, historyTableName, principalTableName, dependentTableName, viewName);
+        output.WriteLine("CLI owned objects: " + ownedObjects);
+        await DamengCliTestHarness.WithCleanupAsync(projectDirectory, ownedObjects, async () =>
         {
             WriteCliProject(
                 projectDirectory,
@@ -69,6 +48,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 tableName,
                 sequenceName,
                 suffix);
+            File.AppendAllText(Path.Combine(projectDirectory, "Program.cs"), "\n" + DamengCliTestHarness.IdentityVerificationSource(providerIdentities));
 
             var dotnetHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
             if (string.IsNullOrEmpty(dotnetHost))
@@ -89,6 +69,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 projectDirectory,
                 connectionString,
                 ["build", "--no-restore"]);
+            DamengCliTestHarness.VerifyNestedCopies(providerIdentities, Path.Combine(projectDirectory, "bin", "Debug", "net10.0"));
+            await RunDotNetAsync(dotnetHost, projectDirectory, connectionString, ["run", "--no-build"], requiresConnection: false);
 #if WDRIVER
             await AssertNestedProjectLoadsPinnedWDriverAsync(dotnetHost, projectDirectory, connectionString);
 #endif
@@ -176,13 +158,14 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 projectDirectory,
                 connectionString,
                 [
-                    "dbcontext", "scaffold", connectionString,
+                    "dbcontext", "scaffold", DamengCliTestHarness.ConnectionAlias,
                     DamengTestDriver.ProviderName,
                     "--no-build",
                     "--table", tableName,
                     "--table", principalTableName,
                     "--table", dependentTableName,
                     "--table", viewName,
+                    "--no-onconfiguring",
                     "--context", "ScaffoldedCliContext",
                     "--output-dir", "Scaffolded",
                     "--force"
@@ -190,8 +173,9 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
             var scaffoldedContext = File.ReadAllText(
                 Path.Combine(projectDirectory, "Scaffolded", "ScaffoldedCliContext.cs"));
-            output.WriteLine(Redact(connectionString, scaffoldedContext));
-            Assert.Contains(UseProviderMethod + "(", scaffoldedContext, StringComparison.Ordinal);
+            Assert.DoesNotContain("OnConfiguring", scaffoldedContext, StringComparison.Ordinal);
+            File.WriteAllText(Path.Combine(projectDirectory, "ScaffoldConfiguration.cs"),
+                DamengCliTestHarness.ContextConfigurationSource(UseProviderMethod));
             Assert.Contains(
                 $".ToTable(\"{tableName}\"",
                 scaffoldedContext,
@@ -230,6 +214,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("HasColumnType(\"VARCHAR2(40 BYTE)\")", scaffoldedContext, StringComparison.Ordinal);
             Assert.Contains("HasColumnType(\"CHAR(476 CHAR)\")", scaffoldedContext, StringComparison.Ordinal);
             WriteScaffoldModelAssertions(projectDirectory, tableName, principalTableName, dependentTableName, viewName);
+            File.AppendAllText(Path.Combine(projectDirectory, "Program.cs"), "\n" + DamengCliTestHarness.IdentityVerificationSource(providerIdentities));
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString,
                 ["build", "--no-restore", "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false", "--disable-build-servers"]);
             await RunDotNetAsync(dotnetHost, projectDirectory, connectionString, ["run", "--no-build"]);
@@ -254,8 +239,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             Assert.Contains("public string Code", scaffoldedEntity, StringComparison.Ordinal);
             Assert.Contains("public decimal Amount", scaffoldedEntity, StringComparison.Ordinal);
             Assert.Contains("HasDefaultValueSql(", scaffoldedContext, StringComparison.Ordinal);
-        }
-        finally
+        }, async () =>
         {
             await using (var connection = new DmConnection(connectionString))
             {
@@ -269,13 +253,13 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 await DropIfExistsAsync(connection, "USER_SEQUENCES", "SEQUENCE_NAME", standaloneSequenceName);
             }
 
-            TryDeleteDirectory(projectDirectory);
-        }
+        }, () => Directory.Delete(projectDirectory, recursive: true), output.WriteLine);
     }
 
 #if WDRIVER
-    private static readonly string[] ProviderProjects =
-        ["W.EntityFrameworkCore.Dameng", "W.EntityFrameworkCore.Dameng.WDriver"];
+    private static DamengCliTestHarness.AssemblyIdentity[] ProviderAssemblies() =>
+        [DamengCliTestHarness.CaptureAssembly(typeof(W.EntityFrameworkCore.Dameng.Infrastructure.DamengDriver).Assembly, "W.EntityFrameworkCore.Dameng"),
+         DamengCliTestHarness.CaptureAssembly(typeof(DamengWDriverDbContextOptionsBuilderExtensions).Assembly, "W.EntityFrameworkCore.Dameng.WDriver")];
 
     private const string UseProviderMethod = "UseDamengWithWDriver";
 
@@ -295,7 +279,8 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
     private const string CliProgram
         = """Console.WriteLine("cli roundtrip W.DamengProvider MVID=" + typeof(W.Dm.DmConnection).Assembly.ManifestModule.ModuleVersionId);""";
 #else
-    private static readonly string[] ProviderProjects = ["W.EntityFrameworkCore.Dameng"];
+    private static DamengCliTestHarness.AssemblyIdentity[] ProviderAssemblies() =>
+        [DamengCliTestHarness.CaptureAssembly(typeof(W.EntityFrameworkCore.Dameng.Infrastructure.DamengDriver).Assembly, "W.EntityFrameworkCore.Dameng")];
 
     private const string UseProviderMethod = "UseDameng";
 
@@ -359,7 +344,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         var references = string.Join(
             " ",
             providerAssemblies.Select(
-                assembly => $"<Reference Include=\"{Path.GetFileNameWithoutExtension(assembly)}\"><HintPath>{assembly}</HintPath></Reference>"));
+                assembly => $"<Reference Include=\"{Path.GetFileNameWithoutExtension(assembly)}\"><HintPath>{System.Security.SecurityElement.Escape(assembly)}</HintPath></Reference>"));
         File.WriteAllText(
             Path.Combine(projectDirectory, "CliRoundtrip.csproj"),
             $"""
@@ -371,6 +356,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
                 <ImplicitUsings>enable</ImplicitUsings>
               </PropertyGroup>
               <ItemGroup>
+                <FrameworkReference Include="Microsoft.AspNetCore.App" />
                 {references}
                 <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="{efCoreVersion}" />
                 <PackageReference Include="DM.DmProvider" Version="{dmProviderVersion}" />
@@ -382,6 +368,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         File.WriteAllText(
             Path.Combine(projectDirectory, "Program.cs"),
             CliProgram);
+        File.WriteAllText(Path.Combine(projectDirectory, "HostBootstrap.cs"), DamengCliTestHarness.HostSource());
 
         File.WriteAllText(
             Path.Combine(projectDirectory, "CliDbContext.cs"),
@@ -407,7 +394,7 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
 
                 protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
                     => optionsBuilder.{{UseProviderMethod}}(
-                        Environment.GetEnvironmentVariable("DAMENG_TEST_CONNECTION_STRING")!,
+                        Environment.GetEnvironmentVariable("ConnectionStrings__DamengCliFixture")!,
                         dameng => dameng.MigrationsHistoryTable("EF10_CLIH_{{suffix}}"));
 
                 protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -455,25 +442,16 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         await RunDotNetAsync(dotnetEf, workingDirectory, connectionString, efArguments);
     }
 
-    private async Task<string> RunDotNetAsync(
+    private async Task<DamengCliTestHarness.ProcessResult> RunDotNetAsync(
         string dotnet,
         string workingDirectory,
         string connectionString,
-        List<string> arguments)
+        List<string> arguments,
+        bool requiresConnection = true)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = dotnet,
-            WorkingDirectory = workingDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
+        var needsConnection = requiresConnection && arguments[0] is not ("build" or "restore" or "tool" or "--version");
+        var startInfo = DamengCliTestHarness.CreateProcess(dotnet, workingDirectory, arguments,
+            needsConnection ? connectionString : null);
         if (arguments[0] is "build" or "restore")
         {
             foreach (var flag in new[] { "-m:1", "/nodeReuse:false", "/p:UseSharedCompilation=false" })
@@ -490,54 +468,16 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             }
         }
 
-        startInfo.Environment["DAMENG_TEST_CONNECTION_STRING"] = connectionString;
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start dotnet ef.");
-
-        // Drain both pipes concurrently and bound the whole wait; a child that fills one
-        // pipe must not block the other reader or outrun the timeout.
-        var readOutput = process.StandardOutput.ReadToEndAsync();
-        var readError = process.StandardError.ReadToEndAsync();
-
-        using var timeout = new CancellationTokenSource(
-            TimeSpan.FromSeconds(CommandTimeoutSeconds));
-        try
+        var result = await DamengCliTestHarness.RunAsync(startInfo, connectionString);
+        output.WriteLine("CLI step " + arguments[0] + ": exit=" + result.ExitCode);
+        if (result.ExitCode != 0)
         {
-            await process.WaitForExitAsync(timeout.Token);
+            output.WriteLine(result.SafeOutput.Length > 4000 ? result.SafeOutput[^4000..] : result.SafeOutput);
+            throw new InvalidOperationException("CLI step failed (exit=" + result.ExitCode + ").");
         }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException(
-                Redact(connectionString, $"dotnet {string.Join(' ', arguments)} timed out."));
-        }
-
-        var standardOutput = await readOutput;
-        var standardError = await readError;
-
-        output.WriteLine(Redact(connectionString, $"dotnet {string.Join(' ', arguments)}"));
-        output.WriteLine(Redact(connectionString, standardOutput));
-        if (!string.IsNullOrWhiteSpace(standardError))
-        {
-            output.WriteLine(Redact(connectionString, standardError));
-        }
-
-        if (process.ExitCode != 0)
-        {
-            var environmentDump = string.Join(
-                "; ",
-                DebugEnvironmentVariableNames
-                    .Select(name => name + "=" + Environment.GetEnvironmentVariable(name)));
-            throw new InvalidOperationException(
-                Redact(
-                    connectionString,
-                    $"dotnet {string.Join(' ', arguments)} exited with {process.ExitCode.ToString(CultureInfo.InvariantCulture)}. ")
-                + "env: " + environmentDump + " || "
-                + Redact(connectionString, standardError.Length > 0 ? standardError : standardOutput));
-        }
-
-        return standardOutput;
+        foreach (var line in result.SafeOutput.Split('\n').Where(line => line.StartsWith("Provider identity verified: ", StringComparison.Ordinal)))
+            output.WriteLine(line);
+        return result;
     }
 
 #if WDRIVER
@@ -560,86 +500,20 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
             dotnetHost,
             projectDirectory,
             connectionString,
-            [Path.Combine(outputDirectory, "CliRoundtrip.dll")]);
-        Assert.Contains("W.DamengProvider MVID=" + expectedMvid, runOutput, StringComparison.Ordinal);
+            [Path.Combine(outputDirectory, "CliRoundtrip.dll")], requiresConnection: false);
+        runOutput.RequireExpectedOutput("W.DamengProvider MVID=" + expectedMvid);
         Assert.False(
             File.Exists(Path.Combine(outputDirectory, "W.DmProvider.dll")),
             "The nested project must not also contain the legacy W.DmProvider assembly.");
     }
 #endif
 
-    // dotnet-ef must match the locked EF Core version: the 10.0.3 tool mishandles build
-    // output paths on Unix and fails its own build. The tool lives under artifacts/ so the
-    // global tool installation stays untouched.
     private async Task<string> EnsureDotNetEfToolAsync(string repoRoot, string efCoreVersion)
     {
-        var toolDirectory = Path.Combine(repoRoot, "artifacts", "dotnet-ef-tool");
-        var toolPath = Path.Combine(toolDirectory, "dotnet-ef");
-
-        if (File.Exists(toolPath))
-        {
-            var installed = await ReadToolVersionAsync(toolPath);
-            if (string.Equals(installed, efCoreVersion, StringComparison.Ordinal))
-            {
-                return toolPath;
-            }
-        }
-
-        var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
-        if (string.IsNullOrEmpty(dotnet))
-        {
-            dotnet = "dotnet";
-        }
-
-        Directory.CreateDirectory(toolDirectory);
-        var action = File.Exists(toolPath) ? "update" : "install";
-        await RunDotNetAsync(
-            dotnet,
-            repoRoot,
-            DamengTestEnvironment.GetRequiredConnectionString(),
-            [
-                "tool", action, "dotnet-ef",
-                "--version", efCoreVersion,
-                "--tool-path", toolDirectory
-            ]);
-
-        var version = await ReadToolVersionAsync(toolPath);
-        Assert.True(
-            string.Equals(version, efCoreVersion, StringComparison.Ordinal),
-            $"dotnet-ef {efCoreVersion} could not be provisioned under artifacts/dotnet-ef-tool.");
-        output.WriteLine("dotnet-ef provisioned: " + version);
-        return toolPath;
-    }
-
-    private static async Task<string?> ReadToolVersionAsync(string toolPath)
-    {
-        try
-        {
-            using var process = Process.Start(
-                new ProcessStartInfo
-                {
-                    FileName = toolPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    ArgumentList = { "--version" }
-                });
-            var toolOutput = await process!.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            if (process.ExitCode != 0)
-            {
-                return null;
-            }
-
-            var versionLine = toolOutput
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault(line => line.Trim().Length > 0 && char.IsDigit(line.Trim()[0]));
-            return versionLine?.Trim();
-        }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or FileNotFoundException)
-        {
-            return null;
-        }
+        var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+        var tool = await DamengCliTestHarness.EnsureToolAsync(dotnet, repoRoot, efCoreVersion);
+        output.WriteLine("dotnet-ef locked version verified: " + efCoreVersion);
+        return tool;
     }
 
     private static string FindRepositoryRoot()
@@ -672,33 +546,6 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         Assert.True(efCoreMatch.Success, "Directory.Packages.props must pin the EF Core range.");
         Assert.True(dmProviderMatch.Success, "Directory.Packages.props must pin the DM.DmProvider range.");
         return (efCoreMatch.Groups["version"].Value, dmProviderMatch.Groups["version"].Value);
-    }
-
-    private static string Redact(string connectionString, string text)
-    {
-        var redacted = text.Replace(connectionString, "[redacted]", StringComparison.OrdinalIgnoreCase);
-        var builder = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        foreach (string key in builder.Keys)
-        {
-            if (!key.Contains("password", StringComparison.OrdinalIgnoreCase)
-                && !key.Equals("pwd", StringComparison.OrdinalIgnoreCase)
-                && !key.Contains("user", StringComparison.OrdinalIgnoreCase)
-                && !key.Equals("uid", StringComparison.OrdinalIgnoreCase)
-                && !key.Contains("server", StringComparison.OrdinalIgnoreCase)
-                && !key.Contains("host", StringComparison.OrdinalIgnoreCase)
-                && !key.Contains("data source", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var value = Convert.ToString(builder[key], CultureInfo.InvariantCulture);
-            if (!string.IsNullOrEmpty(value))
-            {
-                redacted = redacted.Replace(value, "[redacted]", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
-        return redacted;
     }
 
     private static async Task<string?> ScalarStringAsync(
@@ -748,17 +595,4 @@ public sealed class DamengDotNetEfCliFunctionalTests(ITestOutputHelper output)
         await drop.ExecuteNonQueryAsync();
     }
 
-    private static void TryDeleteDirectory(string path)
-    {
-        try
-        {
-            Directory.Delete(path, recursive: true);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
 }

@@ -20,6 +20,10 @@ var query = context.Items.Where(item =>
 NCLOB 空值回退在 SQL 中保持 LOB 类型，避免回退空串将长表达式降为有界文本。
 这不表示所有 LOB 运算或任意长度均可执行；服务器报错不会被静默转成截断值。
 
+`string.Replace(string, string?)` 将 null 替换值视为空串，即删除匹配项；常量、参数和可空有界列
+采用同一规则。已验证必填有界文本与 NCLOB 的服务器投影、null 判断及正反谓词，包含两种
+关系空值模式和 20,000 字 NCLOB；不扩展 StringComparison 重载或任意 LOB 长度。
+
 ## 数值
 
 数值翻译以可表示的有限值为范围；参考实例对 NaN 和正负 Infinity 的参数执行报数据溢出。
@@ -56,6 +60,10 @@ DateTimeOffset 列可以读取 `Year`、`Month`、`Day`、`Hour`、`Minute`、`S
 `Offset`、`UtcDateTime`、`DateTime`、`Now`、`UtcNow` 和 Add* 仍不翻译；
 当前不增加 100ns 精度或时间转换保证。
 
+日期成员、整数 DATEADD 及上述分桶要求有效存储为原生时态类型。DateTime/DateTimeOffset
+转为 BIGINT 或文本的模型仍可直接读写，但这些日期操作在发送前明确拒绝；原生
+DateTime→DateTime 恒等转换继续支持。该边界不推断自定义编码，也不改变无参 ToString 契约。
+
 ## 字符串分组聚合
 
 ```csharp
@@ -75,10 +83,13 @@ var names = context.Items
 的 NVARCHAR2；固定 CHAR/NCHAR 列不能作为分隔符。常量和尚未映射的参数使用结果文本映射。
 组内 Where 和显式排序保留，排序键升序显式使用 `NULLS FIRST`、降序使用 `NULLS LAST`；
 null/空元素不会丢失其分隔符位置，null 分隔符按空串处理。
-无显式排序时不承诺字符串顺序。Distinct、LOB、固定 CHAR/NCHAR 和 LOB 排序明确拒绝。
+无显式排序时不承诺字符串顺序。Distinct、LOB、固定 CHAR/NCHAR 及文本/二进制 LOB 排序键均明确拒绝（含 ThenBy）。
 
 SQL 使用 LISTAGG；过长结果报数据库错误，不会截短。Join 为保持空元素位置会计算
 带一个额外分隔符的中间值，因此可能比最终 CLR 字符串更早达到服务器长度边界。
+
+distinct 集合操作 UNION/INTERSECT/EXCEPT 的任一侧投影包含文本或二进制 LOB 时，
+均在发送前拒绝；有界集合及保留重复值的 LOB UNION ALL 继续可用。
 
 ## 集合与未开放能力
 

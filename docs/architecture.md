@@ -86,14 +86,16 @@ EF 提供程序服务使用可能发生变化的实现 API。因此，该包将 
 达梦 DDL 会隐式提交。因此，生成的 DDL 迁移命令会禁用 EF 事务，且包含 DDL 的整个
 迁移不具备原子性。清理测试会显式删除精确对象，绝不依赖回滚。
 
-DML 事务回滚和保存点回滚已在参考服务器上验证。官方驱动虽然把基础保存点能力标志报告为不支持，
-保存点仍可在该服务器上工作；W 的保存点行为按其服务器能力合同验证，不能套用官方驱动的能力标志。
+DML 事务回滚和保存点回滚已在各自记录的参考 profile 上验证。官方驱动虽然把基础保存点能力标志
+报告为不支持，保存点仍可在该服务器上工作；W 的保存点行为按其服务器能力合同验证，
+不能套用官方驱动的能力标志。
 
 两种驱动都已验证 `ReadCommitted` 下的跟踪式 `SaveChanges`，并都会在开始事务时拒绝
 `RepeatableRead` 和 `Snapshot`。官方驱动可以开始 `ReadUncommitted` / `Serializable` 事务并执行查询，
 `Serializable` 下的 `ExecuteUpdate` 也已验证，但这两种隔离级别下的跟踪式 `SaveChanges` 会失败。
-W 仅在自报 `8.1.5.60`、UTF-8、明文的已验 profile 上验证了这两种隔离级别下的跟踪保存成功；
-其他 profile 未验证，详见[兼容性矩阵](compatibility.md)。
+W 在自报 `8.1.5.60`、UTF-8、明文的已验 profile 上支持保存点及这两种隔离级别下的跟踪保存；
+其他 profile 的提前拒绝路径仍未验证，不外推到 TLS 或其他版本。
+具体驱动差异和实证范围见[兼容性矩阵](compatibility.md)。
 
 迁移历史记录及 `DBMS_LOCK` 的获取/释放均有真实服务器测试。该锁是提供程序级的保守基线，
 要求服务器模式提供 `DBMS_LOCK`；这不构成对达梦 MPP 的保证。历史表存在性查询 `SYS.SYSOBJECTS`。
@@ -138,3 +140,15 @@ W 驱动的异步路径为真实网络异步，取消/期限与失败结果由�
 - [EF Core 10 关系数据库包](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore.Relational/10.0.12)
 - [`DM.DmProvider` 包](https://www.nuget.org/packages/DM.DmProvider)
 - [达梦 .NET 编程指南](https://eco.dameng.com/document/dm/zh-cn/pm/net-rogramming-guide.html)
+
+### M3 驱动一致性边界（009）
+
+运行时 `SetDbConnection` 在替换引用或处置原连接前检查所选驱动；null 与连接所有权继续沿用 EF 契约。两个驱动的时态参数均检查身份，官方参数精度行为保持原样，W 继续使用 Precision=0/Scale。`IModelRuntimeInitializer` 为设计时模型及其运行时投影记录原子、仅运行时的驱动身份，并检查实体、owned、嵌套 complex 和集合元素映射；已初始化的 `UseModel`（包括仅 int 模型）跨驱动读写在 Open/Execute 前拒绝。标记不进入快照或模型 DDL。已验证同驱动查询生成、上下文池及双驱动时态真实读写；不外推编译模型、NativeAOT 或任意连接拦截替换。证据见 `plans/evidence/009.md`。
+
+### M3 HasTables 命令链（011）
+
+`HasTables`/`HasTablesAsync` 共用原目录SQL，经`IRawSqlCommandBuilder`进入EF scalar命令链，沿用CommandTimeout、当前事务、拦截和诊断，来源为Migrations。异步入口传递原token并await ExecuteScalarAsync；EF管理打开计数，调用方已打开连接保持，内部打开的连接按计数关闭。官方/W真实目录及所有权、事务验证通过；W另以拦截该入口后的自有慢函数和完整Execute转发屏障验证等待、用户取消及TotalDeadline。官方仍受驱动同步回退约束；此项不构成完整EnsureCreatedAsync或任意操作的非阻塞保证。见`plans/evidence/011.md`。
+
+### M3 当前验收状态
+
+M3此前最终W真实集成失败及20分钟中止记录保持。用户授权后，在相同源码上从启动前全程防休眠重试原57项，57/57 Completed、零失败/跳过；最终版本Release四项4/4通过，末次表/序列/回收站均0，当前本地门已闭合，远端整合状态见`plans/evidence/M3.md`。此次通过不确定此前失败的根因，不新增自动重试或其他profile支持。

@@ -73,6 +73,9 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
 ## 使用 W.DamengProvider 驱动（预览版）
 
+基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 的既有公开发行见[发布记录](release-0.4.0.md)；
+扩展包仍是预览版，后续源码修复和依赖升级没有另行发布包。
+
 启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
 （W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：
 
@@ -314,3 +317,32 @@ dotnet ef migrations list \
   --project src/App.Data/App.Data.csproj \
   --startup-project src/App/App.csproj
 ```
+
+## 仅修改列注释
+
+真实模型差异中的列结构、默认值、生成策略和全部语义注解保持不变时，注释新增、修改和删除只生成抑制事务的`COMMENT ON COLUMN`；删除使用`IS ''`。纯注释不会重发BYTE列定义或插入LENGTH_IN_CHAR守卫。IDENTITY列的注释变更保持数据和后续自增值，普通及幂等脚本均覆盖。其他列分面或未知注解变化仍走原有结构DDL/明确拒绝路径；不扩大IDENTITY结构变更支持。实际双驱动范围见[015证据](../plans/evidence/015.md)。
+
+## 历史表的引用名称与命令边界
+
+自定义历史表模式/名称按组成部分引用，含`CREATE TABLE`文本、引号、点号或中文的名称保留原样。存在性脚本只在独立建表命令的TABLE token后插入`IF NOT EXISTS`，不会修改模式守卫的字符串、注释或引用内容；无法唯一识别时明确拒绝。实际`CreateIfNotExists[Async]`保留模式匿名块与建表命令边界，逐条抑制事务。重复建表不会删除历史行；真实名称及双驱动边界见[016证据](../plans/evidence/016.md)。
+
+## 固定迁移锁与当前取消边界
+
+迁移锁使用固定ID20260723；不同DbContext、历史表或模式仍相互串行，数据库测试必须独占迁移测试时段。当前实例已验证DDL隐式提交前后继续排斥、显式/异常作用域/实际关闭释放后可重取。官方驱动维持同步回退、取消有限，预取消的异常token身份不保证与调用者相同。W预取消有原token及发送边界证据；本轮等待中取消被普通账号缺`SYS.V$DBMS_LOCKS`查询权限阻断，不能以请求在途替代服务器等待队列证据。锁的两驱动整体验收与M5保持BLOCKED，详见[017证据](../plans/evidence/017.md)。
+
+2026-10-29补充：上述“本轮等待中取消被权限阻断”为首次执行历史；维护者授权创建具备精确视图SELECT的普通隔离测试账号后，017官方7/W8及两驱动迁移交叉均通过，已获得真实服务器等待和后续取消/持锁/重取证据。该目录SELECT只为测试观察所需，不是产品迁移执行所需的额外权限。临时测试账号和表空间已精确清理，最新范围见M5证据，不外推MPP或官方运行中取消。
+
+## LOB 表主键与实例聚集缺省
+
+当前源码中，未指定 `Dameng:IsClustered` 的主键仍生成 `PRIMARY KEY`；显式 true/false
+分别保留 `CLUSTER PRIMARY KEY` / `NOT CLUSTER PRIMARY KEY`，不会在生成 SQL 时查询实例参数。
+019 在 DM 自报8.1.5.60的两个明文profile上完成双驱动实证：PK_WITH_CLUSTER=0、32768字节页，
+以及独立PK_WITH_CLUSTER=1、8192字节页。无界string/byte[]、显式CLOB/NCLOB/BLOB的原生成SQL
+均成功，实际主键后备索引为NORMAL；即使显式CLUSTER，服务器也保留NORMAL。有界非LOB对照
+在PK=1下实际建立CLUSTER索引。该结论来自服务器处理，不是本提供程序注入非聚集注解。
+
+完整模型、模型差异迁移、手工CreateTable、共享表及有模型AddPrimaryKey均有实际索引与
+NULL/非空/更新/重复键对照。model-less AddPrimaryKey缺少目标列类型时保持原有行为，
+使用方应明确聚集选择并核对目标目录。其他版本、LOB别名、JSON/BFILE、已有表新增LOB或
+聚集布局改造未由本次矩阵穷尽；不会自动重建已有表，也不将本结论外推为所有部署都安全。
+源SQL、当前profile与TRX见[019证据](../plans/evidence/019.md)，本批没有发布新包。

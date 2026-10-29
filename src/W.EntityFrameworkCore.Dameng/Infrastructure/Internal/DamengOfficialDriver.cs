@@ -63,6 +63,14 @@ internal sealed class DamengOfficialDriver : DamengDriver
         };
     }
 
+    public override void ConfigureTemporalParameter(DbParameter parameter, int fractionalSecondPrecision)
+    {
+        if (parameter is not DmParameter)
+        {
+            throw CreateForeignParameterException(parameter);
+        }
+    }
+
     public override bool ShouldRetryOn(Exception exception, IReadOnlySet<int>? additionalErrorNumbers)
         => (exception is DmException dmException
                 && additionalErrorNumbers?.Contains(dmException.Number) == true)

@@ -80,7 +80,7 @@ SELECT id, name FROM orders;         -- 会去找 ORDERS / ID / NAME，失败
 达梦里登录用户通常对应同名默认模式。对象写 `模式.对象`。切换当前模式用 `SET SCHEMA`，不是 MySQL 的 `USE db`。
 
 本提供程序和常见应用都连接到**已存在的库和用户**，不负责 `CREATE DATABASE`。
-下面的表空间和用户创建是管理员操作，不是应用启动过程：
+以下表空间、账号创建及授权由管理员执行；应用连接只使用授予的必要权限。
 
 ```sql
 CREATE TABLESPACE app_data
@@ -96,9 +96,10 @@ GRANT RESOURCE TO app_user;
 SET SCHEMA app_user;
 ```
 
-`RESOURCE` 只对应已验证的脚本执行路径。`Database.Migrate()` 还需要查询历史目录的权限；
-在参考实例上是 `SOI`，并需要可调用 `DBMS_LOCK`。按实际操作核对[迁移权限矩阵](../../docs/migrations.md#先选路径)，
-不要为了运行迁移授予 `DBA`。
+此 `RESOURCE` 示例仅对应已验证的对象/脚本子集，不保证所有部署都足够。
+应用内 `Database.Migrate()` 还需历史目录查询权限（已验实例使用 `SOI`）及可调用 `DBMS_LOCK`；
+按[迁移权限矩阵](../../docs/migrations.md#先选路径)配置，不为普通应用用户授予 `DBA`。
+测试观察用的系统视图 SELECT 不等于应用迁移新增权限。
 
 数据文件最小尺寸由页大小决定：4 KB 页 → 16 MB；8 KB → 32 MB；16 KB → 64 MB；32 KB → 128 MB。页大小在初始化时确定，之后不能改。
 
@@ -233,9 +234,10 @@ SELECT app_user.add_int(4, 5);
 
 详细规则见 [references/types.md](references/types.md)。
 
-### 7. 聚集主键不能夹带 LOB
+### 7. 含 LOB 表的主键聚集策略
 
-手册里 `PK_WITH_CLUSTER` 缺省常为 1，但实例可能已改成 0（先查 `V$DM_INI`）。无论当前值是什么，表上有 CLOB/BLOB 时都显式写非聚集主键，不要赌实例缺省：
+先查目标实例的 `V$DM_INI`，不要用手册缺省替代实际 `PK_WITH_CLUSTER`。
+显式非聚集主键可表达含 CLOB/BLOB 表的存储意图，避免依赖缺省：
 
 ```sql
 CREATE TABLE app_user.docs (
@@ -245,7 +247,11 @@ CREATE TABLE app_user.docs (
 );
 ```
 
-不能直接修改或删除聚集索引列。可先在其他列建聚集索引，或重建表。
+本仓库019在DM自报8.1.5.60的PK=0/32768字节页和独立PK=1/8192字节页上，
+经官方/W验证CLOB、NCLOB、BLOB表即使请求CLUSTER主键，服务器实际也保留NORMAL后备索引；
+有界非LOB在PK=1下实际为CLUSTER。该服务器行为不是提供程序改写注解，
+不据此断言其他版本、LOB别名或已有表改造都相同；详见[019证据](../../plans/evidence/019.md)。
+不能直接修改或删除聚集索引列。已有布局调整须另行检查目录并制定迁移，不自动重建。
 
 ### 8. DDL 会隐式提交
 

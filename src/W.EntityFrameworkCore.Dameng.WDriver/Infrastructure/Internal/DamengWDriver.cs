@@ -71,7 +71,10 @@ internal sealed class DamengWDriver : DamengDriver
 
     public override void ConfigureTemporalParameter(DbParameter parameter, int fractionalSecondPrecision)
     {
-        ArgumentNullException.ThrowIfNull(parameter);
+        if (parameter is not DmParameter)
+        {
+            throw CreateForeignParameterException(parameter);
+        }
         ArgumentOutOfRangeException.ThrowIfNegative(fractionalSecondPrecision);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(fractionalSecondPrecision, 9);
 

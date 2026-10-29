@@ -9,12 +9,14 @@ internal static class TestLauncher
 {
     private const string ConnectionVariable = "DAMENG_TEST_CONNECTION_STRING";
     private const string WTransportSecurityVariable = "DAMENG_TEST_W_TRANSPORT_SECURITY";
+    private const string ProfileVariable = "DAMENG_TEST_PROFILE";
+    private const string ProfileExclusion = "Profile!=PkWithCluster1";
     private const string ScriptClass = "DamengMigrationScriptFunctionalTests";
     private const string NormalFunctionalFilter =
-        "FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe";
-    private const string AdminFilter = "FullyQualifiedName~" + ScriptClass;
+        "FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe&" + ProfileExclusion;
+    private const string AdminFilter = "FullyQualifiedName~" + ScriptClass + "&" + ProfileExclusion;
     private const string ProbeFilter =
-        "FullyQualifiedName!~" + ScriptClass + "&Category=CapabilityProbe";
+        "FullyQualifiedName!~" + ScriptClass + "&Category=CapabilityProbe&" + ProfileExclusion;
 
     private sealed record Lane(string Id, string Name, string Project, string? RequiredFilter, bool NeedsAdmin,
         bool NeedsTestConnection);
@@ -22,24 +24,10 @@ internal static class TestLauncher
     private sealed record TrxCounts(int Total, int Executed, int Passed, int Failed, int Skipped,
         string Outcome);
 
-    public static int Run(string[] args, string root, JsonObject? secrets)
+    public static int Run(string[] args, string root, Func<JsonObject?> loadSecrets)
     {
-        if (args.Length < 1 || args.Length % 2 == 0)
-        {
-            throw new ArgumentException("Invalid test arguments.");
-        }
-
-        var options = new Dictionary<string, string>(StringComparer.Ordinal);
-        for (var index = 1; index < args.Length; index += 2)
-        {
-            if (args[index] is not ("--filter" or "--driver" or "--w-transport-security")
-                || string.IsNullOrWhiteSpace(args[index + 1])
-                || !options.TryAdd(args[index], args[index + 1]))
-            {
-                throw new ArgumentException("Invalid test arguments.");
-            }
-        }
-
+        var options = ParseOptions(args);
+        var configuration = options.GetValueOrDefault("--configuration", "Debug");
         var driver = options.GetValueOrDefault("--driver", "official");
         if (driver is not ("official" or "w"))
         {
@@ -62,31 +50,14 @@ internal static class TestLauncher
         var customFilter = options.GetValueOrDefault("--filter");
         var laneEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [WTransportSecurityVariable] = driver == "w" ? wTransportSecurity : null
+            [WTransportSecurityVariable] = driver == "w" ? wTransportSecurity : null,
+            [ProfileVariable] = args[0] == "profile" ? "pk-cluster-1" : null
         };
-        var adminConnection = secrets?["AdminConnectionString"]?.GetValue<string>();
-        var savedTestConnection = secrets?["ConnectionString"]?.GetValue<string>();
-        var overrideConnection = Environment.GetEnvironmentVariable(ConnectionVariable);
-        var testConnection = !string.IsNullOrWhiteSpace(overrideConnection)
-            ? overrideConnection : savedTestConnection;
-
-        if (selected.Any(lane => lane.NeedsAdmin) && string.IsNullOrWhiteSpace(adminConnection))
-        {
-            throw new InvalidOperationException("Admin test connection unavailable.");
-        }
-        if (selected.Any(lane => lane.NeedsTestConnection)
-            && string.IsNullOrWhiteSpace(testConnection))
-        {
-            throw new InvalidOperationException("Test connection unavailable.");
-        }
-        if (selected.Any(lane => lane.NeedsTestConnection)
-            && string.IsNullOrWhiteSpace(overrideConnection)
-            && secrets?["ProvisioningStatus"]?.GetValue<string>() != "ready")
-        {
-            throw new InvalidOperationException("Persistent test schema is not ready.");
-        }
-
-        var redact = CreateRedactor(adminConnection, savedTestConnection, overrideConnection);
+        var connections = LoadConnections(selected, loadSecrets,
+            () => Environment.GetEnvironmentVariable(ConnectionVariable));
+        var adminConnection = connections.Admin;
+        var testConnection = connections.Test;
+        var redact = connections.Redact;
         var dotnetHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")
             ?? Environment.ProcessPath ?? "dotnet";
         var cliHome = Environment.GetEnvironmentVariable("DOTNET_CLI_HOME");
@@ -110,7 +81,7 @@ internal static class TestLauncher
 
         foreach (var lane in selected)
         {
-            Console.WriteLine("Running " + lane.Name + " tests.");
+            Console.WriteLine("Running " + lane.Name + " tests (" + configuration + ").");
             var project = Path.Combine(root, lane.Project);
             var restoreArgs = new[]
             {
@@ -125,21 +96,8 @@ internal static class TestLauncher
                 continue;
             }
 
-            var testArgs = new List<string>
-            {
-                "test", project, "--no-restore", "-m:1", "/nodeReuse:false",
-                "/p:UseSharedCompilation=false", "--disable-build-servers"
-            };
-            testArgs.Add("--logger");
-            testArgs.Add("trx;LogFileName=" + lane.Id + ".trx");
-            testArgs.Add("--results-directory");
-            testArgs.Add(resultDirectory);
-            var filter = CombineFilters(lane.RequiredFilter, customFilter);
-            if (filter is not null)
-            {
-                testArgs.Add("--filter");
-                testArgs.Add(filter);
-            }
+            laneEnvironment["DAMENG_TEST_RECOVERY_DIRECTORY"] = lane.NeedsAdmin ? Path.Combine(resultDirectory, "recovery") : null;
+            var testArgs = BuildTestArguments(lane, project, configuration, resultDirectory, customFilter);
             var connection = lane.NeedsAdmin ? adminConnection
                 : lane.NeedsTestConnection ? testConnection : null;
             var code = RunProcess(dotnetHost, testArgs, root, cliHome, connection, laneEnvironment, redact);
@@ -170,6 +128,80 @@ internal static class TestLauncher
         return overallCode;
     }
 
+    private sealed record Connections(string? Admin, string? Test, Func<string, string> Redact);
+
+    private static Connections LoadConnections(IReadOnlyList<Lane> selected, Func<JsonObject?> loadSecrets,
+        Func<string?> loadOverride)
+    {
+        if (!selected.Any(lane => lane.NeedsAdmin || lane.NeedsTestConnection))
+            return new Connections(null, null, text => text);
+        if (selected.Any(lane => lane.Id.StartsWith("profile-", StringComparison.Ordinal)))
+        {
+            var profileConnection = loadOverride();
+            if (string.IsNullOrWhiteSpace(profileConnection))
+                throw new InvalidOperationException("Independent profile requires an explicit ordinary connection override.");
+            return new Connections(null, profileConnection, CreateRedactor(profileConnection));
+        }
+        var secrets = loadSecrets();
+        var admin = secrets?["AdminConnectionString"]?.GetValue<string>();
+        var saved = secrets?["ConnectionString"]?.GetValue<string>();
+        var overrideConnection = selected.Any(lane => lane.NeedsTestConnection) ? loadOverride() : null;
+        var test = !string.IsNullOrWhiteSpace(overrideConnection) ? overrideConnection : saved;
+        if (selected.Any(lane => lane.NeedsAdmin) && string.IsNullOrWhiteSpace(admin))
+            throw new InvalidOperationException("Admin test connection unavailable.");
+        if (selected.Any(lane => lane.NeedsTestConnection) && string.IsNullOrWhiteSpace(test))
+            throw new InvalidOperationException("Test connection unavailable.");
+        if (selected.Any(lane => lane.NeedsTestConnection) && string.IsNullOrWhiteSpace(overrideConnection)
+            && secrets?["ProvisioningStatus"]?.GetValue<string>() != "ready")
+            throw new InvalidOperationException("Persistent test schema is not ready.");
+        return new Connections(admin, test, CreateRedactor(admin, saved, overrideConnection));
+    }
+
+    private static List<string> BuildTestArguments(Lane lane, string project, string configuration,
+        string resultDirectory, string? customFilter)
+    {
+        var arguments = new List<string>
+        {
+            "test", project, "--configuration", configuration, "--no-restore", "-m:1", "/nodeReuse:false",
+            "/p:UseSharedCompilation=false", "--disable-build-servers", "--logger", "trx;LogFileName=" + lane.Id + ".trx",
+            "--results-directory", resultDirectory
+        };
+        var filter = CombineFilters(lane.RequiredFilter, customFilter);
+        if (filter is not null) { arguments.Add("--filter"); arguments.Add(filter); }
+        return arguments;
+    }
+
+    private static Dictionary<string, string> ParseOptions(string[] args)
+    {
+        if (args.Length < 1 || args.Length % 2 == 0)
+        {
+            throw new ArgumentException("Invalid test arguments.");
+        }
+
+        var options = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 1; index < args.Length; index += 2)
+        {
+            if (args[index] is not ("--filter" or "--driver" or "--w-transport-security" or "--configuration" or "--profile")
+                || string.IsNullOrWhiteSpace(args[index + 1])
+                || !options.TryAdd(args[index], args[index + 1]))
+            {
+                throw new ArgumentException("Invalid test arguments.");
+            }
+        }
+
+        var configuration = options.GetValueOrDefault("--configuration", "Debug");
+        if (configuration is not ("Debug" or "Release"))
+            throw new ArgumentException("Unknown configuration; use Debug or Release.");
+        if (args[0] == "profile")
+        {
+            if (options.GetValueOrDefault("--profile") != "pk-cluster-1")
+                throw new ArgumentException("Profile lane requires --profile pk-cluster-1.");
+        }
+        else if (options.ContainsKey("--profile"))
+            throw new ArgumentException("--profile applies only to the profile lane.");
+        return options;
+    }
+
     private static IReadOnlyList<Lane> SelectLanes(string name, string driver)
     {
         // W lanes run the same shared sources through the W.DamengProvider test projects and
@@ -182,17 +214,21 @@ internal static class TestLauncher
         var specification = prefix + "Specification.Tests/" + prefix[5..] + "Specification.Tests.csproj";
         var unit = prefix + "Tests/" + prefix[5..] + "Tests.csproj";
         var normalLane = new Lane("functional" + suffix, label + "functional", functional, NormalFunctionalFilter, false, true);
-        var specLane = new Lane("specification" + suffix, label + "specification", specification, null, false, true);
+        var specLane = new Lane("specification" + suffix, label + "specification", specification, ProfileExclusion, false, true);
         var adminLane = new Lane("admin" + suffix, label + "admin migration scripts", functional, AdminFilter, true, false);
         var probeLane = new Lane("probes" + suffix, label + "capability probes", functional, ProbeFilter, false, true);
+        var offlineLane = new Lane("offline-fixtures" + suffix, label + "offline fixtures", functional, "Category=OfflineFixture&" + ProfileExclusion, false, false);
         var unitLane = new Lane("unit" + suffix, label + "unit", unit, null, false, false);
         return name switch
         {
+            "profile" => [new Lane("profile-pk-cluster-1" + suffix, label + "pk-cluster-1 profile", functional,
+                "Profile=PkWithCluster1&FullyQualifiedName!~" + ScriptClass + "&Category!~CapabilityProbe", false, true)],
             "functional" => [normalLane],
             "specification" => [specLane],
             "admin" => [adminLane],
             "probes" => [probeLane],
             "unit" => [unitLane],
+            "offline-fixtures" => [offlineLane],
             "all" => [unitLane, normalLane, specLane, adminLane],
             _ => throw new ArgumentException("Unknown test lane.")
         };
@@ -211,24 +247,7 @@ internal static class TestLauncher
         string cliHome, string? connection, IReadOnlyDictionary<string, string?> environment,
         Func<string, string> redact)
     {
-        var start = new ProcessStartInfo(dotnetHost)
-        {
-            WorkingDirectory = root,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        foreach (var argument in arguments) start.ArgumentList.Add(argument);
-        start.Environment["DOTNET_CLI_HOME"] = cliHome;
-        start.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        if (connection is null) start.Environment.Remove(ConnectionVariable);
-        else start.Environment[ConnectionVariable] = connection;
-        foreach (var (name, value) in environment)
-        {
-            if (value is null) start.Environment.Remove(name);
-            else start.Environment[name] = value;
-        }
+        var start = BuildProcessStartInfo(dotnetHost, arguments, root, cliHome, connection, environment);
 
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("Unable to start dotnet.");
@@ -241,6 +260,33 @@ internal static class TestLauncher
         if (output.Length > 0) Console.Write(output);
         if (error.Length > 0) Console.Error.Write(error);
         return process.ExitCode;
+    }
+
+    private static ProcessStartInfo BuildProcessStartInfo(string dotnetHost, IEnumerable<string> arguments, string root,
+        string cliHome, string? connection, IReadOnlyDictionary<string, string?> environment)
+    {
+        var start = new ProcessStartInfo(dotnetHost)
+        {
+            WorkingDirectory = root,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        start.Environment["DOTNET_CLI_HOME"] = cliHome;
+        start.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
+        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        start.Environment.Remove("ConnectionStrings__DamengCliFixture");
+        start.Environment.Remove(ProfileVariable);
+        if (connection is null) start.Environment.Remove(ConnectionVariable);
+        else start.Environment[ConnectionVariable] = connection;
+        foreach (var (name, value) in environment)
+        {
+            if (value is null) start.Environment.Remove(name);
+            else start.Environment[name] = value;
+        }
+
+        return start;
     }
 
     private static TrxCounts? ReadAndRedactTrx(string path, Func<string, string> redact)
@@ -331,6 +377,133 @@ internal static class TestLauncher
 
     internal static int SelfTest()
     {
+        foreach (var driver in new[] { "official", "w" })
+        {
+            foreach (var name in new[] { "unit", "offline-fixtures" })
+            {
+                var lanes = SelectLanes(name, driver);
+                var connections = LoadConnections(lanes,
+                    () => throw new InvalidOperationException("Offline secrets loader was called."),
+                    () => throw new InvalidOperationException("Offline connection override was read."));
+                if (connections.Admin is not null || connections.Test is not null || connections.Redact("fixture") != "fixture")
+                    throw new InvalidOperationException("Offline connection self-test failed.");
+                var lane = lanes.Single();
+                if ((driver == "w") != lane.Project.Contains("WDriver", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Offline driver project self-test failed.");
+                if (name == "offline-fixtures")
+                {
+                    var filter = CombineFilters(lane.RequiredFilter, "FullyQualifiedName~Fixture");
+                    if (filter != "(Category=OfflineFixture&Profile!=PkWithCluster1)&(FullyQualifiedName~Fixture)")
+                        throw new InvalidOperationException("Offline filter self-test failed.");
+                }
+                var start = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", null, new Dictionary<string, string?>());
+                if (start.Environment.ContainsKey(ConnectionVariable) || start.Environment.ContainsKey("ConnectionStrings__DamengCliFixture"))
+                    throw new InvalidOperationException("Offline process environment self-test failed.");
+            }
+        }
+        foreach (var name in new[] { "functional", "specification", "admin", "probes", "all" })
+        {
+            var calls = 0;
+            var lanes = SelectLanes(name, "official");
+            try { LoadConnections(lanes, () => { calls++; return null; }, () => null); }
+            catch (InvalidOperationException) { if (calls == 1) continue; }
+            throw new InvalidOperationException("Database lane did not require configuration.");
+        }
+        var synthetic = new JsonObject
+        {
+            ["AdminConnectionString"] = "Server=admin.invalid;User ID=synthetic;Password=admin-only",
+            ["ConnectionString"] = "Server=test.invalid;User ID=synthetic;Password=test-only",
+            ["ProvisioningStatus"] = "ready"
+        };
+        var normal = LoadConnections(SelectLanes("functional", "official"), () => synthetic, () => null);
+        if (normal.Test != synthetic["ConnectionString"]!.GetValue<string>())
+            throw new InvalidOperationException("Ordinary connection selection changed.");
+        var adminOnly = LoadConnections(SelectLanes("admin", "official"), () => synthetic,
+            () => throw new InvalidOperationException("Admin must not read the ordinary override."));
+        if (adminOnly.Admin != synthetic["AdminConnectionString"]!.GetValue<string>())
+            throw new InvalidOperationException("Admin connection selection changed.");
+        synthetic["ProvisioningStatus"] = "pending";
+        try
+        {
+            LoadConnections(SelectLanes("functional", "official"), () => synthetic, () => null);
+            throw new ArgumentException("Unready schema was accepted.");
+        }
+        catch (InvalidOperationException) { }
+        const string syntheticOverride = "Server=override.invalid;User ID=synthetic;Password=override-only";
+        if (LoadConnections(SelectLanes("functional", "official"), () => synthetic, () => syntheticOverride).Test != syntheticOverride)
+            throw new InvalidOperationException("Ordinary override selection changed.");
+        try { SelectLanes("unknown", "official"); throw new InvalidOperationException("Unknown lane was accepted."); }
+        catch (ArgumentException) { }
+        if (SelectLanes("all", "official").Any(lane => lane.Id.StartsWith("offline", StringComparison.Ordinal)))
+            throw new InvalidOperationException("All lane semantics changed.");
+        foreach (var driver in new[] { "official", "w" })
+        {
+            var profile = SelectLanes("profile", driver);
+            var lane = profile.Single();
+            if (lane.NeedsAdmin || !lane.NeedsTestConnection || lane.Id != "profile-pk-cluster-1" + (driver == "w" ? "-w" : ""))
+                throw new InvalidOperationException("Profile routing self-test failed.");
+            foreach (var missing in new string?[] { null, "", " " })
+            {
+                try
+                {
+                    LoadConnections(profile, () => throw new ArgumentException("Profile read default secrets."), () => missing);
+                    throw new ArgumentException("Profile accepted absent override.");
+                }
+                catch (InvalidOperationException) { }
+            }
+            var connections = LoadConnections(profile, () => throw new InvalidOperationException("Profile read default secrets."), () => syntheticOverride);
+            if (connections.Admin is not null || connections.Test != syntheticOverride)
+                throw new InvalidOperationException("Profile connection self-test failed.");
+            if (CombineFilters(lane.RequiredFilter, "Category=CapabilityProbe|FullyQualifiedName~" + ScriptClass)
+                != "(" + lane.RequiredFilter + ")&(Category=CapabilityProbe|FullyQualifiedName~" + ScriptClass + ")")
+                throw new InvalidOperationException("Profile filter self-test failed.");
+            foreach (var name in new[] { "functional", "specification", "admin", "probes", "offline-fixtures", "all" })
+                if (SelectLanes(name, driver).Where(l => l.NeedsAdmin || l.NeedsTestConnection || l.Id.StartsWith("offline", StringComparison.Ordinal))
+                    .Any(l => l.RequiredFilter is null || !l.RequiredFilter.Contains(ProfileExclusion, StringComparison.Ordinal)))
+                    throw new InvalidOperationException("Ordinary lane includes profile tests.");
+        }
+        foreach (var invalid in new[] {
+            new[] { "profile" }, new[] { "profile", "--profile", "unknown" },
+            new[] { "profile", "--profile", "pk-cluster-1", "--profile", "pk-cluster-1" },
+            new[] { "functional", "--profile", "pk-cluster-1" } })
+        {
+            try { ParseOptions(invalid); }
+            catch (ArgumentException) { continue; }
+            throw new InvalidOperationException("Invalid profile was accepted.");
+        }
+        ParseOptions(["profile", "--profile", "pk-cluster-1"]);
+        var inheritedProfile = Environment.GetEnvironmentVariable(ProfileVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(ProfileVariable, "inherited");
+            var cleared = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", null, new Dictionary<string, string?>());
+            var marked = BuildProcessStartInfo("dotnet", ["test"], ".", "cli-home", syntheticOverride,
+                new Dictionary<string, string?> { [ProfileVariable] = "pk-cluster-1" });
+            if (cleared.Environment.ContainsKey(ProfileVariable) || marked.Environment[ProfileVariable] != "pk-cluster-1")
+                throw new InvalidOperationException("Profile environment isolation failed.");
+        }
+        finally { Environment.SetEnvironmentVariable(ProfileVariable, inheritedProfile); }
+        Console.WriteLine("Profile routing and environment self-test passed.");
+        Console.WriteLine("Offline lane isolation self-test passed.");
+        foreach (var configuration in new[] { "Debug", "Release" })
+        {
+            var parsed = ParseOptions(["unit", "--configuration", configuration]);
+            var arguments = BuildTestArguments(SelectLanes("unit", "official")[0], "project", parsed["--configuration"], "results", null);
+            if (arguments[arguments.IndexOf("--configuration") + 1] != configuration)
+                throw new InvalidOperationException("Configuration argument self-test failed.");
+        }
+        if (ParseOptions(["unit"]).GetValueOrDefault("--configuration", "Debug") != "Debug")
+            throw new InvalidOperationException("Default configuration self-test failed.");
+        foreach (var invalid in new[] {
+            new[] { "unit", "--configuration", "" }, new[] { "unit", "--configuration", "release" },
+            new[] { "unit", "--configuration", "Arbitrary" }, new[] { "unit", "--configuration", "Debug", "--configuration", "Release" },
+            new[] { "unit", "--configuration" } })
+        {
+            try { ParseOptions(invalid); }
+            catch (ArgumentException) { continue; }
+            throw new InvalidOperationException("Invalid configuration was accepted.");
+        }
+        Console.WriteLine("Configuration self-test passed.");
         const string fakeConnection = "Data Source=unit-host.invalid;User ID=SA;Password=sample-only-secret";
         const string sample = """
             <TestRun xmlns="urn:synthetic-trx">

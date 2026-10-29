@@ -52,7 +52,7 @@ internal sealed class DamengStringAggregateMethodTranslator(
                 "Dameng string.Join/Concat aggregation requires a bounded varying text selector; LOB, fixed CHAR, and unmapped text are unsupported.");
         }
 
-        if (source.Orderings.Any(ordering => IsLob(ordering.Expression.TypeMapping)))
+        if (source.Orderings.Any(ordering => DamengLobTypeClassifier.GetLobKind(ordering.Expression.TypeMapping) is not null))
         {
             throw new NotSupportedException("Dameng string.Join/Concat aggregation cannot order by a LOB expression.");
         }
@@ -130,12 +130,4 @@ internal sealed class DamengStringAggregateMethodTranslator(
             && mapping.ClrType == typeof(string)
             && BoundedTextStoreTypes.Contains(mapping.StoreTypeNameBase);
 
-    private static bool IsLob(RelationalTypeMapping? mapping)
-        => mapping is not null
-            && (mapping.StoreTypeNameBase.Equals("CLOB", StringComparison.OrdinalIgnoreCase)
-                || mapping.StoreTypeNameBase.Equals("NCLOB", StringComparison.OrdinalIgnoreCase)
-                || mapping.StoreTypeNameBase.Equals("TEXT", StringComparison.OrdinalIgnoreCase)
-                || mapping.StoreTypeNameBase.Equals("NTEXT", StringComparison.OrdinalIgnoreCase)
-                || mapping.StoreTypeNameBase.Equals("LONG", StringComparison.OrdinalIgnoreCase)
-                || mapping.StoreTypeNameBase.Equals("LONGVARCHAR", StringComparison.OrdinalIgnoreCase));
 }

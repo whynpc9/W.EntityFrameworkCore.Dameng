@@ -48,6 +48,13 @@ internal static class DamengDriverErrors
                 + "mapping created for one driver cannot be reused by a context of another driver."),
             "Dameng:ForeignParameter");
 
+    public static InvalidOperationException ForeignModel(DamengDriver driver, DamengDriver bound, Type modelType)
+        => WithId(
+            new InvalidOperationException(
+                $"Dameng:ForeignModel: model '{modelType.FullName}' belongs to the Dameng '{bound.Name}' "
+                + $"driver and cannot be used with the '{driver.Name}' driver."),
+            "Dameng:ForeignModel");
+
     public static InvalidOperationException UnboundMapping(string mappingType)
         => WithId(
             new InvalidOperationException(

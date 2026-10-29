@@ -17,6 +17,7 @@
     <ProjectReference Include="../../src/W.EntityFrameworkCore.Dameng/W.EntityFrameworkCore.Dameng.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../W.EntityFrameworkCore.Dameng.FunctionalTests/DamengCliTestHarness.cs" Link="DamengCliTestHarness.cs" />
     <Compile Include="../Shared/NumericAggregateQueryCases.cs" Link="NumericAggregateQueryCases.cs" />
   </ItemGroup>
 </Project>
