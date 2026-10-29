@@ -285,3 +285,14 @@ W 功能项目已链接官方功能目录源文件，同一回归经 `UseDamengU
 本项为调查：确认后修复并验证，或以充分可重复证据确证无缺陷，按正文分支验收。缺环境、跳过、单次未复现均不能闭合，保持 BLOCKED 并记录解除条件。完成后向协调者提交证据，作为本批 `plans/evidence/M6.md` 的输入；020 依赖本项的正式闭合记录。
 
 2026-10-29 执行记录见 [正式证据](evidence/019.md)，实施起点为 M5 合并 `195ffe6f0f832822c0d864ff108e474acc940d57`。M6 因缺独立 PK=1 环境保持 BLOCKED。
+
+### 2026-10-29：维护者授权的单点白名单补充
+
+维护者明确回复“允许这一处测试夹具修正并继续”。本项最终集成所需范围仅增加
+`test/W.EntityFrameworkCore.Dameng.WDriver.FunctionalTests/WDriverDatabaseCreatorAsyncFunctionalTests.cs`
+中构造测试DbContext的一行：`UseDamengWithWDriver`改为既有统一`UseDamengUnderTest`。
+该helper在W项目仍选择原W入口，原样传递relay连接及CommandTimeout配置，并仅为当前测试context
+沿用ManyServiceProvidersCreatedWarning日志策略。不得据此修改产品、其他既有夹具、受测SQL、
+实网/取消/超时断言或过滤条件。F12归属仍为011，本次只修复完整套件的测试夹具诊断配置。
+先验证三项实际进入网络链路，再按影响刷新profile及同一最终产品revision的双驱动all；
+未通过前不关闭020/M6或合并。
