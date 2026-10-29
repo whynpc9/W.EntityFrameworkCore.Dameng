@@ -113,3 +113,25 @@ scripts/ci/verify-offline.sh
 `admin` 子进程在本次结果目录的 `recovery/` 下保存每个临时夹具的独立 JSON 记录；直接调用夹具时使用独立临时目录。Unix 目录为0700、文件为0600，原子替换前刷新文件。记录包含唯一运行标识、精确对象名、创建前不存在证据、阶段、用户默认表空间关系及数据文件路径，不含凭据或 CREATE USER 文本。
 
 发送 CREATE 前先保存 Unknown 状态。响应异常时不重发 CREATE，恢复使用新管理连接，核对精确类型及关系后先删用户、确认消失，再删表空间。DROP 响应不确定时另开连接查证，不无界重试。`cleaned` 表示两个精确对象已确认不存在；`cleanup_required` 表示目录、所有权或删除结果仍不确定，必须停止后续数据库测试，由管理员依据该记录逐项调查。不能按名称前缀批量删除，也不能用事务回滚替代对象检查。故障注入模拟真实 CREATE 成功与客户端确认之间的窗口，不代表端到端网络失 ACK 复现。
+
+### 独立聚集主键 profile（019 准备，实库验收尚阻断）
+
+```bash
+scripts/local-test/run.sh test profile --profile pk-cluster-1 --configuration Debug
+scripts/local-test/run.sh test profile --profile pk-cluster-1 --configuration Debug --driver w --w-transport-security PlaintextAllowed
+```
+
+仅接受显式 `--profile pk-cluster-1`，并要求调用环境已安全注入独立普通测试用户的
+`DAMENG_TEST_CONNECTION_STRING`。profile 通道不读取默认 secrets，不回退持久用户或管理员连接；
+连接不进入命令参数。普通账户需有对象操作权限及必要的 `SYS.V$DM_INI` 只读可见性，
+不能授予 DBA 来替代。不得修改共享实例或会话参数来制造 `PK_WITH_CLUSTER=1`。
+
+固定过滤器为 `Profile=PkWithCluster1`，排除管理员类和能力探针，自定义过滤只能相与缩小。
+TRX 分别为 `profile-pk-cluster-1.trx` / `profile-pk-cluster-1-w.trx`。
+非 profile 子进程清除 `DAMENG_TEST_PROFILE`；functional、specification、admin、probes、
+offline-fixtures 及普通 all 排除此组，all 不包含 profile。
+
+目前只实现路由、自检及只读环境前置核对，profile 只读方法会在标记、连接或参数不符合时失败，
+不会跳过或发送 DDL。它单独通过也不代表 LOB 主键合同已验证。当前 local 实例经本次授权新建的
+普通账户确认 `PK_WITH_CLUSTER=0`；019 的 LOB 对照、CONFIRMED/REFUTED 分支及双驱动 PK=1
+往返尚待独立环境，019/M6 保持 BLOCKED。证据见 `plans/evidence/019.md`。

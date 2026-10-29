@@ -109,11 +109,12 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
             }
 
             var tableLookup = tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
-            var computedColumns = ValidateUnsupportedTableStructures(connection, currentSchema, tableLookup);
+            var nativeColumns = ValidateUnsupportedTableStructures(connection, currentSchema, tableLookup);
             ValidateConstraintStates(connection, currentSchema, tableLookup);
 
             var pendingSequenceDefaults = new List<PendingSequenceDefault>();
-            LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults, computedColumns);
+            LoadColumns(connection, currentSchema, tableLookup, pendingSequenceDefaults, nativeColumns.ComputedColumns);
+            ValidateColumnCompleteness(tableLookup, nativeColumns.UserColumns);
             var columnLookup = tables.ToDictionary(
                 table => table,
                 table => table.Columns.ToDictionary(column => column.Name, StringComparer.Ordinal));
@@ -824,7 +825,34 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         }
     }
 
-    private static Dictionary<(string Table, string Column), string> ValidateUnsupportedTableStructures(
+    private sealed record NativeColumnMetadata(
+        Dictionary<string, HashSet<string>> UserColumns,
+        Dictionary<(string Table, string Column), string> ComputedColumns);
+
+    private static void ValidateColumnCompleteness(
+        Dictionary<string, DatabaseTable> tables,
+        Dictionary<string, HashSet<string>> nativeColumns)
+    {
+        // Only ordinary UTAB objects participate. Views keep their projection contract.
+        // Native COLID is zero-based on the verified server; ALL_TAB_COLS.COLUMN_ID
+        // is one-based, so compare original names with Ordinal equality instead.
+        foreach (var (name, expected) in nativeColumns)
+        {
+            if (expected.Count == 0)
+                throw new NotSupportedException($"Dameng table '{name}' has no readable native column metadata; no partial model was returned.");
+            var actual = tables[name].Columns.Select(column => column.Name).ToHashSet(StringComparer.Ordinal);
+            var missing = expected.Except(actual).Order(StringComparer.Ordinal).ToArray();
+            var unexpected = actual.Except(expected).Order(StringComparer.Ordinal).ToArray();
+            if (missing.Length != 0 || unexpected.Length != 0)
+                throw new NotSupportedException(
+                    $"Dameng table '{name}' has inconsistent column metadata. "
+                    + "Missing columns: " + string.Join(", ", missing.Select(column => $"'{column}'"))
+                    + "; unexpected columns: " + string.Join(", ", unexpected.Select(column => $"'{column}'"))
+                    + ". No partial model was returned.");
+        }
+    }
+
+    private static NativeColumnMetadata ValidateUnsupportedTableStructures(
         DbConnection connection,
         string schema,
         Dictionary<string, DatabaseTable> tables)
@@ -873,6 +901,8 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         // SYSCOLINFOS.INFO1 marks virtual columns (bit 0), DEFAULT ON NULL (bit 4) and
         // ON UPDATE (bit 6). For virtual columns DEFVAL is the computed expression,
         // not an insert default; keep it separate from ALL_TAB_COLS.DATA_DEFAULT.
+        var userColumns = tables.Values.Where(table => table is not DatabaseView)
+            .ToDictionary(table => table.Name, _ => new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         var computedColumns = new Dictionary<(string Table, string Column), string>();
         using var columns = CreateCommand(connection,
             "SELECT T.NAME, C.NAME, COALESCE(I.INFO1, 0), C.INFO2, C.DEFVAL FROM SYS.SYSCOLUMNS C "
@@ -884,8 +914,9 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
         using var columnReader = columns.ExecuteReader();
         while (columnReader.Read())
         {
-            if (tables.ContainsKey(columnReader.GetString(0)))
+            if (userColumns.TryGetValue(columnReader.GetString(0), out var names))
             {
+                names.Add(columnReader.GetString(1));
                 ValidateColumnEncryptionFlags(columnReader.GetString(0), columnReader.GetString(1), GetNullableInt64(columnReader, 3));
                 var flags = Convert.ToInt64(columnReader.GetValue(2), CultureInfo.InvariantCulture);
                 ValidateColumnGenerationFlags(columnReader.GetString(0), columnReader.GetString(1), flags);
@@ -898,7 +929,7 @@ internal sealed class DamengDatabaseModelFactory : DatabaseModelFactory
                 }
             }
         }
-        return computedColumns;
+        return new NativeColumnMetadata(userColumns, computedColumns);
     }
 
     internal static bool IsVirtualColumnFlags(long flags)

@@ -4,7 +4,7 @@
 - [2026-10-28 深度审查](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)：原始发现、证据、置信度及排除项。
 - 原始审查基线：`c80c788fb3cd34d97626d578db580264a28a11f3`。
 - 当前范围：按用户后续要求，将全部 **14 项问题/验证缺口 + 6 项调查**拆为 **20 份独立计划、6 个里程碑**。先前“本次只保留审查报告”的选择已由本次制定计划请求更新。
-- 当前进度：M1（001–004）与 M2（005–008）已合并（PR #9/#10）；M2 合并为 `c3ca2fb53b783c271dd89ef8ce460f96f5e85661`，官方参数已知风险保留。M3（009–011）功能、本地与实施提交远端CI/Codex及线程已闭环（PR #11），已合并为 `eb79cc8fb8b91e8cb2d6fb4ede255c61759b4056`；M4（012→013）功能、本地及实施提交远端门完成，PR #12，M5功能/验收DONE（PR #13，最后状态文档自身门后合并），M6 保持 TODO；M1记录见[M1执行证据](evidence/M1.md)，M2提交/PR/验证与风险接受决定见[M2执行证据](evidence/M2.md)。
+- 当前进度：M1（001–004）与 M2（005–008）已合并（PR #9/#10）；M2 合并为 `c3ca2fb53b783c271dd89ef8ce460f96f5e85661`，官方参数已知风险保留。M3（009–011）功能、本地与实施提交远端CI/Codex及线程已闭环（PR #11），已合并为 `eb79cc8fb8b91e8cb2d6fb4ede255c61759b4056`；M4（012→013）功能、本地及实施提交远端门完成，PR #12，M5功能/验收DONE（PR #13，最后状态文档自身门后合并），M6 已启动，因独立 PK=1 profile 缺口保持 BLOCKED；M1记录见[M1执行证据](evidence/M1.md)，M2提交/PR/验证与风险接受决定见[M2执行证据](evidence/M2.md)。
 - D01–D03 为未来方向，单独保留在路线图中，不计入缺陷批次或验收分母。
 
 ## 批次
@@ -16,7 +16,7 @@
 | M3 | 驱动与连接生命周期 | 3 | F03、F09、F12 | DONE |
 | M4 | 模型一致性 | 2 | I02、I06 | DONE |
 | M5 | 迁移与资源恢复 | 4 | F11、F04、F07、F13 | DONE（功能/验收） |
-| M6 | 目录、独立 profile 与文档收口 | 3 | I04、I05、F14 | TODO |
+| M6 | 目录、独立 profile 与文档收口 | 3 | I04、I05、F14 | BLOCKED |
 
 默认 M1 → M2 → M3 → M4 → M5 → M6，每个里程碑完成一个批次。表内是技术前置，跨批次还必须通过前一里程碑验收门。可提前准备环境或只读表征，不越过批次验收。
 
@@ -43,9 +43,9 @@
 | M5 | [015 · 纯注释迁移](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/015-comment-only-migrations.md) | F04 | 012、014 | DONE（本地） |
 | M5 | [016 · 历史表脚本定位](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/016-history-script-tokenization.md) | F07 | 014、015 | DONE（本地） |
 | M5 | [017 · 迁移锁真实争用证据](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/017-migration-lock-evidence.md) | F13 | 011、014、016 | DONE（本地） |
-| M6 | [018 · 目录列完整性](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/018-catalog-column-completeness.md) | I04 | 014 | TODO |
-| M6 | [019 · LOB 表的主键聚集策略 profile](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/019-lob-primary-key-profile.md) | I05 | 012、014、015 | TODO |
-| M6 | [020 · 能力文档与权限示例收口](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/020-documentation-reconciliation.md) | F14 | 001–019 结论闭合 | TODO |
+| M6 | [018 · 目录列完整性](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/018-catalog-column-completeness.md) | I04 | 014 | DONE；[证据](evidence/018.md) |
+| M6 | [019 · LOB 表的主键聚集策略 profile](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/019-lob-primary-key-profile.md) | I05 | 012、014、015 | BLOCKED；[证据](evidence/019.md) |
+| M6 | [020 · 能力文档与权限示例收口](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/020-documentation-reconciliation.md) | F14 | 001–019 结论闭合 | BLOCKED；[证据](evidence/020.md) |
 
 ## 状态与证据
 
@@ -66,3 +66,5 @@ M5 按 014→015→016→017 实施，当前功能/验收DONE，基线 `900f37aa
 2026-10-29按维护者明确授权创建隔离普通账号并授予精确视图SELECT后，014最终管理员双驱动4/11、017官方7/W8、联合迁移交叉各21通过；临时账号/空间精确清理，96份记录均cleaned。此前BLOCKED为历史，最新本地门已补齐，远端见[M5汇总](evidence/M5.md)。不启动M6。
 
 M5远端收口：恢复证据提交2e0907d自身CI/Codex无未解决意见，线程0；最后状态文档仍要求自身同样门后按既有授权合并PR #13。全部实际SHA/主分支CI见[M5记录](evidence/M5.md)及PR，不启动M6。
+
+M6 从 M5 合并 SHA `195ffe6f0f832822c0d864ff108e474acc940d57` 开始；018 修复、目录对照及独立复核 DONE，019 local 普通账户已确认 PK_WITH_CLUSTER=0，独立 PK=1 硬门未具备，020 未启动最终对账。详见 [M6](evidence/M6.md)。旧段“不启动 M6”保留为 M5 阶段历史，当前状态以本段为准。
