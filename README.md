@@ -75,8 +75,9 @@ modelBuilder.Entity<AuditEvent>()
 
 ### 使用 W.DamengProvider 驱动（预览版）
 
-扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.4.0-preview.1` 精确依赖基础包
-`W.EntityFrameworkCore.Dameng 0.4.0` 和 `W.DamengProvider 0.2.0`，改用 `UseDamengWithWDriver`：
+当前源码中的扩展项目 `W.EntityFrameworkCore.Dameng.WDriver` 精确依赖基础包
+`W.EntityFrameworkCore.Dameng 0.4.0` 和 `W.DamengProvider 0.3.1`。已发布的
+`0.4.0-preview.1` 仍依赖 W `0.2.0`；本次依赖升级尚未发布新扩展包。改用 `UseDamengWithWDriver`：
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>

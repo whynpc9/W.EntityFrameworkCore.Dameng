@@ -129,17 +129,18 @@
 
 ## W.DamengProvider 驱动（预览版）
 
-扩展包 `W.EntityFrameworkCore.Dameng.WDriver` 0.4.0-preview.1 依赖 `W.DamengProvider [0.2.0]`
+当前源码的扩展项目 `W.EntityFrameworkCore.Dameng.WDriver` 依赖 `W.DamengProvider [0.3.1]`
 （身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；
 未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
 证据只来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；TLS 与其他版本均未验证。
 完整记录见 [W 接入验证记录](w-dmprovider-validation.md)。PR #7 / #8 已合并，审查线程
-均已解决（[复核记录](w-dmprovider-integration-review.md)）；扩展包 `0.4.0-preview.1` 已公开发布。
+均已解决（[复核记录](w-dmprovider-integration-review.md)）；已发布扩展包 `0.4.0-preview.1`
+仍依赖 W `0.2.0`。本次源码依赖升级尚未发布新扩展包，0.3.1 的回归记录见验证记录末节。
 
 | 领域 | W 状态 | 范围与边界 |
 | --- | --- | --- |
 | 配置 | 单元级已验证 | 六个 `UseDamengWithWDriver` 重载、`AddEntityFrameworkDamengWithWDriver`；同一 options 混用两种驱动、手工服务与 options 驱动不符、同一服务集合注册两种驱动均明确失败 |
-| 共享功能套件 | 真实环境已验证 | 升级到 W 0.2.0 后，官方 300 项功能在 W 下全部通过；W 功能通道共 365 项，另有 4 项规范冒烟、7 项管理员迁移脚本全部通过；按驱动区分的断言与最新运行 ID 见验证记录 |
+| 共享功能套件 | 真实环境已验证 | 升级到 W 0.3.1 后，W 单元 61 项、功能 365 项（含官方 300 项共享功能）、规范冒烟 4 项、管理员迁移脚本 7 项全部通过，无失败或跳过；按驱动区分的断言与运行 ID 见验证记录 |
 | 异步与取消 | 真实环境已验证 | 查询与 `SaveChangesAsync` 在服务器未完成时返回；预取消不发送；运行中取消保留原 token 并关闭会话，EF 下一次操作用新会话；`CommandTimeout` 报客户端期限（`TotalDeadline`）。LOB 同步 getter 不在此结论内 |
 | 自动重试 | 明确拒绝 | `EnableRetryOnFailure` 全部重载及直接构造 `DamengRetryingExecutionStrategy` 抛 `Dameng:RetryNotSupportedForWDriver`；默认策略执行一次；自定义 `ExecutionStrategy` 由应用负责 |
 | 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。W 0.2.0 把套接字失败包装为 `DmException`（`ErrorKind=Transport`、`Number=0`，原异常为 `InnerException`）：经本地 TCP 中继注入 RST，连接被拒报 `NotSent`，中继收到登录请求后重置报 `Unknown`；事务内 `SaveChanges` 发送后重置（sync/async）得到 `DbUpdateException`，`OperationOutcome=Unknown`、`TransactionOutcome=OutcomeUnknown`、不可复用，新连接核对未提交。commit 失 ACK 的端到端注入 pending |

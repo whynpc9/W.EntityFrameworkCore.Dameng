@@ -1,25 +1,23 @@
 {
   "schemaVersion": 1,
   "packageId": "W.DamengProvider",
-  "version": "0.2.0",
-  "versionConstraint": "[0.2.0]",
+  "version": "0.3.1",
+  "versionConstraint": "[0.3.1]",
   "targetFramework": "net10.0",
-  "packageSha256": "6db5972551506f9510f563239b360afabd2b6ef31f99b678599d6e9d9733d848",
-  "nugetContentHash": "nBvZJyYk+CvdZq8fgZSZGfXYcxp4zEarIo1/F5ADLLlYcrDYK7E4PiF3CPWbKsGZFrdoHUNNdh6N2rbROlbVbw==",
+  "packageSha256": "c0641bf1e77cc8da6bb924c03ee8c172f504187bac4d4e04784a60221661318c",
+  "nugetContentHash": "srKkNc/dNiQE4X//EpBbRjM4w6cvhJn0xLSDkK6h8OP5/cnoykX6B0w2JXpSSrmi0JwKCQa2fN5cRjgAlSN3Tg==",
   "assemblyPath": "lib/net10.0/W.DamengProvider.dll",
-  "assemblySha256": "d4bc3f284ba8b09fb551b755ab7d91e5ac41cb8c62351fb94a7e623dc3f91f18",
-  "assemblyMvid": "1756fef6-b801-4182-91ab-ed3ef6945264",
+  "assemblySha256": "2a9fc2a8679a409586892b701f59d04b1332f9e9e0eb8daa40e7f5890029971e",
+  "assemblyMvid": "29fde847-5a9d-46c7-8324-c5861e579f22",
   "clrNamespace": "W.Dm",
   "diagnosticsSourceName": "W.DmProvider",
   "source": {
     "repository": "https://github.com/whynpc9/W.DamengProvider",
-    "repositoryCommit": "aef142f05af67d2ce300f0a9f3a9fbd198f304cc",
-    "tag": "v0.2.0",
-    "tagCommit": "aef142f05af67d2ce300f0a9f3a9fbd198f304cc",
-    "publishRunId": "38749310165",
-    "publishArtifactId": "11981475783",
-    "ciUnsignedPackageSha256": "f6be1b02a0b6d3fc8ddc06e20732d1f723c0d21ea3662111151a0f83eb4e1126",
-    "packageUrl": "https://api.nuget.org/v3-flatcontainer/w.damengprovider/0.2.0/w.damengprovider.0.2.0.nupkg"
+    "repositoryCommit": "a71ef401084eacfdb9593d10e1e245a005d43d57",
+    "tag": "v0.3.1",
+    "tagCommit": "a71ef401084eacfdb9593d10e1e245a005d43d57",
+    "packageUrl": "https://api.nuget.org/v3-flatcontainer/w.damengprovider/0.3.1/w.damengprovider.0.3.1.nupkg",
+    "publishRunId": "40631797644"
   },
   "forbiddenPackageIds": [
     "W.DmProvider"

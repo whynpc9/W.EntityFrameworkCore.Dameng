@@ -7,6 +7,9 @@
 [0.4.0 发布准备](release-0.4.0.md)。下文保留各阶段历史结果及当时的 pending 状态；
 当前复审状态见[审查记录](w-dmprovider-integration-review.md)。
 
+当前源码于 2026-10-29 升级到 `W.DamengProvider 0.3.1`，本轮身份和回归结果见
+[0.3.1 升级记录](#升级到-wdamengprovider-0312026-10-29)。已发布扩展包的依赖仍以对应发布记录为准。
+
 ## T00 基线与候选冻结（2026-10-14）
 
 ### 候选身份
@@ -279,3 +282,57 @@ PR #8 Codex 审查（2026-10-15）指出两处中继问题并已修正：转发�
 W 功能通道从 351 项增至 365 项。证据只来自自报 `8.1.5.60`、UTF-8、明文的本地 profile；TLS 与其他服务器版本仍未验证。
 commit 失 ACK 的端到端注入、`-3510` 负例仍 pending。W 0.2.0 的 `DbBatch` 逐条往返、数组绑定只报告总影响行数且不能回读生成值，
 本轮不改变单命令修改批次；数据源、流式 LOB、DmDecimal 仍未接入。
+
+## 升级到 W.DamengProvider 0.3.1（2026-10-29）
+
+### 包身份与范围
+
+- 公开 NuGet 版本索引包含 `0.3.1`，为本轮核查到的最新稳定版本；
+  [GitHub Release](https://github.com/whynpc9/W.DamengProvider/releases/tag/v0.3.1) 于 2026-10-28 发布。
+  tag 内发布文档仍有准备阶段措辞，本轮以公开索引、签名包和正式 Release 为发布证据。
+- 中央依赖精确锁定 `[0.3.1]`，重新还原四个 W 项目的锁文件；EF Core 与官方驱动的依赖和锁文件保持不变。
+- 本次只升级源码依赖，尚未发布新扩展包；已发布 `W.EntityFrameworkCore.Dameng.WDriver 0.4.0-preview.1` 仍依赖 W `0.2.0`。
+- 上游修复涉及 LOB 截断/Stream、SequentialAccess 空值探测、DbBatch Reader 与过程参数推导。
+  本轮不新增 EF 能力声明，不改变单命令修改批次；数据源、流式 LOB、DmDecimal 仍未接入。
+
+| 项 | 值 |
+| --- | --- |
+| 包 SHA-256 | `c0641bf1e77cc8da6bb924c03ee8c172f504187bac4d4e04784a60221661318c` |
+| NuGet contentHash | `srKkNc/dNiQE4X//EpBbRjM4w6cvhJn0xLSDkK6h8OP5/cnoykX6B0w2JXpSSrmi0JwKCQa2fN5cRjgAlSN3Tg==` |
+| net10.0 DLL SHA-256 | `2a9fc2a8679a409586892b701f59d04b1332f9e9e0eb8daa40e7f5890029971e` |
+| net10.0 DLL MVID | `29fde847-5a9d-46c7-8324-c5861e579f22` |
+| nuspec repository commit / tag commit | `a71ef401084eacfdb9593d10e1e245a005d43d57`（`v0.3.1`） |
+| 上游 tag 发布 | [40631797644](https://github.com/whynpc9/W.DamengProvider/actions/runs/40631797644)，成功，仅证明上游发布检查 |
+
+从 NuGet 精确 URL 下载公开签名包，以临时本地源加 nuget.org 完成还原。
+`dotnet nuget verify --all` 退出 0，NuGet.org 仓库签名有效；
+`python3 -I scripts/driver-candidate/verify-package.py --require-lock-reference` 全部通过，
+核对公开包、还原缓存、四份锁文件、net10.0 DLL 的散列/MVID 与 nuspec 源码提交；net10.0 依赖组仍为空。
+
+### 本仓库回归
+
+通过统一入口运行：
+
+```bash
+scripts/local-test/run.sh test all --driver w --w-transport-security PlaintextAllowed
+```
+
+运行 ID：`20261029T044048772Z-0894960d`，整体退出 0。
+
+| 通道 | 通过 / 总数 | 失败 / 跳过 |
+| --- | --- | --- |
+| W unit | 61 / 61 | 0 / 0 |
+| W functional | 365 / 365 | 0 / 0 |
+| W specification | 4 / 4 | 0 / 0 |
+| W admin migration scripts | 7 / 7 | 0 / 0 |
+
+四个通道宿主结果均为 `Completed`，总数、执行数与通过数一致。脱敏 TRX 位于
+`artifacts/query-translation/local-test/20261029T044048772Z-0894960d/`。
+现有单元用例核对实际加载 DLL 的 SHA-256/MVID 与清单一致；功能通道还覆盖嵌套 CLI 项目的新版 DLL 身份。
+本轮复用持久测试模式，管理员通道仅创建并精确清理自身临时对象；未重新初始化测试空间。
+
+另通过统一入口 `scripts/local-test/run.sh test unit` 运行基础单元回归：791/791，通过、无失败或跳过，
+宿主 `Completed`、退出 0，运行 ID `20261029T044849190Z-94b15de5`；脱敏 TRX 位于对应运行目录。
+本轮未重跑官方驱动的真实库通道。
+
+规范项目仍仅为四项冒烟切片。真实库证据限于既有本地明文 profile；本轮未运行语义探针、TLS、其他服务器 profile、长期压力或上游包内过程专项测试。

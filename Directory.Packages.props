@@ -13,7 +13,7 @@
                     Condition="'$(MSBuildProjectName)' == 'W.EntityFrameworkCore.Dameng.Tests' Or '$(MSBuildProjectName)' == 'W.EntityFrameworkCore.Dameng.WDriver.Tests'" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="W.DamengProvider" Version="[0.2.0]" />
+    <PackageVersion Include="W.DamengProvider" Version="[0.3.1]" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
 </Project>
