@@ -1,12 +1,12 @@
 # 0.5.0 发布记录
 
 日期：2026-10-29（Asia/Shanghai）。源码基线：`78a4f47e1c4c07c150b6c0bbe9841e4565f74545`。
-状态：**维护者已授权公开发布，正在执行发行流程**。
+状态：**两包均已公开发布，Actions、GitHub Release、NuGet 公共包、签名和公共消费者均已验证**。
 维护者在已披露本轮官方锁释放间歇失败、W 观测权限缺口及既有格式检查问题后，
 于 2026-10-29 明确指令“发布”。据此发行，并保留以下未通过事实与验证边界，
 不宣称本轮双驱动全量实库验收通过。
 
-## 候选版本与依赖
+## 发行版本与依赖
 
 | 包 | 版本 | 标签 | 依赖 |
 | --- | --- | --- | --- |
@@ -111,7 +111,7 @@ TRX 汇总在 `artifacts/release-0.5.0/test-summary.json`，消费者在 `consum
 4. 在同一提交创建 `wdriver-v0.5.0-preview.1`，发布 W 扩展包。
 5. 验证 W 公共包精确依赖 `[0.5.0]` / `[0.3.1]`、内容与签名，再更新发布状态。
 
-公开发布已获维护者授权。实际流水线和公共包验证结果将在执行完成后追加。
+公开发布已获维护者授权。最终结果见下文公共发布验证。
 
 
 ## 发行流水线恢复（2026-10-29）
@@ -129,3 +129,53 @@ Microsoft.CodeAnalysis.Analyzers 3.11.0（NETSDK1064）。主分支离线入口�
 两个发布工作流补上固定 NUGET_PACKAGES，并增加指定既有发行标签的 workflow_dispatch。
 恢复时工作流从 main 执行，checkout 固定到 refs/tags/<tag>，标签解析、打包和 Release 均使用该标签。
 不移动或重建既有标签，不改发行源代码或依赖；恢复工作流只重新发布该发行提交的包。
+
+
+## 公共发布验证（2026-10-29）
+
+两个附注标签 `v0.5.0` / `wdriver-v0.5.0-preview.1` 均已在远端核对，
+解引用后同为发行提交 `01a701af38373d5beb158c6335c36289cc5f053d`，未移动标签。
+工作流恢复提交为 `dd9d1bf5b28af1320ef0e1a738895abeb9f3a111`；恢复工作流使用该提交的定义，
+实际 checkout/打包来自上述发行标签，不把 workflow_dispatch 的 headSha 当作包来源提交。
+恢复工作流声明曾因 job.env 中不允许 runner 上下文被 422 拒绝，后改用 github.workspace 缓存目录。
+[恢复提交离线 CI 40829685091](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40829685091)通过。
+W 标签触发的旧工作流 [40830393749](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40830393749)
+已主动取消，改用修正工作流从既有标签发布。
+
+| 包 | 成功的发布流水线 | GitHub Release | NuGet 版本页 |
+| --- | --- | --- | --- |
+| 基础包 `0.5.0` | [40829687119](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40829687119) | [v0.5.0](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/v0.5.0)，非草稿、稳定版、最新稳定 Release | [基础包 0.5.0](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng/0.5.0)，HTTP 200 |
+| W 扩展包 `0.5.0-preview.1` | [40830429376](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40830429376) | [wdriver-v0.5.0-preview.1](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/wdriver-v0.5.0-preview.1)，非草稿、预发布 | [W 扩展包 0.5.0-preview.1](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng.WDriver/0.5.0-preview.1)，HTTP 200 |
+
+两个成功运行的 publish / release job 均 success，均有 `Your package was pushed.`。
+基础包 CI 单元 973/973；W CI 单元分别 973/973、128/128，零失败/跳过。
+基础包 Release 于 14:32:46、W Release 于 14:39:43 创建（Asia/Shanghai）。
+两份 Release 均已补充中文变更、安装、精确依赖和本轮实库未通过事实。
+
+### 公共包内容、签名与安装
+
+V3 FlatContainer 和 NuGet CDN 均已下载成功，同一包在两条路径的字节完全一致。
+上传后的短暂 404 与本地间歇 TLS 连接失败被保留为传播/访问过程，没有靠移动标签或重复上传处理。
+
+| 公共签名包 | SHA-256 |
+| --- | --- |
+| `W.EntityFrameworkCore.Dameng.0.5.0.nupkg` | `dc46732b5e6366cb5f48830e5a83b4eb7736668f8a59194179f9056b5739a4ec` |
+| `W.EntityFrameworkCore.Dameng.WDriver.0.5.0-preview.1.nupkg` | `bb1b414818f9a6cbdc78d83af4fb59ab731dd27c325a00100e177918dc40c219` |
+
+两包 ZIP、PackageId/版本、MIT、net10.0 DLL/XML、README/第三方声明、仓库来源提交及
+NuGet Repository 签名均通过检查，不嵌入驱动 DLL。两份 nuspec repository commit
+均为发行提交 `01a701a`；W 扩展包精确依赖基础包 `[0.5.0]` 和 W 驱动 `[0.3.1]`。
+官方驱动和 EF Relational 范围与发行表一致，产品依赖图没有引入 Pkcs。
+
+初次基础包 `dotnet nuget verify --all` 退出 0，但出现 NU3018/NU3028 吊销查询不完整警告；
+W 签名校验及最终两包联合重验均退出 0，最终日志无签名警告/错误。
+没有关闭吊销检查、放宽签名策略或禁用证书验证。
+
+另建仅用 NuGet.org 的独立 PackageReference 消费者，精确引用两个产品包并与 SQL Server
+同进程构建/运行。两个产品 PackageId 未预填缓存，实际从公共源取得，缓存 nupkg
+与上表已验证的签名包字节一致；Release 运行通过，三个 ProviderName 均正确，无数据库连接。
+与候选消费者一样，此项只证明包消费、服务注册与多提供程序并存，不替代真实库验收。
+
+公共包、manifest、签名日志、Actions 日志和消费者证据位于本地
+`artifacts/release-0.5.0/public/`。发布未消除上文官方锁释放间歇失败、W 普通账号观测权限缺口
+及既有格式检查问题，不把成功推包或发布 CI 写成本轮真实库全量通过。
