@@ -12,10 +12,11 @@
 - `DM.DmProvider` 8.3.1.47463，使用该包随附的 `net9.0` 资产；
 - 现有数据库和用户模式。本提供程序有意不负责创建或删除物理数据库。
 
-基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 已公开发布，公共包及 NuGet 签名均已验证，
-详见 [0.4.0 发布记录](docs/release-0.4.0.md)。当前源码的 W 依赖已升级为 `0.3.1`，
-但尚未发布新的扩展包；已发布扩展包仍依赖 W `0.2.0`。升级后的 W 全通道回归与基础单元结果见
-[W 接入验证记录](docs/w-dmprovider-validation.md#升级到-wdamengprovider-0312026-10-29)。
+本次发行版本为基础包 `0.5.0` 与 W 扩展包 `0.5.0-preview.1`，详见
+[0.5.0 发布记录](docs/release-0.5.0.md)。W 扩展包精确依赖 `W.DamengProvider 0.3.1`。
+本轮官方锁释放测试曾间歇失败，W 等待取消用例受测试观测权限限制；完整结果与发行边界
+保留在发布记录中，不声明本轮全量实库通过。上一版的公开发布证据见
+[0.4.0 发布记录](docs/release-0.4.0.md)。
 
 真实数据库回归覆盖常规查询和 CRUD、键生成与回读、乐观并发、事务、迁移、Unicode/CJK、
 反向工程及[兼容性矩阵](docs/compatibility.md)列出的扩展映射。各能力的驱动、服务器和证据边界
@@ -61,9 +62,9 @@ modelBuilder.Entity<AuditEvent>()
 
 ### 使用 W.DamengProvider 驱动（预览版）
 
-当前源码中的扩展项目 `W.EntityFrameworkCore.Dameng.WDriver` 精确依赖基础包
-`W.EntityFrameworkCore.Dameng 0.4.0` 和 `W.DamengProvider 0.3.1`。已发布的
-`0.4.0-preview.1` 仍依赖 W `0.2.0`；本次依赖升级尚未发布新扩展包。改用 `UseDamengWithWDriver`：
+扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.5.0-preview.1` 精确依赖基础包
+`W.EntityFrameworkCore.Dameng 0.5.0` 和 `W.DamengProvider 0.3.1`。上一版
+`0.4.0-preview.1` 依赖 W `0.2.0`。改用 `UseDamengWithWDriver`：
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>

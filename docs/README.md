@@ -14,6 +14,10 @@
 
 Agent 执行达梦 SQL 或迁移时，还应阅读 [dameng-sql](../skills/dameng-sql/SKILL.md) 和 [dameng-ef-migrations](../skills/dameng-ef-migrations/SKILL.md)。
 
+## 当前发行
+
+- [0.5.0 / W 0.5.0-preview.1](release-0.5.0.md)：当前发行版本、实际验证结果及已知限制。
+
 ## 历史发布记录
 
 以下文档记录对应版本当时的发布与验收事实。旧版本号、旧依赖和准备阶段措辞均按历史保留，不代表当前源码状态。
@@ -24,7 +28,7 @@ Agent 执行达梦 SQL 或迁移时，还应阅读 [dameng-sql](../skills/dameng
 - [0.1.2](release-0.1.2.md)
 - [0.1.1](release-0.1.1.md)
 
-当前源码的 W `0.3.1` 依赖升级及回归见 [W 接入验证记录末节](w-dmprovider-validation.md#升级到-wdamengprovider-0312026-10-29)；该升级不等于已发布新的 W 扩展包。
+当前源码的 W `0.3.1` 依赖升级及回归见 [W 接入验证记录末节](w-dmprovider-validation.md#升级到-wdamengprovider-0312026-10-29)；此次发行状态见上方 0.5.0 发布记录。
 
 ## 历史实施与验收记录
 

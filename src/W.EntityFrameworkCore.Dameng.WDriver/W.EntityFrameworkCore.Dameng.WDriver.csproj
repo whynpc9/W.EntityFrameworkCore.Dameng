@@ -2,8 +2,8 @@
   <PropertyGroup>
     <AssemblyName>W.EntityFrameworkCore.Dameng.WDriver</AssemblyName>
     <RootNamespace>W.EntityFrameworkCore.Dameng.WDriver</RootNamespace>
-    <!-- M1 development candidate; the release version is set by the wdriver-v<SemVer> tag. -->
-    <VersionPrefix>0.4.0</VersionPrefix>
+    <!-- 预览发行版本；工作流仅覆盖 WDriverPackageVersion。 -->
+    <VersionPrefix>0.5.0</VersionPrefix>
     <VersionSuffix>preview.1</VersionSuffix>
     <!-- 发行工作流只覆盖扩展包版本，避免全局 PackageVersion 污染基础包引用版本。 -->
     <PackageVersion Condition="'$(WDriverPackageVersion)' != ''">$(WDriverPackageVersion)</PackageVersion>
