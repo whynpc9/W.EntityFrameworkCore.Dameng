@@ -2,6 +2,12 @@ name: 发布 W 驱动扩展包
 
 # 仅 W.EntityFrameworkCore.Dameng.WDriver。基础包使用 v<SemVer>（publish-nuget.yml）。
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的发行标签（不移动标签）
+        required: true
+        type: string
   push:
     tags:
       - "wdriver-v*"
@@ -10,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-nuget-wdriver-${{ github.ref }}
+  group: publish-nuget-wdriver-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -23,10 +29,14 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+      # CLI 夹具的临时 DOTNET_CLI_HOME 不能改变还原与后续构建的包缓存位置。
+      NUGET_PACKAGES: ${{ runner.temp }}/nuget-packages
 
     steps:
       - name: 检出标签
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: 安装 .NET SDK
         uses: actions/setup-dotnet@v5
@@ -35,14 +45,16 @@ jobs:
 
       - name: 从标签解析包版本
         id: version
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
 
-          package_version="${GITHUB_REF_NAME#wdriver-v}"
+          package_version="${TAG_NAME#wdriver-v}"
           semver_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
 
-          if [[ "$package_version" == "$GITHUB_REF_NAME" || ! "$package_version" =~ $semver_pattern ]]; then
+          if [[ "$package_version" == "$TAG_NAME" || ! "$package_version" =~ $semver_pattern ]]; then
             echo "::error::标签必须使用 wdriver-v<SemVer> 格式，例如 wdriver-v0.4.0-preview.1。"
             exit 1
           fi
@@ -128,7 +140,7 @@ jobs:
       - name: 创建 Release Notes
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail

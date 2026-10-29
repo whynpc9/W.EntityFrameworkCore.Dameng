@@ -112,3 +112,20 @@ TRX 汇总在 `artifacts/release-0.5.0/test-summary.json`，消费者在 `consum
 5. 验证 W 公共包精确依赖 `[0.5.0]` / `[0.3.1]`、内容与签名，再更新发布状态。
 
 公开发布已获维护者授权。实际流水线和公共包验证结果将在执行完成后追加。
+
+
+## 发行流水线恢复（2026-10-29）
+
+发行提交 `01a701af38373d5beb158c6335c36289cc5f053d` 已推送 main，
+[离线 CI 40828854675](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40828854675)
+通过：973/128 单元、46/60 离线夹具及自测/身份核验均通过。
+附注标签 `v0.5.0` 指向该发行提交。
+
+首轮[基础包流水线 40829196269](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/40829196269)
+在单元阶段失败，未执行打包或上传：CLI 合成夹具的 restore/build 各自使用临时
+DOTNET_CLI_HOME，发布工作流没有固定 NUGET_PACKAGES，后续构建找不到还原的
+Microsoft.CodeAnalysis.Analyzers 3.11.0（NETSDK1064）。主分支离线入口显式设置了该缓存，故未受影响。
+
+两个发布工作流补上固定 NUGET_PACKAGES，并增加指定既有发行标签的 workflow_dispatch。
+恢复时工作流从 main 执行，checkout 固定到 refs/tags/<tag>，标签解析、打包和 Release 均使用该标签。
+不移动或重建既有标签，不改发行源代码或依赖；恢复工作流只重新发布该发行提交的包。
