@@ -73,7 +73,8 @@ internal static class DamengLobPrimaryKeyHarness
         if (profile) await VerifyProfile(connection, output); // before any DDL, for every matrix entry
         Assert.False(await Exists(connection, tableName));
         using var context = new LobContext(new DbContextOptionsBuilder<LobContext>()
-            .UseDamengUnderTest(connectionString).ReplaceService<IModelCacheKeyFactory, CacheKey>().Options,
+            .UseDamengUnderTest(connectionString).ReplaceService<IModelCacheKeyFactory, CacheKey>()
+            .EnableServiceProviderCaching(false).Options,
             tableName, kind, path == "shared", clustered);
         var model = context.GetService<IDesignTimeModel>().Model;
         var relational = model.GetRelationalModel();
