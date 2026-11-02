@@ -22,6 +22,9 @@ concurrency:
 
 jobs:
   publish:
+    permissions:
+      contents: read
+      id-token: write
     name: 构建、测试并发布
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -88,9 +91,15 @@ jobs:
           --output "${{ runner.temp }}/packages"
           -p:PackageVersion="$PACKAGE_VERSION"
 
+      - name: NuGet login (OIDC)
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: whynpc
+
       - name: 发布到 NuGet.org
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
