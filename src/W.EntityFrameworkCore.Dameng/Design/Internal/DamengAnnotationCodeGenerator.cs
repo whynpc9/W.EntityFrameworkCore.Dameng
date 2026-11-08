@@ -52,7 +52,7 @@ internal sealed class DamengAnnotationCodeGenerator(
         IProperty property,
         IDictionary<string, IAnnotation> annotations)
     {
-        var damengCall = GeneratePropertyValueGenerationCall(annotations);
+        var damengCall = GeneratePropertyValueGenerationCall(property, annotations);
         var calls = new List<MethodCallCodeFragment>(
             base.GenerateFluentApiCalls(property, annotations));
 
@@ -83,6 +83,7 @@ internal sealed class DamengAnnotationCodeGenerator(
     }
 
     private static MethodCallCodeFragment? GeneratePropertyValueGenerationCall(
+        IProperty property,
         IDictionary<string, IAnnotation> annotations)
     {
         if (!TryGetStrategy(annotations, out var strategy))
@@ -94,8 +95,10 @@ internal sealed class DamengAnnotationCodeGenerator(
         {
             case DamengValueGenerationStrategy.IdentityColumn:
                 annotations.Remove(DamengAnnotationNames.ValueGenerationStrategy);
-                var seed = GetIdentitySeedAndRemove(annotations) ?? 1L;
-                var increment = GetIntAndRemove(annotations, DamengAnnotationNames.IdentityIncrement) ?? 1;
+                // The generated call writes both facets to the property, including omitted arguments.
+                var seed = GetIdentitySeedAndRemove(annotations) ?? property.GetDamengIdentitySeed();
+                var increment = GetIntAndRemove(annotations, DamengAnnotationNames.IdentityIncrement)
+                    ?? property.GetDamengIdentityIncrement();
                 return new MethodCallCodeFragment(
                     PropertyUseIdentityColumnMethod,
                     IdentityArguments(seed, increment));

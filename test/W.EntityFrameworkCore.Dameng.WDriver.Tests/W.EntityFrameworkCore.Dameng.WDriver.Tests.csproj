@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../W.EntityFrameworkCore.Dameng.FunctionalTests/DamengCliTestHarness.cs" Link="DamengCliTestHarness.cs" />
+    <Compile Include="../Shared/DamengIdentitySnapshotTestBase.cs" Link="DamengIdentitySnapshotTestBase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="../../scripts/driver-candidate/w-damengprovider.manifest.json" Link="w-damengprovider.manifest.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
