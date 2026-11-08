@@ -15,6 +15,35 @@ internal static class TrxResultProcessor
         "completed", "disconnected", "inProgress", "passedButRunAborted", "pending", "warning"
     ];
 
+    // Standard VSTest XML names are public structure. Extension names may contain free text.
+    private static readonly HashSet<string> StandardElements =
+    [
+        "TestRun", "Times", "TestSettings", "Deployment", "Results", "UnitTestResult", "InnerResults",
+        "TestDefinitions", "UnitTest", "Execution", "TestMethod", "TestEntries", "TestEntry", "TestLists",
+        "TestList", "ResultSummary", "Counters", "Output", "StdOut", "StdErr", "DebugTrace", "ErrorInfo",
+        "Message", "StackTrace", "RunInfos", "RunInfo", "Text", "Exception", "ResultFiles", "ResultFile",
+        "CollectorDataEntries", "Collector", "UriAttachments", "UriAttachment", "A", "Owners", "Owner",
+        "TestCategory", "TestCategoryItem", "Workitems", "Workitem"
+    ];
+
+    // Typed attributes are identified separately by their paths.
+    private static readonly Dictionary<string, string[]> StandardAttributes = new(StringComparer.Ordinal)
+    {
+        ["TestRun"] = ["name", "runUser"],
+        ["TestSettings"] = ["name"],
+        ["Deployment"] = ["runDeploymentRoot"],
+        ["UnitTestResult"] = ["computerName", "testName", "relativeResultsDirectory"],
+        ["UnitTest"] = ["name", "storage", "priority"],
+        ["TestMethod"] = ["adapterTypeName", "className", "codeBase", "name"],
+        ["TestList"] = ["name", "parentListId"],
+        ["RunInfo"] = ["computerName", "outcome", "timestamp"],
+        ["ResultFile"] = ["path"],
+        ["Collector"] = ["agentName", "collectorDisplayName", "uri"],
+        ["UriAttachment"] = ["href"],
+        ["Owner"] = ["name"],
+        ["TestCategoryItem"] = ["TestCategory"]
+    };
+
     internal sealed record TrxCounts(int Total, int Executed, int Passed, int Failed, int Skipped,
         string Outcome);
 
@@ -181,21 +210,35 @@ internal static class TrxResultProcessor
     {
         foreach (var element in document.Descendants())
         {
+            var standardElement = element.Name.Namespace == TrxNamespace
+                && StandardElements.Contains(element.Name.LocalName);
+            CheckXmlName(element.Name, standardElement, redact);
             foreach (var attribute in element.Attributes())
             {
                 if (attribute.IsNamespaceDeclaration)
                 {
-                    // VSTest's schema URI is structural. A custom URI can contain free text.
-                    if (attribute.Value != TrxNamespace.NamespaceName && attribute.Value != XNamespace.Xml.NamespaceName
-                        && redact(attribute.Value) != attribute.Value)
+                    CheckXmlNamespace(attribute.Value, redact);
+                    if (attribute.Name.Namespace == XNamespace.Xmlns && attribute.Name.LocalName != "xml"
+                        && redact(attribute.Name.LocalName) != attribute.Name.LocalName)
                         throw new FormatException();
                 }
-                else if (attribute.Name == XNamespace.Xml + "space")
-                {
-                    if (attribute.Value is not ("default" or "preserve")) throw new FormatException();
-                }
                 else if (!typed.Contains(attribute))
-                    attribute.Value = redact(attribute.Value);
+                {
+                    var standardAttribute = (standardElement && attribute.Name.Namespace == XNamespace.None
+                            && StandardAttributes.TryGetValue(element.Name.LocalName, out var names)
+                            && names.Contains(attribute.Name.LocalName, StringComparer.Ordinal))
+                        || (attribute.Name.Namespace == XNamespace.Xml
+                            && attribute.Name.LocalName is "space" or "lang" or "base" or "id");
+                    CheckXmlName(attribute.Name, standardAttribute, redact);
+                    if (attribute.Name == XNamespace.Xml + "space")
+                    {
+                        if (attribute.Value is not ("default" or "preserve")) throw new FormatException();
+                    }
+                    else
+                    {
+                        attribute.Value = redact(attribute.Value);
+                    }
+                }
             }
 
             // VSTest diagnostic bodies are text. Mixed extensions can split a token across tags.
@@ -217,6 +260,20 @@ internal static class TrxResultProcessor
                 text.Value = redact(text.Value);
             }
         }
+    }
+
+    private static void CheckXmlName(XName name, bool standard, Func<string, string> redact)
+    {
+        CheckXmlNamespace(name.NamespaceName, redact);
+        if (!standard && redact(name.LocalName) != name.LocalName)
+            throw new FormatException();
+    }
+
+    private static void CheckXmlNamespace(string uri, Func<string, string> redact)
+    {
+        if (uri.Length > 0 && uri != TrxNamespace.NamespaceName && uri != XNamespace.Xml.NamespaceName
+            && redact(uri) != uri)
+            throw new FormatException();
     }
 
     private static TrxResult SaveTrx(string path, XDocument document, TrxCounts? counts, TrxIo? io)

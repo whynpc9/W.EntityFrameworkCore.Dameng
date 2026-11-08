@@ -79,6 +79,13 @@ internal static partial class TestLauncher
             ("invalid-duration", path => CheckInvalidField(path, "UnitTestResult", "duration")),
             ("entities-and-diagnostic-fields", CheckEntityRedaction),
             ("unsafe-extension-namespace", CheckExtensionNamespace),
+            ("unsafe-extension-element-name", path => CheckExtensionName(path, "<alice xmlns='' />")),
+            ("unsafe-element-name-in-trx-namespace", path => CheckExtensionName(path,
+                "<alice xmlns='http://microsoft.com/schemas/VisualStudio/TeamTest/2010' />")),
+            ("unsafe-extension-attribute-name", path => CheckExtensionName(path,
+                "<Output xmlns='http://microsoft.com/schemas/VisualStudio/TeamTest/2010' alice='sample' />")),
+            ("unsafe-extension-prefix", path => CheckExtensionName(path, "<Output xmlns:alice='urn:extension' />")),
+            ("standard-name-collision", CheckStandardNameCollision),
             ("mixed-diagnostic-text", CheckMixedDiagnosticText),
             ("xml-space-collision", CheckXmlSpace),
             ("malformed-entity", CheckMalformedEntity),
@@ -271,6 +278,25 @@ internal static partial class TestLauncher
         document.Root!.SetAttributeValue(XNamespace.Xmlns + "aux", "urn:demo&fragment");
         document.Save(path);
         RequireFailureDocument(path, ReadAndRedactTrx(path, CreateRedactor("Password=demo&fragment")));
+    }
+
+    private static void CheckExtensionName(string path, string markup)
+    {
+        var document = XDocument.Parse(CompleteTrx);
+        document.Root!.Add(XElement.Parse(markup));
+        document.Save(path);
+        RequireFailureDocument(path, ReadAndRedactTrx(path, CreateRedactor("User ID=alice")));
+    }
+
+    private static void CheckStandardNameCollision(string path)
+    {
+        File.WriteAllText(path, SdkTrx);
+        var result = ReadAndRedactTrx(path, CreateRedactor("User ID=completed;Password=testName", "User ID=Output"));
+        RequireTrx(result.Counts is not null && IsAccepted(0, result.Counts));
+        var saved = XDocument.Load(path);
+        RequireTrx(saved.Descendants(TrxNamespace + "Output").Single().HasElements
+            && saved.Descendants(TrxNamespace + "UnitTestResult").Single().Attribute("testName") is not null
+            && (int?)saved.Descendants(TrxNamespace + "Counters").Single().Attribute("completed") == 0);
     }
 
     private static void CheckMixedDiagnosticText(string path)
