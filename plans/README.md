@@ -1,5 +1,24 @@
 # 改进审查与修复计划
 
+## 2026-11-08 深度审查与执行
+
+[深度审查报告](deep-audit-2026-11-08.md)以 `5b1f6d407ac61acf7f5658addd551565aed34721` 为只读基线。用户选定 R01/R05、R02、R03、R04 四项，分别形成 021–024；执行发生在四个独立 worktree 会话。以下状态以 PR、当前提交和[实施证据](evidence/)为准，旧 001–020 的历史状态在后文保留。
+
+| 顺序 | 计划 | 优先级 / 工作量 | 验证与 PR | 状态 |
+| --- | --- | --- | --- | --- |
+| 1 | [021 · TRX 脱敏与验收语义](021-trx-redaction-and-verdict.md) | P2 / M | [证据](evidence/021.md)；[PR #17](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/17) | DONE |
+| 2 | [022 · IDENTITY 快照继承](022-identity-snapshot-inheritance.md) | P1 / M | [证据](evidence/022.md)；[PR #16](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/16) | DONE |
+| 3 | [023 · 可空日期 ToString 翻译](023-nullable-temporal-tostring.md) | P2 / M | [证据](evidence/023.md)；[PR #18](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/18) | DONE |
+| 4 | [024 · LOB 类型语义分类](024-lob-type-normalization.md) | P2 / M | [证据](evidence/024.md)；[PR #19](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/19) | DONE |
+
+021 是 023/024 正式实库验收的工具前置；两项实库通道均按官方→W 串行运行，且 023 释放测试模式后才运行 024。022 是离线设计时验证。不同计划涉及 `docs/compatibility.md` 的结论已按合并顺序整合。四份计划都以对应 evidence 中的实际源码身份、TRX、测试数和限定范围闭合；不能把离线结果算作服务器验证。
+
+R06–R08、I01–I02 和三个方向选项仍只在审查报告中，未纳入本轮执行。旧 001–020 的历史决定、风险接受和证据均保留，不重新立项。
+
+## 历史 001–020 计划（原远端索引）
+
+以下“当前范围”“当前进度”“待合并”沿用旧批次记录时点的措辞；2026-11-08 的最新状态以上节及对应 PR 为准。
+
 - [六个里程碑及验收门槛](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/milestones.md)：从这里安排批次、依赖和验收。
 - [2026-10-28 深度审查](/Users/wanghongyi/Projects/dameng-entityframework-core/plans/deep-audit-2026-10-28.md)：原始发现、证据、置信度及排除项。
 - 原始审查基线：`c80c788fb3cd34d97626d578db580264a28a11f3`。
