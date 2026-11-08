@@ -106,7 +106,7 @@ internal sealed class DamengModelValidator(
                 && (clrType == typeof(string) || clrType == typeof(byte[]))
                 && maxLength > DamengTypeMappingSource.MaxInlineLength;
             if (!exceedsInlineLimit
-                && !IsLobStoreType(mapping.StoreTypeNameBase))
+                && DamengLobStoreType.Classify(mapping.StoreTypeNameBase) is null)
             {
                 continue;
             }
@@ -397,16 +397,4 @@ internal sealed class DamengModelValidator(
                 : property.GetComputedColumnSql(table) is not null
                     ? "computed-column SQL"
                     : null;
-
-    private static bool IsLobStoreType(string storeTypeNameBase)
-        => storeTypeNameBase.Equals("CLOB", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("NCLOB", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("TEXT", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("NTEXT", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("LONG", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("LONGVARCHAR", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("BLOB", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("IMAGE", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("LONGVARBINARY", StringComparison.OrdinalIgnoreCase)
-            || storeTypeNameBase.Equals("BFILE", StringComparison.OrdinalIgnoreCase);
 }

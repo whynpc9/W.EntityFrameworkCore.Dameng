@@ -17,7 +17,7 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriver
         int? size,
         bool fixedLength,
         bool lob = false)
-        : base(
+        : this(
             new RelationalTypeMappingParameters(
                 new CoreTypeMappingParameters(
                     typeof(string),
@@ -27,16 +27,10 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriver
                 dbType,
                 unicode,
                 size,
-                fixedLength))
+                fixedLength),
+            driver: null,
+            lob)
     {
-        _isLob = lob;
-    }
-
-    private DamengStringTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
-        : base(parameters)
-    {
-        _isLob = IsLobStoreType(parameters.StoreType);
-        Driver = driver;
     }
 
     public DamengDriver? Driver { get; }
@@ -44,13 +38,15 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriver
     public RelationalTypeMapping WithDriver(DamengDriver driver)
         => driver.Equals(Driver) ? this : new DamengStringTypeMapping(Parameters, driver, _isLob);
 
-    private DamengStringTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver driver, bool isLob)
+    private DamengStringTypeMapping(
+        RelationalTypeMappingParameters parameters, DamengDriver? driver, bool lob = false)
         : base(parameters)
     {
-        _isLob = isLob;
+        _isLob = lob || DamengLobStoreType.Classify(parameters.StoreType) == DamengLobStoreType.Kind.Text;
         Driver = driver;
     }
 
+    // Reclassify clones from their own type instead of inheriting the template flag.
     protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
         => new DamengStringTypeMapping(parameters, Driver);
 
@@ -59,7 +55,7 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriver
         base.ConfigureParameter(parameter);
 
         var valueLength = parameter.Value is string value ? value.Length : 0;
-        if (_isLob || IsLobStoreType(StoreType))
+        if (_isLob)
         {
             this.RequireDriver().SetParameterType(parameter, DamengParameterType.Clob);
 
@@ -72,12 +68,4 @@ internal sealed class DamengStringTypeMapping : StringTypeMapping, IDamengDriver
         var configuredSize = Size ?? DamengTypeMappingSource.MaxInlineLength;
         parameter.Size = Math.Max(configuredSize, valueLength);
     }
-
-    private static bool IsLobStoreType(string storeType)
-        => storeType.Equals("CLOB", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("NCLOB", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("TEXT", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("NTEXT", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("LONG", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("LONGVARCHAR", StringComparison.OrdinalIgnoreCase);
 }
