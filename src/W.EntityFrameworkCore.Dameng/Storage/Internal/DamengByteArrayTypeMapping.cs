@@ -14,7 +14,7 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDameng
         int? size = null,
         bool fixedLength = false,
         bool lob = false)
-        : base(
+        : this(
             new RelationalTypeMappingParameters(
                 new CoreTypeMappingParameters(typeof(byte[])),
                 storeType,
@@ -22,22 +22,17 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDameng
                 System.Data.DbType.Binary,
                 unicode: false,
                 size,
-                fixedLength))
+                fixedLength),
+            driver: null,
+            lob)
     {
-        _isLob = lob;
     }
 
-    private DamengByteArrayTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver? driver)
+    private DamengByteArrayTypeMapping(
+        RelationalTypeMappingParameters parameters, DamengDriver? driver, bool lob = false)
         : base(parameters)
     {
-        _isLob = IsLobStoreType(parameters.StoreType);
-        Driver = driver;
-    }
-
-    private DamengByteArrayTypeMapping(RelationalTypeMappingParameters parameters, DamengDriver driver, bool isLob)
-        : base(parameters)
-    {
-        _isLob = isLob;
+        _isLob = lob || DamengLobStoreType.Classify(parameters.StoreType) == DamengLobStoreType.Kind.Binary;
         Driver = driver;
     }
 
@@ -46,6 +41,7 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDameng
     public RelationalTypeMapping WithDriver(DamengDriver driver)
         => driver.Equals(Driver) ? this : new DamengByteArrayTypeMapping(Parameters, driver, _isLob);
 
+    // Reclassify clones from their own type instead of inheriting the template flag.
     protected override RelationalTypeMapping Clone(RelationalTypeMappingParameters parameters)
         => new DamengByteArrayTypeMapping(parameters, Driver);
 
@@ -59,11 +55,11 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDameng
         var valueLength = parameter.Value is byte[] value ? value.Length : 0;
         this.RequireDriver().SetParameterType(
             parameter,
-            _isLob || IsLobStoreType(StoreType)
+            _isLob
                 ? DamengParameterType.Blob
                 : IsFixedLength ? DamengParameterType.Binary : DamengParameterType.VarBinary);
 
-        if (_isLob || IsLobStoreType(StoreType))
+        if (_isLob)
         {
             parameter.Size = valueLength > DamengTypeMappingSource.MaxInlineLength
                 ? -1
@@ -74,10 +70,4 @@ internal sealed class DamengByteArrayTypeMapping : ByteArrayTypeMapping, IDameng
         var configuredSize = Size ?? DamengTypeMappingSource.MaxInlineLength;
         parameter.Size = Math.Max(configuredSize, valueLength);
     }
-
-    private static bool IsLobStoreType(string storeType)
-        => storeType.Equals("BLOB", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("IMAGE", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("LONGVARBINARY", StringComparison.OrdinalIgnoreCase)
-            || storeType.Equals("BFILE", StringComparison.OrdinalIgnoreCase);
 }
