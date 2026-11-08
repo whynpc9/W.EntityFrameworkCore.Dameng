@@ -4,8 +4,9 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using static TrxResultProcessor;
 
-internal static class TestLauncher
+internal static partial class TestLauncher
 {
     private const string ConnectionVariable = "DAMENG_TEST_CONNECTION_STRING";
     private const string WTransportSecurityVariable = "DAMENG_TEST_W_TRANSPORT_SECURITY";
@@ -20,9 +21,6 @@ internal static class TestLauncher
 
     private sealed record Lane(string Id, string Name, string Project, string? RequiredFilter, bool NeedsAdmin,
         bool NeedsTestConnection);
-
-    private sealed record TrxCounts(int Total, int Executed, int Passed, int Failed, int Skipped,
-        string Outcome);
 
     public static int Run(string[] args, string root, Func<JsonObject?> loadSecrets)
     {
@@ -100,12 +98,22 @@ internal static class TestLauncher
             var testArgs = BuildTestArguments(lane, project, configuration, resultDirectory, customFilter);
             var connection = lane.NeedsAdmin ? adminConnection
                 : lane.NeedsTestConnection ? testConnection : null;
-            var code = RunProcess(dotnetHost, testArgs, root, cliHome, connection, laneEnvironment, redact);
             var trxPath = Path.Combine(resultDirectory, lane.Id + ".trx");
-            var counts = ReadAndRedactTrx(trxPath, redact);
+            int code;
+            TrxResult trx;
+            try
+            {
+                code = RunProcess(dotnetHost, testArgs, root, cliHome, connection, laneEnvironment, redact);
+            }
+            finally
+            {
+                trx = ReadAndRedactTrx(trxPath, redact);
+                if (trx.Counts is null)
+                    Console.Error.WriteLine(lane.Name + ": " + trx.DescribeFailure(trxPath));
+            }
+            var counts = trx.Counts;
             if (counts is null)
             {
-                Console.Error.WriteLine(lane.Name + ": TRX missing or unreadable; this lane is not accepted.");
                 if (overallCode == 0) overallCode = code != 0 ? code : 3;
                 continue;
             }
@@ -289,92 +297,6 @@ internal static class TestLauncher
         return start;
     }
 
-    private static TrxCounts? ReadAndRedactTrx(string path, Func<string, string> redact)
-    {
-        if (!File.Exists(path)) return null;
-        var tempPath = path + "." + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".tmp";
-        try
-        {
-            var document = XDocument.Load(path);
-            foreach (var element in document.Descendants())
-            {
-                foreach (var attribute in element.Attributes())
-                {
-                    if (!attribute.IsNamespaceDeclaration) attribute.Value = redact(attribute.Value);
-                }
-            }
-            foreach (var node in document.DescendantNodes().OfType<XText>())
-            {
-                node.Value = redact(node.Value);
-            }
-            foreach (var comment in document.DescendantNodes().OfType<XComment>())
-            {
-                comment.Value = redact(comment.Value);
-            }
-
-            var options = new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                Options = FileOptions.WriteThrough
-            };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            }
-            using (var stream = new FileStream(tempPath, options))
-            {
-                document.Save(stream);
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(tempPath, path, overwrite: true);
-
-            var saved = XDocument.Load(path);
-            var summary = saved.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName == "ResultSummary");
-            var counters = summary?.Descendants()
-                .FirstOrDefault(element => element.Name.LocalName == "Counters");
-            if (counters is null) return null;
-            var total = AttributeInt(counters, "total");
-            var executed = AttributeInt(counters, "executed");
-            var passed = AttributeInt(counters, "passed");
-            var failed = AttributeInt(counters, "failed") + AttributeInt(counters, "error")
-                + AttributeInt(counters, "timeout") + AttributeInt(counters, "aborted");
-            var skipped = AttributeInt(counters, "notExecuted")
-                + AttributeInt(counters, "inconclusive") + AttributeInt(counters, "notRunnable");
-            skipped = Math.Max(skipped, Math.Max(0, total - executed));
-            var outcome = summary?.Attribute("outcome")?.Value ?? "missing";
-            return new TrxCounts(total, executed, passed, failed, skipped, outcome);
-        }
-        catch
-        {
-            // Preserve a safe diagnostic artifact even when the TRX is malformed.
-            try
-            {
-                File.WriteAllText(path, redact(File.ReadAllText(path)));
-                if (!OperatingSystem.IsWindows())
-                {
-                    File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                }
-            }
-            catch
-            {
-                // The containing run directory remains private to the current user.
-            }
-            return null;
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-        }
-    }
-
-    private static bool IsAccepted(int exitCode, TrxCounts counts)
-        => exitCode == 0 && counts.Outcome == "Completed" && counts.Total > 0
-            && counts.Total == counts.Executed && counts.Passed == counts.Executed
-            && counts.Failed == 0 && counts.Skipped == 0;
-
     internal static int SelfTest()
     {
         foreach (var driver in new[] { "official", "w" })
@@ -506,7 +428,7 @@ internal static class TestLauncher
         Console.WriteLine("Configuration self-test passed.");
         const string fakeConnection = "Data Source=unit-host.invalid;User ID=SA;Password=sample-only-secret";
         const string sample = """
-            <TestRun xmlns="urn:synthetic-trx">
+            <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
               <Results>
                 <UnitTestResult outcome="Passed">
                   <Output><ErrorInfo>
@@ -521,15 +443,13 @@ internal static class TestLauncher
               </ResultSummary>
             </TestRun>
             """;
-        var directory = Path.Combine(Path.GetTempPath(), "dameng-trx-selftest-"
-            + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
-        Directory.CreateDirectory(directory);
+        var directory = Directory.CreateTempSubdirectory("dameng-trx-selftest-").FullName;
         try
         {
             var path = Path.Combine(directory, "sample.trx");
             File.WriteAllText(path, sample);
             var redact = CreateRedactor(fakeConnection);
-            var counts = ReadAndRedactTrx(path, redact);
+            var counts = ReadAndRedactTrx(path, redact).Counts;
             var saved = XDocument.Load(path);
             var message = saved.Descendants().FirstOrDefault(e => e.Name.LocalName == "Message");
             var stack = saved.Descendants().FirstOrDefault(e => e.Name.LocalName == "StackTrace");
@@ -554,7 +474,7 @@ internal static class TestLauncher
             var summary = saved.Descendants().First(e => e.Name.LocalName == "ResultSummary");
             summary.SetAttributeValue("outcome", "Aborted");
             saved.Save(path);
-            var aborted = ReadAndRedactTrx(path, redact);
+            var aborted = ReadAndRedactTrx(path, redact).Counts;
             if (aborted is null || IsAccepted(0, aborted))
             {
                 throw new InvalidOperationException("Synthetic TRX aborted-run check failed.");
@@ -570,13 +490,14 @@ internal static class TestLauncher
             partialCounters.SetAttributeValue("executed", "2");
             partialCounters.SetAttributeValue("passed", "1");
             partial.Save(path);
-            var incomplete = ReadAndRedactTrx(path, redact);
+            var incomplete = ReadAndRedactTrx(path, redact).Counts;
             if (incomplete is null || IsAccepted(0, incomplete))
             {
                 throw new InvalidOperationException("Synthetic TRX incomplete-count check failed.");
             }
 
             Console.WriteLine("Synthetic TRX self-test passed.");
+            RunTrxResultSelfTests();
             return 0;
         }
         finally
@@ -584,10 +505,6 @@ internal static class TestLauncher
             Directory.Delete(directory, recursive: true);
         }
     }
-
-    private static int AttributeInt(XElement element, string name)
-        => int.TryParse(element.Attribute(name)?.Value, NumberStyles.Integer,
-            CultureInfo.InvariantCulture, out var result) ? result : 0;
 
     internal static Func<string, string> CreateRedactor(params string?[] connectionStrings)
     {
