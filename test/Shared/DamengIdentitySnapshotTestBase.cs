@@ -9,6 +9,13 @@ using static W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCliTestHarness;
 
 namespace W.EntityFrameworkCore.Dameng.Tests;
 
+// EnsureToolAsync shares the repository tool path with the existing CLI fixture tests.
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class IdentitySnapshotCliGroup
+{
+    public const string Name = "Dameng identity snapshot CLI";
+}
+
 public abstract class DamengIdentitySnapshotTestBase(ITestOutputHelper output)
 {
     private protected abstract string ConfigureMethod { get; }

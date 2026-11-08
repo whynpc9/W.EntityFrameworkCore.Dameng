@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using W.EntityFrameworkCore.Dameng.Infrastructure;
+using Xunit;
 using Xunit.Abstractions;
 using static W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCliTestHarness;
 
 namespace W.EntityFrameworkCore.Dameng.Tests;
 
+[Collection(IdentitySnapshotCliGroup.Name)]
 public sealed class DamengIdentitySnapshotTests(ITestOutputHelper output) : DamengIdentitySnapshotTestBase(output)
 {
     private protected override string ConfigureMethod => nameof(DamengDbContextOptionsBuilderExtensions.UseDameng);

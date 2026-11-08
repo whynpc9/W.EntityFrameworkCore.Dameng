@@ -9,6 +9,7 @@ using static W.EntityFrameworkCore.Dameng.FunctionalTests.DamengCliTestHarness;
 
 namespace W.EntityFrameworkCore.Dameng.WDriver.Tests;
 
+[Collection(IdentitySnapshotCliGroup.Name)]
 public sealed class WDriverIdentitySnapshotTests(ITestOutputHelper output) : DamengIdentitySnapshotTestBase(output)
 {
     private protected override string ConfigureMethod => nameof(DamengWDriverDbContextOptionsBuilderExtensions.UseDamengWithWDriver);
