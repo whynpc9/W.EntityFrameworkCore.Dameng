@@ -94,5 +94,6 @@ scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTime
 ```
 
 探针执行通过只表明测量已完成，不代表所有候选都支持，也不计入功能验收。
-可空恒等转换的聚焦回归与实库验收状态见[023 证据](../plans/evidence/023.md)。
+可空恒等转换在现有实库上经官方与 W 驱动验证，样本包括整微秒、NULL、重复值、闰日和跨年。
+两驱动均执行了默认文本与七种常量格式的对照查询。验证边界见[023 证据](../plans/evidence/023.md)。
 该翻译随 `0.4.0` 发布的完整验收见[发布记录](release-0.4.0.md)。
