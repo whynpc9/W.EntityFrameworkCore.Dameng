@@ -52,6 +52,8 @@ CLR 的 object.ToString 调用会抛异常，不能被当成 Nullable<DateTime>.
 原生枚举等值类型接收者继续交给既有关系方法翻译器，此守卫不替换其已有支持范围。
 例如 `O` 包含 DateTimeKind/时区语义，不能据日期列的格式化函数猜测实现。
 DateTime 经值转换器存成 ticks 或文本时，不应用原生日期函数或把 ticks 当日期字符串。
+映射到 `TIMESTAMP(7)` 的 `DateTime? → DateTime?` 恒等转换沿用无转换器列的默认文本、
+NULL 语义和常量格式白名单。常量格式调用写在 `nullable.Value` 上。
 日期成员、整数 AddDays/AddMonths 和日期分桶同样检查有效原生存储；DateTimeOffset 的六个
 本地成员也遵守此边界。原生 DateTime→DateTime 恒等转换继续通过；直接转换列往返不因
 查询操作被拒绝而失效。008 的本轮对照采用整秒及整微秒，未把 006 的官方七位参数问题写成
@@ -92,4 +94,5 @@ scripts/local-test/run.sh test probes --filter FullyQualifiedName~DamengDateTime
 ```
 
 探针执行通过只表明测量已完成，不代表所有候选都支持，也不计入功能验收。
+可空恒等转换的聚焦回归与实库验收状态见[023 证据](../plans/evidence/023.md)。
 该翻译随 `0.4.0` 发布的完整验收见[发布记录](release-0.4.0.md)。

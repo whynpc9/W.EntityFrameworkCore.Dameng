@@ -39,7 +39,8 @@ internal sealed class DamengDateTimeToStringTranslator(
         }
 
         // A DateTime converted to ticks/text is not a native temporal SQL operand.
-        if (instance.TypeMapping?.Converter is { } converter && converter.ProviderClrType != typeof(DateTime))
+        if (instance.TypeMapping?.Converter is { } converter
+            && (Nullable.GetUnderlyingType(converter.ProviderClrType) ?? converter.ProviderClrType) != typeof(DateTime))
         {
             return null;
         }
