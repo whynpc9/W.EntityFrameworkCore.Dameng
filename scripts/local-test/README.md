@@ -40,7 +40,7 @@ scripts/local-test/run.sh provision
 
 运行 `scripts/local-test/run.sh info` 可用管理员连接只读查看服务器版本、页大小和指定实例参数。单项查询失败时显示“未取到”；不会更改实例设置。
 
-运行 `scripts/local-test/run.sh selftest` 可用合成 TRX 检查脱敏后 XML 结构仍有效、短用户名不会破坏标签名或 `Error Message` 等诊断文字、独立账号仍会隐藏，并验证中止的运行不能通过验收。此命令不连接数据库，也不读取真实凭据。
+运行 `scripts/local-test/run.sh selftest` 可用合成 TRX 检查验收字段与脱敏内容的隔离、损坏 XML 的固定诊断，以及安全写入和清理失败时的拒绝行为。此命令不连接数据库，也不读取真实凭据。
 
 若创建中断或清理失败，状态会停在 `planned`、`tablespace_created`、`user_created`、`grants_applied` 或 `cleanup_required`。工具不会对这些状态自动重试或删除对象。应由管理员根据 secrets 中记录的 `OwnedTestUserName`、`OwnedTestTablespaceName` 和 `TestDatafilePath` 核对并精确处理残留。
 
@@ -77,7 +77,9 @@ scripts/local-test/run.sh test all --driver w --w-transport-security PlaintextAl
 
 启动脚本优先使用 `DOTNET_HOST_PATH`，然后搜索 `dotnet`，最后尝试 `~/.dotnet/dotnet`。它为每次运行设置独立的 `DOTNET_CLI_HOME`，使用锁定还原、单节点构建和测试。连接串只传入测试子进程环境；测试输出在显示前会对连接串、主机、用户和口令脱敏。若真实数据库测试被跳过，不可把该次运行记作数据库回归通过。
 
-每个测试通道的 TRX 会保存在 `artifacts/query-translation/local-test/<runid>/<lane>.trx`，目录仅当前用户可读，文件在报告前按 XML 文本和属性值脱敏。启动器会打印宿主结果、总数、执行数、通过数、失败数和跳过数。只有宿主结果为 `Completed`、退出码为零、总数大于零、总数等于执行数且执行数等于通过数、无失败或跳过时，通道才可用于验收；否则整个命令退出非零。
+每个测试通道的 TRX 位于 `artifacts/query-translation/local-test/<runid>/<lane>.trx`，运行目录为私有目录。启动器从原始 XML 校验宿主状态和计数，再独立脱敏自由文本和属性值，移除注释和处理指令，并保留经类型校验的结果状态、计数、GUID、时间及持续时间。安全产物原子替换成功后才报告计数。只有宿主结果为 `Completed`、退出码为零、总数大于零、总数等于执行数且执行数等于通过数、无失败或跳过时，通道才可用于验收；否则整个命令退出非零。
+
+解析、校验、脱敏或安全落盘失败都会拒绝验收。标准 XML 名称作为结构保留，自定义元素、属性或命名空间含待脱敏值时拒绝该产物。损坏或无法安全处理的内容以固定 XML 诊断替换，可分享的内容仅限成功写入的固定诊断。写入或替换失败时，启动器尝试删除该通道的原始文件和本次创建的临时文件。清理失败时会报告残留路径及不安全状态，私有目录内的残留文件仍不可分享。
 
 ### 显式测试配置
 
