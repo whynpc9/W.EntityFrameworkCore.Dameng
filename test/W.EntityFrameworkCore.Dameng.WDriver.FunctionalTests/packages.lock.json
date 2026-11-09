@@ -191,8 +191,8 @@
       "w.entityframeworkcore.dameng.wdriver": {
         "type": "Project",
         "dependencies": {
-          "W.DamengProvider": "[0.3.1, 0.3.1]",
-          "W.EntityFrameworkCore.Dameng": "[0.4.0, )"
+          "W.DamengProvider": "[0.3.2, 0.3.2]",
+          "W.EntityFrameworkCore.Dameng": "[0.6.0, )"
         }
       },
       "DM.DmProvider": {
@@ -215,9 +215,9 @@
       },
       "W.DamengProvider": {
         "type": "CentralTransitive",
-        "requested": "[0.3.1, 0.3.1]",
-        "resolved": "0.3.1",
-        "contentHash": "srKkNc/dNiQE4X//EpBbRjM4w6cvhJn0xLSDkK6h8OP5/cnoykX6B0w2JXpSSrmi0JwKCQa2fN5cRjgAlSN3Tg=="
+        "requested": "[0.3.2, 0.3.2]",
+        "resolved": "0.3.2",
+        "contentHash": "PT1BlWsJdiG1au3V0rkrBee/w8RdCX8XcqguYkVrZztVjQp8RZLNeUoWArFbjUJWOv1svPIKKqfabXGPQ1ucKw=="
       }
     }
   }

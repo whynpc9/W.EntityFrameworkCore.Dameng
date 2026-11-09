@@ -15,9 +15,9 @@ W 的精度能力仍受 `ServerCapabilities` 与本文对应边界约束。本�
 
 ## 证据与版本
 
-当前源码面向 .NET 10，EF Core Relational 范围为 `[10.0.12,11.0.0)`，官方驱动范围为 `[8.3.1.47463,8.4.0)`，锁文件实际解析为 `8.3.1.47463`。本次发行版本为基础包 `0.5.0`、W 扩展包 `0.5.0-preview.1`；实际发布状态及本轮未通过验收项见 [发布记录](release-0.5.0.md)。
+当前源码面向 .NET 10，EF Core Relational 范围为 `[10.0.12,11.0.0)`，官方驱动范围为 `[8.3.1.47463,8.4.0)`，锁文件实际解析为 `8.3.1.47463`。基础包与 W 扩展包的正式候选版本均为 `0.6.0`，见[发布准备](release-0.6.0.md)；现有公开包见 [0.5.0 发布记录](release-0.5.0.md)。
 
-当前源码的 W 扩展项目精确依赖 `W.DamengProvider [0.3.1]`；本次 `W.EntityFrameworkCore.Dameng.WDriver 0.5.0-preview.1` 精确依赖基础包 `[0.5.0]`，上一版 `0.4.0-preview.1` 依赖 W `0.2.0`。
+候选 W 扩展包精确依赖基础包 `[0.6.0]` 和 `W.DamengProvider [0.3.2]`。
 
 - **真实环境已验证**：自动化提供程序测试已在达梦服务器上通过，具体版本、profile 和运行记录以对应发布/验证文档为准。
 - **单元级已验证**：确定性测试在无服务器环境下覆盖 SQL、元数据或服务行为，不属于运行时证明。
@@ -95,20 +95,20 @@ W 的精度能力仍受 `ServerCapabilities` 与本文对应边界约束。本�
 - [0.4.0 发布记录](release-0.4.0.md)：两个已发布包的验收、精确包消费者检查及公共发布验证；发布版本与当前源码依赖不得混写。
 - 更早的发布、实施和验收快照按时间保留在[文档索引](README.md)列出的历史文档中，不回写为当前轮次结果。
 
-## W.DamengProvider 驱动（预览版）
+## W.DamengProvider 驱动
 
-当前源码的扩展项目依赖 `W.DamengProvider [0.3.1]`（身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
+当前源码的扩展项目依赖 `W.DamengProvider [0.3.2]`（身份见 `scripts/driver-candidate/w-damengprovider.manifest.json`）。下表只描述与官方驱动不同或需要单独说明的能力；未列出的 SQL/模型/迁移/反向工程能力与上表共用，并在 W 通道中以同一套功能测试重跑。
 
 下表既有能力的证据来自服务器自报 `8.1.5.60`、UTF-8、明文连接的本地 profile；
 019 另有独立 `PK_WITH_CLUSTER=1`、8192 字节页、`GLOBAL_CHARSET=0` 的 LOB 主键矩阵，仅用于该项结论。
 TLS 与其他版本未因此获得验证。完整记录见 [W 接入验证记录](w-dmprovider-validation.md)。
 PR #7 / #8 已合并，审查线程均已解决（[复核记录](w-dmprovider-integration-review.md)）。
-本次扩展包 `0.5.0-preview.1` 精确依赖 W `[0.3.1]`；上一版 `0.4.0-preview.1` 依赖 W `0.2.0`。
+已发布的 `0.5.0-preview.1` 精确依赖 W `[0.3.1]`。当前候选版的回归结果单独列于[发布准备](release-0.6.0.md)。
 
 | 领域 | W 状态 | 范围与边界 |
 | --- | --- | --- |
 | 配置 | 单元级已验证 | 六个 `UseDamengWithWDriver` 重载、`AddEntityFrameworkDamengWithWDriver`；同一 options 混用两种驱动、手工服务与 options 驱动不符、同一服务集合注册两种驱动均明确失败 |
-| 共享功能套件 | 真实环境已验证 | W `0.3.1` 下，W 单元 61 项、功能 365 项（含官方 300 项共享功能）、规范冒烟 4 项、管理员迁移脚本 7 项全部通过，无失败或跳过；按驱动区分的断言与运行 ID 见验证记录 |
+| 共享功能套件 | 真实环境已验证 | W `0.3.1` 的历史升级验收中，W 单元 61 项、功能 365 项（含官方 300 项共享功能）、规范冒烟 4 项、管理员迁移脚本 7 项全部通过，无失败或跳过；按驱动区分的断言与运行 ID 见验证记录 |
 | 异步与取消 | 真实环境已验证 | 查询与 `SaveChangesAsync` 在服务器未完成时返回；预取消不发送；运行中取消保留原 token 并关闭会话，EF 下一次操作用新会话；`CommandTimeout` 报客户端期限（`TotalDeadline`）。LOB 同步 getter 不在此结论内 |
 | 自动重试 | 明确拒绝 | `EnableRetryOnFailure` 全部重载及直接构造 `DamengRetryingExecutionStrategy` 抛 `Dameng:RetryNotSupportedForWDriver`；默认策略执行一次；自定义 `ExecutionStrategy` 由应用负责 |
 | 失败结果 | 部分验证 | EF 异常链保留 W 的 `FailureInfo`（错误类别、阶段、`OperationOutcome`、`ConnectionReusable`）；事务内取消写入报 `Unknown` 且独立核对未写入。套接字失败包装为 `DmException`（`ErrorKind=Transport`、`Number=0`，原异常为 InnerException）：连接被拒报 `NotSent`，中继收到登录请求后重置报 `Unknown`；事务内 SaveChanges 发送后重置（sync/async）得到 `DbUpdateException`，结果未知且连接不可复用，新连接核对未提交。commit 失 ACK 的端到端注入尚未验证 |

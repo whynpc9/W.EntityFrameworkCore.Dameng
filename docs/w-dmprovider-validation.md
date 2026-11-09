@@ -7,8 +7,8 @@
 [0.4.0 发布准备](release-0.4.0.md)。下文保留各阶段历史结果及当时的 pending 状态；
 当前复审状态见[审查记录](w-dmprovider-integration-review.md)。
 
-当前源码于 2026-10-29 升级到 `W.DamengProvider 0.3.1`，本轮身份和回归结果见
-[0.3.1 升级记录](#升级到-wdamengprovider-0312026-10-29)。已发布扩展包的依赖仍以对应发布记录为准。
+当前源码使用 `W.DamengProvider 0.3.2`，见 [0.3.2 升级记录](#升级到-wdamengprovider-0322026-11-09)。
+已发布扩展包的依赖以对应发布记录为准。
 
 ## T00 基线与候选冻结（2026-10-14）
 
@@ -356,3 +356,20 @@ scripts/local-test/run.sh test all --driver w --w-transport-security PlaintextAl
 本轮未重跑官方驱动的真实库通道。
 
 规范项目仍仅为四项冒烟切片。真实库证据限于既有本地明文 profile；本轮未运行语义探针、TLS、其他服务器 profile、长期压力或上游包内过程专项测试。
+
+## 升级到 W.DamengProvider 0.3.2（2026-11-09）
+
+中央依赖及四份 W 锁文件更新为精确版本 `[0.3.2]`。公开包经 NuGet.org 仓库签名验证，
+与本机还原缓存逐字节一致；`net10.0` 依赖组为空。完整机器可读身份见
+[manifest](../scripts/driver-candidate/w-damengprovider.manifest.json)。
+
+| 项目 | 值 |
+| --- | --- |
+| 上游发布 | [GitHub Release](https://github.com/whynpc9/W.DamengProvider/releases/tag/v0.3.2)、[NuGet](https://www.nuget.org/packages/W.DamengProvider/0.3.2)、[Actions](https://github.com/whynpc9/W.DamengProvider/actions/runs/42558767017) |
+| 标签解引用 / nuspec 提交 | `19bf539520c93ba568e894000c1fa530a5087dde` |
+| nupkg SHA-256 | `0269a13ab8e4f0ea5a0862521ed59ba1e808ec27b7496dee9618ad58bde32e7c` |
+| NuGet contentHash | `PT1BlWsJdiG1au3V0rkrBee/w8RdCX8XcqguYkVrZztVjQp8RZLNeUoWArFbjUJWOv1svPIKKqfabXGPQ1ucKw==` |
+| net10.0 DLL SHA-256 | `0e5f4d56b63c5ddbb1c1f61b0afb76da5d515e70da56482669dfea0fbfc62495` |
+| net10.0 DLL MVID | `337347bc-914a-418d-bab9-8f93d77c8b19` |
+
+本仓库的回归结果见 [0.6.0 发布准备](release-0.6.0.md#验证)。
