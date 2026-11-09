@@ -2,7 +2,7 @@
 
 这是一个独立维护的非官方达梦数据库 Entity Framework Core 10 关系数据库提供程序。
 默认使用官方 `DM.DmProvider` ADO.NET 驱动程序，不依赖任何具体应用框架。可选的扩展包
-`W.EntityFrameworkCore.Dameng.WDriver`（预览版）让同一提供程序运行在
+`W.EntityFrameworkCore.Dameng.WDriver`让同一提供程序运行在
 [`W.DamengProvider`](https://github.com/whynpc9/W.DamengProvider) 驱动上，见下文“使用 W.DamengProvider 驱动”。
 
 当前基线面向：
@@ -12,11 +12,8 @@
 - `DM.DmProvider` 8.3.1.47463，使用该包随附的 `net9.0` 资产；
 - 现有数据库和用户模式。本提供程序有意不负责创建或删除物理数据库。
 
-基础包 `0.5.0` 与 W 扩展包 `0.5.0-preview.1` 均已公开发布，公共包、签名与独立消费者已验证，详见
-[0.5.0 发布记录](docs/release-0.5.0.md)。W 扩展包精确依赖 `W.DamengProvider 0.3.1`。
-本轮官方锁释放测试曾间歇失败，W 等待取消用例受测试观测权限限制；完整结果与发行边界
-保留在发布记录中，不声明本轮全量实库通过。上一版的公开发布证据见
-[0.4.0 发布记录](docs/release-0.4.0.md)。
+基础包与 W 扩展包的 `0.6.0` 正式版正在准备，见 [0.6.0 发布准备](docs/release-0.6.0.md)。
+当前公开版本为基础包 `0.5.0` 与 W 扩展包 `0.5.0-preview.1`，见 [0.5.0 发布记录](docs/release-0.5.0.md)。
 
 真实数据库回归覆盖常规查询和 CRUD、键生成与回读、乐观并发、事务、迁移、Unicode/CJK、
 反向工程及[兼容性矩阵](docs/compatibility.md)列出的扩展映射。各能力的驱动、服务器和证据边界
@@ -60,11 +57,11 @@ modelBuilder.Entity<AuditEvent>()
     .UseDamengSequence("AuditEventIds");
 ```
 
-### 使用 W.DamengProvider 驱动（预览版）
+### 使用 W.DamengProvider 驱动
 
-扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.5.0-preview.1` 精确依赖基础包
-`W.EntityFrameworkCore.Dameng 0.5.0` 和 `W.DamengProvider 0.3.1`。上一版
-`0.4.0-preview.1` 依赖 W `0.2.0`。改用 `UseDamengWithWDriver`：
+候选扩展包 `W.EntityFrameworkCore.Dameng.WDriver 0.6.0` 精确依赖基础包
+`W.EntityFrameworkCore.Dameng 0.6.0` 和 `W.DamengProvider 0.3.2`。
+已发布的 `0.5.0-preview.1` 依赖 W `0.3.1`。改用 `UseDamengWithWDriver`：
 
 ```csharp
 services.AddDbContext<AppDbContext>(options =>
@@ -80,7 +77,7 @@ services.AddDbContext<AppDbContext>(options =>
   不提供自动重放；需要时在独立连接上核对最终状态后再由业务决定。
 - 每个 `DbContextOptions` 只能选择一种驱动；同一进程可以同时有官方与 W 两类上下文。
 - 与官方驱动的行为差异（真正的异步网络调用与取消、七位小数秒、RU/Serializable 跟踪保存、
-  错误后的会话保留、事务内只放行纯 DML 匿名块、传输失败的 `FailureInfo` 等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动预览版)。
+  错误后的会话保留、事务内只放行纯 DML 匿名块、传输失败的 `FailureInfo` 等）及验证范围见[兼容性矩阵](docs/compatibility.md#wdamengprovider-驱动)。
 
 ## 构建与测试
 

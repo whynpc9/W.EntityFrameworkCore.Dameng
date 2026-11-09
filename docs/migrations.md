@@ -71,10 +71,10 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 `migrations add` 和 `migrations script` 会构造上下文，但生成脚本本身不连接数据库。
 `database update` 和 `migrations list` 会连接数据库。
 
-## 使用 W.DamengProvider 驱动（预览版）
+## 使用 W.DamengProvider 驱动
 
-基础包 `0.4.0` 与 W 扩展包 `0.4.0-preview.1` 的既有公开发行见[发布记录](release-0.4.0.md)；
-扩展包仍是预览版，后续源码修复和依赖升级没有另行发布包。
+已发布的 W 扩展包 `0.5.0-preview.1` 依赖 W `0.3.1`，见 [0.5.0 发布记录](release-0.5.0.md)。
+当前源码使用 W `0.3.2`，随 W 扩展包 `0.6.0` [准备发布](release-0.6.0.md)。
 
 启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
 （W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：
@@ -84,8 +84,7 @@ dotnet ef dbcontext scaffold "Name=ConnectionStrings:Dameng" W.EntityFrameworkCo
   --project App.Data --startup-project App
 ```
 
-已发布的 `0.4.0-preview.1` 扩展包依赖 W `0.2.0`；当前源码使用 W `0.3.1`，但尚未发布新的扩展包。
-以下行为在两种已验证依赖上保持一致：
+使用 W 驱动执行迁移时，注意以下行为：
 
 - 两种驱动生成相同的迁移 SQL，可以对同一数据库、同一历史表交替执行；切换驱动不会产生新的模型差异。
 - `migrationBuilder.ActiveProvider` 在 W 下为 `W.EntityFrameworkCore.Dameng.WDriver`。已有迁移若只比较
