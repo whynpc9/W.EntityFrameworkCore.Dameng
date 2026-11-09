@@ -1,9 +1,9 @@
-# 0.6.0 发布准备
+# 0.6.0 发布记录
 
-日期：2026-11-09（Asia/Shanghai）。源码基线：`75af5f6`。
-状态：候选包已生成。以下版本均为正式版；本轮双驱动实库验收未全部通过，尚未公开发布。
+日期为 2026-11-09（Asia/Shanghai）。两个正式包均已公开发布，来源提交为 `4a00bf22d88d6e6d96ea2e3f94f72f9b150c20ae`。
+维护者在获知官方迁移锁释放失败和 W 锁等待观测权限缺口后确认发布。实库验收结果见下文。
 
-| 包 | 版本 | 拟用标签 | NuGet 依赖 |
+| 包 | 版本 | 发布标签 | NuGet 依赖 |
 | --- | --- | --- | --- |
 | `W.EntityFrameworkCore.Dameng` | `0.6.0` | `v0.6.0` | EF Core Relational `[10.0.12,11.0.0)`、官方驱动 `[8.3.1.47463,8.4.0)` |
 | `W.EntityFrameworkCore.Dameng.WDriver` | `0.6.0` | `wdriver-v0.6.0` | 基础包 `[0.6.0]`、W 驱动 `[0.3.2]`；EF Core 与官方驱动范围同基础包 |
@@ -65,12 +65,25 @@ W 实库运行 ID：`20261109T042538967Z-c4ce2346`；无跳过。唯一功能失
 规范冒烟为仓库自有四项切片。两通道各 9 份管理员恢复记录均为 `cleaned`；
 最终检查确认专用模式中的表、序列和回收站对象均为 0。
 
-## 发布顺序
+## 公开发布
 
-1. 复核候选包和回归结果。先定位官方锁释放间歇失败，并在普通隔离账号补齐 W 等待取消验证。
-   完成候选提交的远端 CI 后，重新核对两个标签和 NuGet 版本均未占用。
-2. 在最终提交创建并推送 `v0.6.0`，由基础包工作流发布；验证 Actions、GitHub Release、
-   NuGet 可下载包的内容和签名。
-3. 基础包可从 NuGet.org 获取后，在同一提交创建并推送 `wdriver-v0.6.0`。扩展包的
-   GitHub Release 为正式版，仓库的 Latest Release 仍指向基础包。
-4. 核对公共 W 包的签名、精确依赖和独立消费者安装，再更新本记录及文档首页的公开状态。
+[PR #21](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/21) 合并后，先发布基础包。
+基础包通过公开下载和签名验证后，才从同一提交发布 W 扩展包。两个发布工作流均通过
+NuGet Trusted Publishing 完成上传。GitHub Latest Release 指向基础包 `v0.6.0`。
+
+| 包 | 发布流水线 | GitHub Release | NuGet |
+| --- | --- | --- | --- |
+| 基础包 | [42568885412](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/42568885412) | [v0.6.0](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/v0.6.0) | [0.6.0](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng/0.6.0) |
+| W 扩展包 | [42569571564](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/actions/runs/42569571564) | [wdriver-v0.6.0](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/releases/tag/wdriver-v0.6.0) | [0.6.0](https://www.nuget.org/packages/W.EntityFrameworkCore.Dameng.WDriver/0.6.0) |
+
+公开包通过 NuGet.org 仓库签名验证，包内版本、nuspec 来源提交及依赖与发布预期一致。
+W 扩展包精确依赖基础包 `[0.6.0]` 和 `W.DamengProvider [0.3.2]`。
+
+| 公开签名包 | SHA-256 |
+| --- | --- |
+| 基础包 | `30a1f4ecf7a606a25f1b72c193ecb314aaf31b9f8396aedd99ff5028e0bb2bcb` |
+| W 扩展包 | `fe0992bcfd96351842accf520f705c86e770157b9bc5871a8e0377df90396c48` |
+
+仅使用 NuGet.org 的两个独立消费者均成功构建并运行。基础包单独注册成功，W 扩展包与官方达梦及
+SQL Server 提供程序可在同一进程注册。消费者缓存中的发行包与已验签的公开包字节一致。
+消费者验证未连接数据库。签名、包清单和消费者日志保存在本地 `artifacts/release-0.6.0/public/`。

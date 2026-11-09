@@ -372,4 +372,4 @@ scripts/local-test/run.sh test all --driver w --w-transport-security PlaintextAl
 | net10.0 DLL SHA-256 | `0e5f4d56b63c5ddbb1c1f61b0afb76da5d515e70da56482669dfea0fbfc62495` |
 | net10.0 DLL MVID | `337347bc-914a-418d-bab9-8f93d77c8b19` |
 
-本仓库的回归结果见 [0.6.0 发布准备](release-0.6.0.md#验证)。
+本仓库的回归结果见 [0.6.0 发布记录](release-0.6.0.md#验证)。

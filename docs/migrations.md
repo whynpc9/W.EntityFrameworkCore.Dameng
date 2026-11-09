@@ -74,7 +74,7 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 ## 使用 W.DamengProvider 驱动
 
 已发布的 W 扩展包 `0.5.0-preview.1` 依赖 W `0.3.1`，见 [0.5.0 发布记录](release-0.5.0.md)。
-当前源码使用 W `0.3.2`，随 W 扩展包 `0.6.0` [准备发布](release-0.6.0.md)。
+W 扩展包 `0.6.0` 精确依赖 W `0.3.2`，见[发布记录](release-0.6.0.md)。
 
 启动项目改为引用 `W.EntityFrameworkCore.Dameng.WDriver`，设计时工厂改用 `UseDamengWithWDriver`
 （W 连接串；明文服务器需 `transport_security=PlaintextAllowed`）。其他命令不变；反向工程把提供程序参数写成扩展包名称：

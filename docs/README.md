@@ -14,18 +14,15 @@
 
 Agent 执行达梦 SQL 或迁移时，还应阅读 [dameng-sql](../skills/dameng-sql/SKILL.md) 和 [dameng-ef-migrations](../skills/dameng-ef-migrations/SKILL.md)。
 
-## 发布准备
-
-- [0.6.0 双包正式版](release-0.6.0.md)：候选包、验证结果与发布顺序。
-
 ## 当前发行
 
-- [0.5.0 / W 0.5.0-preview.1](release-0.5.0.md)：当前发行版本、实际验证结果及已知限制。
+- [0.6.0 双包正式版](release-0.6.0.md)记录公开包、验收结果及已知限制。
 
 ## 历史发布记录
 
 以下文档记录对应版本当时的发布与验收事实。旧版本号、旧依赖和准备阶段措辞均按历史保留，不代表当前源码状态。
 
+- [0.5.0 / W 0.5.0-preview.1](release-0.5.0.md)
 - [0.4.0](release-0.4.0.md)
 - [0.3.0](release-0.3.0.md)
 - [0.2.0](release-0.2.0.md)
