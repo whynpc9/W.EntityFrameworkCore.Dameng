@@ -1,7 +1,7 @@
 # 0.6.0 发布准备
 
 日期：2026-11-09（Asia/Shanghai）。源码基线：`75af5f6`。
-状态：准备中。以下版本均为正式版，候选包仅用于本地验证。
+状态：候选包已生成。以下版本均为正式版；本轮双驱动实库验收未全部通过，尚未公开发布。
 
 | 包 | 版本 | 拟用标签 | NuGet 依赖 |
 | --- | --- | --- | --- |
@@ -15,14 +15,14 @@ W 扩展包自此版本起去掉 `preview` 后缀；从 `0.5.0-preview.1` 升级
 ## 变更
 
 - 模型快照保留继承属性的 Dameng IDENTITY 分面，避免重新载入快照后丢失生成策略
-  （[#16](https://github.com/whynpc9/dameng-entityframework-core/pull/16)）。
+  （[#16](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/16)）。
 - 可空日期恒等转换后的 `ToString()` 沿用原生时间列的服务器翻译和空值语义
-  （[#18](https://github.com/whynpc9/dameng-entityframework-core/pull/18)）。
+  （[#18](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/18)）。
 - 统一显式 LOB 类型的识别，使查询守卫和模型校验对同一类型一致
-  （[#19](https://github.com/whynpc9/dameng-entityframework-core/pull/19)）。
+  （[#19](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/19)）。
 - 收紧测试 TRX 的脱敏和结果判定；两条 NuGet 工作流已迁移到 Trusted Publishing
-  （[#17](https://github.com/whynpc9/dameng-entityframework-core/pull/17)、
-  [#15](https://github.com/whynpc9/dameng-entityframework-core/pull/15)）。
+  （[#17](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/17)、
+  [#15](https://github.com/whynpc9/W.EntityFrameworkCore.Dameng/pull/15)）。
 - W 扩展包升级到 [W.DamengProvider 0.3.2](https://github.com/whynpc9/W.DamengProvider/releases/tag/v0.3.2)。
   上游修复了远端 CLOB 多字节分块、年月间隔边界、数组绑定校验及数据源等待连接时的取消和输入快照。
   这是 ADO.NET 驱动更新；EF 扩展包的 API 不因此新增数据源或流式 LOB 支持。
@@ -44,10 +44,31 @@ W 扩展包自此版本起去掉 `preview` 后缀；从 `0.5.0-preview.1` 升级
 - 候选包清单及日志位于本地 `artifacts/release-0.6.0/`。候选包来自本地准备工作区，nuspec
   的来源提交是上述基线；正式发布工作流将从最终标签重建。
 
+| 通道 | 官方通过/总数 | W 通过/总数 |
+| --- | ---: | ---: |
+| Release 单元 | 1051/1051 | 187/187 |
+| 离线夹具 | 46/46 | 60/60 |
+| 真实库功能 | **412/414** | **500/501** |
+| 规范冒烟 | 4/4 | 4/4 |
+| 管理员迁移脚本 | 11/11 | 11/11 |
+
+官方实库运行 ID：`20261109T043546664Z-e2d25d6e`；无跳过。
+`ClosingOwningConnectionReleasesLock` 的同步、异步两项失败：关闭拥有锁的连接后，
+独立连接的零等待请求返回 1，预期为 0。现象与 [0.5.0 发布记录](release-0.5.0.md#候选验证)
+所记失败一致；未确定根因。两轮聚焦复测分别为 2/2（`20261109T044231556Z-85258b38`）
+和 1/2（`20261109T044237616Z-fe454351`，同步用例再次失败），全量失败仍然成立。
+
+W 实库运行 ID：`20261109T042538967Z-c4ce2346`；无跳过。唯一功能失败为
+`CancelWaitingAcquirePreservesTokenAndAllowsLaterAcquisition`：持久普通测试账号没有
+`SYS.V$DBMS_LOCKS` 的查询权限，目录预检失败，未执行等待取消。需要在具备该视图只读权限的
+普通隔离账号补测，不能用管理员连接替代。W 使用显式 `PlaintextAllowed`，本轮不验证 TLS；
+规范冒烟为仓库自有四项切片。两通道各 9 份管理员恢复记录均为 `cleaned`；
+最终检查确认专用模式中的表、序列和回收站对象均为 0。
 
 ## 发布顺序
 
-1. 复核候选包和回归结果、完成候选提交的远端 CI，重新核对两个标签和 NuGet 版本均未占用。
+1. 复核候选包和回归结果。先定位官方锁释放间歇失败，并在普通隔离账号补齐 W 等待取消验证。
+   完成候选提交的远端 CI 后，重新核对两个标签和 NuGet 版本均未占用。
 2. 在最终提交创建并推送 `v0.6.0`，由基础包工作流发布；验证 Actions、GitHub Release、
    NuGet 可下载包的内容和签名。
 3. 基础包可从 NuGet.org 获取后，在同一提交创建并推送 `wdriver-v0.6.0`。扩展包的
